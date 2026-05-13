@@ -29,6 +29,10 @@ Write all explanatory text (the "explanation" and "grammarNote" fields) in ${int
 
   const prompt = `The user is learning ${targetLanguage} and typed: "${input}"
 
+The input may be in any language (e.g. Ukrainian, English, or ${targetLanguage} itself).
+If it is NOT in ${targetLanguage}, treat it as a translation and find the best ${targetLanguage} equivalent.
+Always return the ${targetLanguage} base form — never the input word itself unless it is already ${targetLanguage}.
+
 Identify this entry and return ONLY this JSON structure:
 {
   "word": "base/canonical form (with article for nouns, e.g. die Entscheidung)",

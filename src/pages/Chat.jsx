@@ -146,8 +146,8 @@ const PRACTICE_SETS_UK = {
     questions: [
       { sentence: 'Ich sehe ___ Mann.', options: ['der', 'den', 'dem'], correct: 1, explanation: 'Прямий додаток = Akkusativ. Чоловічий артикль: der → den.' },
       { sentence: 'Ich gebe ___ Kind ein Geschenk.', options: ['das', 'dem', 'den'], correct: 1, explanation: 'Непрямий додаток (кому?) = Dativ. Середній артикль: das → dem.' },
-      { sentence: 'Das ist das Auto ___ Lehrers.', options: ['der', 'des', 'dem'], correct: 1, explanation: 'Присвійність = Genitiv. Чоловічий: der → des (іменник отримує закінчення -s).' },
-      { sentence: 'Er wohnt bei ___ Freunden.', options: ['seine', 'seinen', 'seinen'], correct: 1, explanation: 'bei завжди вимагає Dativ. Множина Dativ: den/seinen.' },
+      { sentence: 'Er hilft ___ Frau.', options: ['die', 'der', 'dem'], correct: 1, explanation: 'helfen вимагає Dativ. Жіночий артикль у Dativ: die → der.' },
+      { sentence: 'Das Buch gehört ___ Kind.', options: ['das', 'dem', 'den'], correct: 1, explanation: 'gehören вимагає Dativ. Середній артикль у Dativ: das → dem.' },
     ],
   },
   gender: {
@@ -243,16 +243,16 @@ const PRACTICE_SETS = {
         explanation: 'Indirect object (to whom?) = Dativ. Neuter article: das → dem.',
       },
       {
-        sentence: 'Das ist das Auto ___ Lehrers.',
-        options: ['der', 'des', 'dem'],
+        sentence: 'Er hilft ___ Frau.',
+        options: ['die', 'der', 'dem'],
         correct: 1,
-        explanation: 'Possession = Genitiv. Masculine: der → des (and the noun gets -s ending).',
+        explanation: 'helfen takes Dativ. Feminine article in Dativ: die → der.',
       },
       {
-        sentence: 'Er wohnt bei ___ Freunden.',
-        options: ['seine', 'seinen', 'seinen'],
+        sentence: 'Das Buch gehört ___ Kind.',
+        options: ['das', 'dem', 'den'],
         correct: 1,
-        explanation: 'bei always takes Dativ. Plural Dativ: den/seinen.',
+        explanation: 'gehören takes Dativ. Neuter article in Dativ: das → dem.',
       },
     ],
   },
