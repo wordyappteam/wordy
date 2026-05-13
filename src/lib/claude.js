@@ -1,5 +1,11 @@
 async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTokens = 1024 }) {
-  const res = await fetch('/api/anthropic/v1/messages', {
+  // In dev: Vite proxies /api/anthropic/v1/messages → Anthropic directly (vite.config.js)
+  // In prod (Vercel): /api/anthropic is a serverless function that proxies the request
+  const endpoint = import.meta.env.DEV
+    ? '/api/anthropic/v1/messages'
+    : '/api/anthropic'
+
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }),
