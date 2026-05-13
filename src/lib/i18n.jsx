@@ -92,6 +92,7 @@ const translations = {
       goodWork:        '— Good work! Keep going.',
       reviewMore:      '— Review the explanations above and try again.',
       questions:       'questions',
+      newChat:         'New chat',
       greeting:        `Hi! I'm your German grammar tutor. Ask me anything — grammar rules, tricky sentences, word usage, or anything you've encountered while learning.\n\nI can also help you add new words or phrases directly to your dictionary from our conversation.`,
       suggestedQuestions: [
         'When do I use haben vs. sein in Perfekt?',
@@ -193,6 +194,7 @@ const translations = {
       goodWork:        '— Молодець! Продовжуйте.',
       reviewMore:      '— Перегляньте пояснення та спробуйте ще.',
       questions:       'запитань',
+      newChat:         'Новий чат',
       greeting:        `Привіт! Я ваш репетитор з німецької граматики. Запитуйте будь-що — граматичні правила, складні речення, вживання слів або все, що зустріли під час навчання.\n\nЯ також можу допомогти додати нові слова або фрази до вашого словника прямо з нашої розмови.`,
       suggestedQuestions: [
         'Коли вживати haben, а коли sein у Perfekt?',

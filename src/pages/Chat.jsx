@@ -628,25 +628,53 @@ export default function Chat() {
   const { t, lang, switchLang } = useLanguage()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
 
-  const [messages, setMessages] = useState(() => [
-    {
-      id: 0,
-      role: 'assistant',
-      text: translations_greeting(lang),
-      words: [],
-      topicKey: null,
-      practiceState: null,
-    },
-  ])
+  const [messages, setMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem('wordy_chat_history')
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return [
+      {
+        id: 0,
+        role: 'assistant',
+        text: translations_greeting(lang),
+        words: [],
+        topicKey: null,
+        practiceState: null,
+      },
+    ]
+  })
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
+  // Persist chat history to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('wordy_chat_history', JSON.stringify(messages))
+    } catch {}
+  }, [messages])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  function handleNewChat() {
+    const fresh = [
+      {
+        id: Date.now(),
+        role: 'assistant',
+        text: translations_greeting(lang),
+        words: [],
+        topicKey: null,
+        practiceState: null,
+      },
+    ]
+    setMessages(fresh)
+    localStorage.removeItem('wordy_chat_history')
+  }
 
   function updateMessage(id, updates) {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...updates } : m)))
@@ -758,6 +786,12 @@ export default function Chat() {
           <button className="text-indigo-600">{t('nav.chat')}</button>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleNewChat}
+            className="text-xs font-medium text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            {t('chat.newChat')}
+          </button>
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
             <button onClick={() => switchLang('en')} className={`px-2.5 py-1 transition-colors ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>EN</button>
             <button onClick={() => switchLang('uk')} className={`px-2.5 py-1 transition-colors ${lang === 'uk' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>UA</button>
