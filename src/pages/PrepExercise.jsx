@@ -585,8 +585,8 @@ export default function PrepExercise() {
                         {submitted && (
                           <div className={`mt-3 text-xs px-3 py-2 rounded-xl ${bothOk ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
                             {bothOk
-                              ? `✓ ${lbl.correct}`
-                              : `✗ ${lbl.wrongPrefix} ${ex.preposition} ${ex.article} — ${ex.explanation}`
+                              ? <>✓ {lbl.correct}{ex.translation && <span className="opacity-70"> — {ex.verb} = {ex.translation}</span>}</>
+                              : <>✗ {lbl.wrongPrefix} <strong>{ex.preposition} {ex.article}</strong>{ex.translation && <span> · {ex.verb} = {ex.translation}</span>} — {ex.explanation}</>
                             }
                           </div>
                         )}
