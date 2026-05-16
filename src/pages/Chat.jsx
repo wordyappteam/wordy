@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { chatWithTutor } from '../lib/claude'
 import { useLanguage } from '../lib/i18n'
+import { useAuth } from '../lib/AuthContext'
 
 const GREETINGS = {
   en: `Hi! I'm your German grammar tutor. Ask me anything — grammar rules, tricky sentences, word usage, or anything you've encountered while learning.\n\nI can also help you add new words or phrases directly to your dictionary from our conversation.`,
@@ -626,6 +627,7 @@ function AddedWordToast({ word, onDismiss }) {
 export default function Chat() {
   const navigate = useNavigate()
   const { t, lang, switchLang } = useLanguage()
+  const { user } = useAuth()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
 
   const [messages, setMessages] = useState(() => {
@@ -796,7 +798,7 @@ export default function Chat() {
             <button onClick={() => switchLang('en')} className={`px-2.5 py-1 transition-colors ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>EN</button>
             <button onClick={() => switchLang('uk')} className={`px-2.5 py-1 transition-colors ${lang === 'uk' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>UA</button>
           </div>
-          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-bold">N</div>
+          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-bold">{(user?.email?.[0] ?? 'U').toUpperCase()}</div>
         </div>
       </nav>
 
