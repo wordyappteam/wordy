@@ -239,7 +239,15 @@ export default function PrepExercise() {
 
       const verbs = pool.sort(() => Math.random() - 0.5).slice(0, 5)
       const result = await generatePrepExercises(verbs, interfaceLanguage)
-      setExercises(result)
+
+      // Attach translation by matching verb name back to pool
+      const translationMap = {}
+      verbs.forEach((v) => { translationMap[v.word.toLowerCase()] = v.translation })
+      const enriched = result.map((ex) => ({
+        ...ex,
+        translation: translationMap[ex.verb.toLowerCase()] ?? null,
+      }))
+      setExercises(enriched)
     } catch (e) {
       console.error(e)
       setError(lang === 'uk'
@@ -553,6 +561,9 @@ export default function PrepExercise() {
                           <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
                             {settings.prepHints ? ex.verb : ex.verb.replace(` ${ex.preposition}`, '').trim()}
                           </span>
+                          {ex.translation && (
+                            <span className="text-xs text-gray-400 italic">— {ex.translation}</span>
+                          )}
                           {settings.caseHints && (
                             <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
                               → {ex.caseLabel.split('·')[0].trim()}
