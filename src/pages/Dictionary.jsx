@@ -6,10 +6,20 @@ import { identifyWord as identifyWordAI } from '../lib/claude'
 import { useLanguage } from '../lib/i18n'
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-// Clean up old-format noun forms like "-en (plural: die Krankheiten)" → "-en"
-function cleanForm(form) {
+// Normalize noun form to full plural without article
+// Handles: "Krankheiten" → "Krankheiten", "-en (plural: ...)" → derive from word, "-en" → derive from word
+function cleanForm(form, baseWord) {
   if (!form) return form
-  return form.replace(/\s*\(plural:[^)]*\)/gi, '').trim()
+  // Strip old "(plural: ...)" redundancy
+  form = form.replace(/\s*\(plural:[^)]*\)/gi, '').trim()
+  // If it's a dash-ending like "-en", derive full plural from the noun stem
+  if (/^-\S/.test(form) && baseWord) {
+    const stem = baseWord.replace(/^(der|die|das)\s+/i, '').trim()
+    const suffix = form.slice(1) // remove leading "-"
+    return stem + suffix
+  }
+  // Strip leading article if present (e.g. "die Krankheiten" → "Krankheiten")
+  return form.replace(/^(der|die|das)\s+/i, '').trim()
 }
 
 // ── DB ↔ Frontend mapping ─────────────────────────────────────────────────
@@ -402,7 +412,7 @@ function renderCell(colId, w, t) {
         <span className="font-medium text-gray-900">
           {w.word}
           {w.pos === 'noun' && w.form && (
-            <span className="text-gray-400 font-normal"> ({cleanForm(w.form)})</span>
+            <span className="text-gray-400 font-normal"> ({cleanForm(w.form, w.word)})</span>
           )}
         </span>
       )
@@ -620,7 +630,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete }) {
               )}
             </div>
             <h2 className="text-2xl font-bold text-gray-900">{word.word}</h2>
-            {word.form && <p className="text-sm text-gray-400 italic mt-0.5">{cleanForm(word.form)}</p>}
+            {word.form && <p className="text-sm text-gray-400 italic mt-0.5">{cleanForm(word.form, word.word)}</p>}
           </div>
           <button onClick={editing ? cancelEdit : onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none mt-1">×</button>
         </div>

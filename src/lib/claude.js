@@ -36,7 +36,7 @@ Always return the ${targetLanguage} base form — never the input word itself un
 Identify this entry and return ONLY this JSON structure:
 {
   "word": "base/canonical form (with article for nouns, e.g. die Entscheidung)",
-  "form": "for nouns: ONLY the plural ending e.g. '-en', '-er', '-e', '–' (no change), or 'die Krankheiten' if irregular; for verbs: conjugation e.g. 'macht / machte / gemacht'; never combine both formats",
+  "form": "for nouns: the plural form WITHOUT article e.g. 'Krankheiten', 'Häuser', 'Kinder', 'Autos'; if no plural exists write '–'; for verbs: conjugation e.g. 'macht / machte / gemacht'",
   "pos": "verb|noun|adjective|adverb|conjunction|preposition",
   "entryType": "word|phrase|idiom|phrasal-verb",
   "translation": "concise English translation",
