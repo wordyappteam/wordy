@@ -22,7 +22,7 @@ const PREP_KEYWORDS = ['an ', 'auf ', 'über ', 'für ', 'mit ', 'zu ', 'von ',
   'nach ', 'bei ', 'gegen ', 'ohne ', 'um ', 'aus ', 'in ']
 
 function hasPreposition(word) {
-  const lower = word.toLowerCase()
+  const lower = word.toLowerCase() + ' ' // add trailing space so "warten auf" matches "auf "
   return PREP_KEYWORDS.some((p) => lower.includes(p))
 }
 
