@@ -5,6 +5,13 @@ import { useAuth } from '../lib/AuthContext'
 import { identifyWord as identifyWordAI } from '../lib/claude'
 import { useLanguage } from '../lib/i18n'
 
+// ── Helpers ───────────────────────────────────────────────────────────────
+// Clean up old-format noun forms like "-en (plural: die Krankheiten)" → "-en"
+function cleanForm(form) {
+  if (!form) return form
+  return form.replace(/\s*\(plural:[^)]*\)/gi, '').trim()
+}
+
 // ── DB ↔ Frontend mapping ─────────────────────────────────────────────────
 function dbToWord(row, examples = []) {
   return {
@@ -395,7 +402,7 @@ function renderCell(colId, w, t) {
         <span className="font-medium text-gray-900">
           {w.word}
           {w.pos === 'noun' && w.form && (
-            <span className="text-gray-400 font-normal"> ({w.form})</span>
+            <span className="text-gray-400 font-normal"> ({cleanForm(w.form)})</span>
           )}
         </span>
       )
@@ -613,7 +620,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete }) {
               )}
             </div>
             <h2 className="text-2xl font-bold text-gray-900">{word.word}</h2>
-            {word.form && <p className="text-sm text-gray-400 italic mt-0.5">{word.form}</p>}
+            {word.form && <p className="text-sm text-gray-400 italic mt-0.5">{cleanForm(word.form)}</p>}
           </div>
           <button onClick={editing ? cancelEdit : onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none mt-1">×</button>
         </div>
