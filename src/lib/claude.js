@@ -157,7 +157,8 @@ Return a JSON array, one object per verb (same order as the list):
     "verbBase": "sich erinnern an",
     "sentence": "Ich ___ mich ___ unseren ersten Schultag.",
     "verbAnswer": "erinnere",
-    "prepAnswer": "an"
+    "prepAnswer": "an",
+    "case": "Akkusativ"
   }
 ]
 

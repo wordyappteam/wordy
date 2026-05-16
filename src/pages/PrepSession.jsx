@@ -85,7 +85,12 @@ function FlashcardPhase({ verbs, onComplete }) {
           <div className="absolute inset-0 bg-indigo-600 rounded-3xl shadow-lg flex flex-col items-center justify-center p-8 gap-3"
             style={{ backfaceVisibility: 'hidden' }}>
             <p className="text-xs text-indigo-200 uppercase tracking-widest">Tap to reveal</p>
-            <h2 className="text-3xl font-bold text-white text-center">{card.word}</h2>
+            <h2 className="text-3xl font-bold text-white text-center">
+              {card.word}
+              {card.caseLabel && (
+                <span className="text-xl font-normal text-indigo-200"> + {card.caseLabel}</span>
+              )}
+            </h2>
             <button onClick={(e) => { e.stopPropagation(); speak(card.word.replace(/\(.*?\)/g, '').trim()) }}
               className="mt-1 text-xs text-indigo-200 hover:text-white border border-indigo-400 hover:border-white px-3 py-1 rounded-full transition-colors">
               🔈 Pronounce
@@ -515,8 +520,6 @@ export default function PrepSession() {
           : null,
       }))
 
-      setVerbs(enriched)
-
       // 3 — generate Phase 2 + Phase 3 in parallel
       const [wbResult, prepResult] = await Promise.all([
         generateWordBankExercises(enriched, interfaceLanguage),
@@ -530,6 +533,19 @@ export default function PrepSession() {
         ...ex, translation: tMap[ex.verb.toLowerCase()] ?? null,
       }))
 
+      // Build verb → case map from word bank results
+      const caseMap = {}
+      wbResult.forEach((ex) => {
+        if (ex.verbBase && ex.case) caseMap[ex.verbBase.toLowerCase()] = ex.case
+      })
+
+      // Attach case to each verb for flashcards
+      const verbsWithCase = enriched.map((v) => ({
+        ...v,
+        caseLabel: caseMap[v.word.toLowerCase()] ?? null,
+      }))
+
+      setVerbs(verbsWithCase)
       setWbExercises(wbResult)
       setPrepExercises(enrichedPrep)
       setPhase('flashcards')
