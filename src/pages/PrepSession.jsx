@@ -7,10 +7,9 @@ import { generateWordBankExercises, generatePrepExercises } from '../lib/claude'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-const PREP_KW = ['an ', 'auf ', 'über ', 'für ', 'mit ', 'zu ', 'von ',
-  'nach ', 'bei ', 'gegen ', 'ohne ', 'um ', 'aus ', 'in ']
+const PREP_LIST = new Set(['an','auf','über','für','mit','zu','von','nach','bei','gegen','ohne','um','aus','in'])
 function hasPrep(word) {
-  return PREP_KW.some((p) => (word.toLowerCase() + ' ').includes(p))
+  return word.toLowerCase().split(/\s+/).some((t) => PREP_LIST.has(t))
 }
 
 function speak(text) {

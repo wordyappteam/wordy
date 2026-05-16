@@ -18,12 +18,10 @@ const FALLBACK_VERBS = [
   { word: 'sich interessieren für', translation: 'to be interested in' },
 ]
 
-const PREP_KEYWORDS = ['an ', 'auf ', 'über ', 'für ', 'mit ', 'zu ', 'von ',
-  'nach ', 'bei ', 'gegen ', 'ohne ', 'um ', 'aus ', 'in ']
+const PREP_LIST = new Set(['an','auf','über','für','mit','zu','von','nach','bei','gegen','ohne','um','aus','in'])
 
 function hasPreposition(word) {
-  const lower = word.toLowerCase() + ' ' // add trailing space so "warten auf" matches "auf "
-  return PREP_KEYWORDS.some((p) => lower.includes(p))
+  return word.toLowerCase().split(/\s+/).some((t) => PREP_LIST.has(t))
 }
 
 const SETTINGS_KEY = 'wordy_prep_settings'

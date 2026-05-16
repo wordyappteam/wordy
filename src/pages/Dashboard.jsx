@@ -49,9 +49,9 @@ export default function Dashboard() {
   }
   const activeWords = byStatus.learning + byStatus.known + byStatus.mastered
 
-  const PREP_KW = ['an ', 'auf ', 'über ', 'für ', 'mit ', 'zu ', 'von ', 'nach ', 'bei ', 'gegen ', 'ohne ', 'um ', 'aus ', 'in ']
+  const PREP_LIST = new Set(['an','auf','über','für','mit','zu','von','nach','bei','gegen','ohne','um','aus','in'])
   const prepVerbCount = words.filter(
-    (w) => w.pos === 'verb' && PREP_KW.some((p) => (w.word.toLowerCase() + ' ').includes(p))
+    (w) => w.pos === 'verb' && w.word.toLowerCase().split(/\s+/).some((t) => PREP_LIST.has(t))
   ).length
 
   const oneWeekAgo = new Date()
