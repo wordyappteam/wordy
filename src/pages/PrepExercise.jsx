@@ -168,11 +168,28 @@ export default function PrepExercise() {
   const { t, lang, switchLang } = useLanguage()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
 
-  const [phase, setPhase]     = useState('settings') // 'settings' | 'exercises'
+  const [phase, setPhase]     = useState('settings') // 'settings' | 'session' | 'exercises'
   const [settings, setSettings] = useState(() => {
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) ?? DEFAULT_SETTINGS }
     catch { return DEFAULT_SETTINGS }
   })
+
+  // All prep verbs from dictionary with status
+  const [prepVerbs,     setPrepVerbs]     = useState([])
+  const [loadingVerbs,  setLoadingVerbs]  = useState(true)
+
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('words')
+      .select('word, translation, pos, status, last_reviewed')
+      .eq('user_id', user.id)
+      .eq('pos', 'verb')
+      .then(({ data }) => {
+        setPrepVerbs((data ?? []).filter((w) => hasPreposition(w.word)))
+        setLoadingVerbs(false)
+      })
+  }, [user])
 
   const [exercises,  setExercises]  = useState([])
   const [answers,    setAnswers]    = useState({})
@@ -187,7 +204,7 @@ export default function PrepExercise() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(next))
   }
 
-  async function startExercise() {
+  async function startExercise(mode = 'mixed') {
     setPhase('exercises')
     setLoading(true)
     setError(null)
@@ -195,21 +212,32 @@ export default function PrepExercise() {
     setAnswers({})
 
     try {
-      let verbs = []
-      if (user) {
-        const { data } = await supabase
-          .from('words').select('word, translation, pos')
-          .eq('user_id', user.id).eq('pos', 'verb')
-        verbs = (data ?? []).filter((w) => hasPreposition(w.word))
+      let pool = []
+
+      if (prepVerbs.length >= 3) {
+        if (mode === 'new')       pool = prepVerbs.filter((v) => v.status === 'new')
+        else if (mode === 'learning') pool = prepVerbs.filter((v) => v.status === 'learning')
+        else if (mode === 'review')   pool = prepVerbs.filter((v) => v.status === 'known' || v.status === 'mastered')
+        else if (mode === 'suggested') {
+          const learning = prepVerbs.filter((v) => v.status === 'learning')
+          const newW     = prepVerbs.filter((v) => v.status === 'new')
+          const review   = prepVerbs.filter((v) => v.status === 'known' || v.status === 'mastered')
+          pool = [...learning, ...newW, ...review]
+        }
+        else pool = prepVerbs // mixed
+
+        // If selected mode pool is too small, top up from full list
+        if (pool.length < 3) pool = prepVerbs
       }
-      if (verbs.length < 3) {
-        verbs = FALLBACK_VERBS
+
+      if (pool.length < 3) {
+        pool = FALLBACK_VERBS
         setSource('fallback')
       } else {
         setSource('dictionary')
-        verbs = verbs.sort(() => Math.random() - 0.5).slice(0, 5)
       }
 
+      const verbs = pool.sort(() => Math.random() - 0.5).slice(0, 5)
       const result = await generatePrepExercises(verbs, interfaceLanguage)
       setExercises(result)
     } catch (e) {
@@ -227,7 +255,7 @@ export default function PrepExercise() {
   }
 
   function reset() {
-    setPhase('settings')
+    setPhase('session')
     setExercises([])
     setAnswers({})
     setSubmitted(false)
@@ -337,11 +365,126 @@ export default function PrepExercise() {
             <LivePreview settings={settings} lang={lang} />
 
             <button
-              onClick={startExercise}
+              onClick={() => setPhase('session')}
               className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm transition-colors"
             >
               {lbl.start}
             </button>
+          </div>
+        )}
+
+        {/* ── SESSION SELECTION PHASE ── */}
+        {phase === 'session' && (
+          <div className="flex flex-col gap-5">
+            <div>
+              <button onClick={() => setPhase('settings')} className="text-sm text-gray-400 hover:text-gray-600 transition-colors mb-4 flex items-center gap-1">
+                ← {lbl.back}
+              </button>
+              <h2 className="text-base font-semibold text-gray-900">
+                {lang === 'uk' ? 'Що практикуємо сьогодні?' : 'What do you want to practise today?'}
+              </h2>
+              <p className="text-xs text-gray-400 mt-1">
+                {lang === 'uk'
+                  ? `У вашому словнику ${prepVerbs.length} дієслів з прийменниками`
+                  : `You have ${prepVerbs.length} prep. verb${prepVerbs.length !== 1 ? 's' : ''} in your dictionary`}
+              </p>
+            </div>
+
+            {(() => {
+              const counts = {
+                new:       prepVerbs.filter((v) => v.status === 'new').length,
+                learning:  prepVerbs.filter((v) => v.status === 'learning').length,
+                review:    prepVerbs.filter((v) => v.status === 'known' || v.status === 'mastered').length,
+                mixed:     prepVerbs.length,
+              }
+
+              const modes = [
+                {
+                  key: 'new',
+                  icon: '🆕',
+                  label: lang === 'uk' ? 'Нові' : 'New',
+                  desc: lang === 'uk' ? 'Слова, які ви щойно додали' : 'Words you just added',
+                  count: counts.new,
+                  color: 'border-gray-200 hover:border-indigo-300',
+                },
+                {
+                  key: 'learning',
+                  icon: '📚',
+                  label: lang === 'uk' ? 'Вивчаю' : 'Learning',
+                  desc: lang === 'uk' ? 'Слова в активній роботі' : 'Words you\'re actively working on',
+                  count: counts.learning,
+                  color: 'border-yellow-200 hover:border-yellow-400',
+                },
+                {
+                  key: 'review',
+                  icon: '🔁',
+                  label: lang === 'uk' ? 'Повторення' : 'Review',
+                  desc: lang === 'uk' ? 'Засвоєні слова — для довгострокової пам\'яті' : 'Mastered words — keep them fresh',
+                  count: counts.review,
+                  color: 'border-green-200 hover:border-green-400',
+                },
+                {
+                  key: 'mixed',
+                  icon: '🎲',
+                  label: lang === 'uk' ? 'Змішаний' : 'Mixed',
+                  desc: lang === 'uk' ? 'Випадкова вибірка з усього словника' : 'Random mix from everything',
+                  count: counts.mixed,
+                  color: 'border-violet-200 hover:border-violet-400',
+                },
+                {
+                  key: 'suggested',
+                  icon: '✨',
+                  label: lang === 'uk' ? 'Рекомендую' : 'Suggested',
+                  desc: lang === 'uk' ? 'Спочатку «вивчаю», потім нові, потім повторення' : 'Learning first, then new, then review',
+                  count: counts.mixed,
+                  color: 'border-indigo-200 hover:border-indigo-400',
+                },
+              ]
+
+              return (
+                <div className="flex flex-col gap-2">
+                  {modes.map((m) => {
+                    const usable = m.key === 'suggested' ? prepVerbs.length >= 3 : m.count >= 3
+                    const tooFew = !usable && prepVerbs.length >= 3
+                    return (
+                      <button
+                        key={m.key}
+                        disabled={!usable && prepVerbs.length >= 3}
+                        onClick={() => startExercise(m.key)}
+                        className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border text-left transition-all
+                          ${usable ? `bg-white ${m.color} hover:bg-gray-50` : 'bg-gray-50 border-gray-100 opacity-50 cursor-not-allowed'}`}
+                      >
+                        <span className="text-2xl">{m.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-gray-800">{m.label}</p>
+                            {m.key !== 'suggested' && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                usable ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-400'
+                              }`}>
+                                {m.count} {lang === 'uk' ? 'сл.' : 'verbs'}
+                              </span>
+                            )}
+                            {m.count > 0 && m.count < 10 && usable && m.key !== 'suggested' && (
+                              <span className="text-xs text-amber-500">
+                                {lang === 'uk' ? '(мало різноманіття)' : '(limited variety)'}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">{m.desc}</p>
+                          {tooFew && (
+                            <p className="text-xs text-gray-400 mt-0.5 italic">
+                              {lang === 'uk' ? 'Додайте більше слів' : 'Add more verbs to unlock'}
+                            </p>
+                          )}
+                        </div>
+                        {usable && <span className="text-gray-300 text-lg">›</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
         )}
 
@@ -460,10 +603,10 @@ export default function PrepExercise() {
                         </span>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={reset} className="px-4 py-2 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors">
+                        <button onClick={() => setPhase('settings')} className="px-4 py-2 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors">
                           {lbl.changeSettings}
                         </button>
-                        <button onClick={startExercise} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
+                        <button onClick={reset} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
                           {lbl.newSet}
                         </button>
                       </div>

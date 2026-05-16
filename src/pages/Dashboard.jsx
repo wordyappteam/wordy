@@ -49,6 +49,11 @@ export default function Dashboard() {
   }
   const activeWords = byStatus.learning + byStatus.known + byStatus.mastered
 
+  const PREP_KW = ['an ', 'auf ', 'über ', 'für ', 'mit ', 'zu ', 'von ', 'nach ', 'bei ', 'gegen ', 'ohne ', 'um ', 'aus ', 'in ']
+  const prepVerbCount = words.filter(
+    (w) => w.pos === 'verb' && PREP_KW.some((p) => w.word.toLowerCase().includes(p))
+  ).length
+
   const oneWeekAgo = new Date()
   oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
   const addedThisWeek = words.filter(
@@ -93,10 +98,10 @@ export default function Dashboard() {
   const statusLabel = { new: lbl.statusNew, learning: lbl.statusLearning, known: lbl.statusKnown, mastered: lbl.statusMastered }
 
   const exercises = [
-    { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          icon: '🃏', color: 'bg-indigo-50 border-indigo-100',  path: '/flashcards' },
-    { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', icon: '🔗', color: 'bg-violet-50 border-violet-100',  path: '/prepositions' },
-    { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   icon: '✏️', color: 'bg-purple-50 border-purple-100',  path: '/fill-blank' },
-    { type: lang === 'uk' ? 'Граматичний чат'         : 'Grammar chat',        icon: '💬', color: 'bg-green-50 border-green-100',    path: '/chat' },
+    { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          icon: '🃏', color: 'bg-indigo-50 border-indigo-100',  path: '/flashcards',    count: total },
+    { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', icon: '🔗', color: 'bg-violet-50 border-violet-100',  path: '/prepositions',  count: prepVerbCount },
+    { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   icon: '✏️', color: 'bg-purple-50 border-purple-100',  path: '/fill-blank',    count: total },
+    { type: lang === 'uk' ? 'Граматичний чат'         : 'Grammar chat',        icon: '💬', color: 'bg-green-50 border-green-100',    path: '/chat',          count: null },
   ]
 
   return (
@@ -168,10 +173,10 @@ export default function Dashboard() {
                     <div className="text-2xl mb-2">{ex.icon}</div>
                     <div className="text-sm font-semibold text-gray-900">{ex.type}</div>
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {ex.path === '/chat'
+                      {ex.count === null
                         ? (lang === 'uk' ? 'Запитайте будь-що' : 'Ask anything')
-                        : total > 0
-                          ? (lang === 'uk' ? `${total} слів` : `${total} words`)
+                        : ex.count > 0
+                          ? (lang === 'uk' ? `${ex.count} слів` : `${ex.count} words`)
                           : (lang === 'uk' ? 'Додайте слова' : 'Add words first')
                       }
                     </div>
