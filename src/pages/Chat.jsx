@@ -693,15 +693,6 @@ export default function Chat() {
 
     chatWithTutor([...messages, { role: 'user', text: trimmed }], 'German', interfaceLanguage)
       .then((responseText) => {
-        // Detect topic from response for practice offer
-        const lower = responseText.toLowerCase()
-        let topicKey = null
-        for (const entry of SIMULATED_RESPONSES) {
-          if (entry.match.some((kw) => lower.includes(kw))) {
-            topicKey = entry.topicKey
-            break
-          }
-        }
         setMessages((prev) => [
           ...prev,
           {
@@ -709,8 +700,8 @@ export default function Chat() {
             role: 'assistant',
             text: responseText,
             words: [],
-            topicKey,
-            practiceState: topicKey ? 'offered' : null,
+            topicKey: null,
+            practiceState: null,
           },
         ])
       })
