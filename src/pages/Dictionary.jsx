@@ -22,6 +22,15 @@ function cleanForm(form, baseWord) {
   return form.replace(/^(der|die|das)\s+/i, '').trim()
 }
 
+// Extract "+A" / "+D" from grammarNote for verbs with prepositions
+function extractCaseBadge(w) {
+  if (w.pos !== 'verb') return null
+  const note = (w.grammarNote || '').toLowerCase()
+  if (note.includes('akkusativ')) return { label: '+A', cls: 'bg-blue-50 text-blue-500 border-blue-100' }
+  if (note.includes('dativ'))     return { label: '+D', cls: 'bg-amber-50 text-amber-600 border-amber-100' }
+  return null
+}
+
 // ── DB ↔ Frontend mapping ─────────────────────────────────────────────────
 function dbToWord(row, examples = []) {
   return {
@@ -407,15 +416,22 @@ function renderCell(colId, w, t) {
   const pos       = POS_STYLES[w.pos] || POS_STYLES.preposition
   const entryBadge = ENTRY_TYPE_STYLES[w.entryType]
   switch (colId) {
-    case 'word':
+    case 'word': {
+      const caseBadge = extractCaseBadge(w)
       return (
-        <span className="font-medium text-gray-900">
-          {w.word}
+        <span className="font-medium text-gray-900 flex items-center gap-1.5 flex-wrap">
+          <span>{w.word}</span>
           {w.pos === 'noun' && w.form && (
             <span className="text-gray-400 font-normal"> ({cleanForm(w.form, w.word)})</span>
           )}
+          {caseBadge && (
+            <span className={`text-xs font-semibold px-1.5 py-0.5 rounded border ${caseBadge.cls}`}>
+              {caseBadge.label}
+            </span>
+          )}
         </span>
       )
+    }
     case 'entryType':
       return entryBadge
         ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
