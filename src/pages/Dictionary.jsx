@@ -848,6 +848,155 @@ function WordPanel({ word, onClose, onUpdate, onDelete }) {
   )
 }
 
+// ── Bulk import parser ────────────────────────────────────────────────────
+function parseBulkLine(line) {
+  line = line.trim()
+  if (!line) return null
+
+  // Noun: starts with der/die/das
+  if (/^(der|die|das)\s/i.test(line)) {
+    const commaIdx = line.indexOf(',')
+    const word = commaIdx > -1 ? line.slice(0, commaIdx).trim() : line.trim()
+    const noun = word.replace(/^(der|die|das)\s+/i, '')
+    const ending = commaIdx > -1 ? line.slice(commaIdx + 1).trim() : null
+    let form = null
+    if (ending) {
+      if (ending === '-') form = noun // no change plural
+      else if (ending.startsWith('-¨')) form = ending // umlaut — store as-is
+      else if (ending.startsWith('-')) form = noun + ending.slice(1)
+      else form = ending
+    }
+    return { word, form, pos: 'noun', entry_type: 'word', translation: '', status: 'new' }
+  }
+
+  // Verb / phrasal verb: has conjugation in parens
+  if (line.includes('(') && !line.startsWith('-')) {
+    const parenIdx = line.indexOf('(')
+    const wordRaw = line.slice(0, parenIdx).trim()
+    const conj = line.match(/\(([^)]+)\)/)?.[1] || ''
+    const parts = conj.split(',').map(s => s.trim()).filter(Boolean)
+    // form: "reißt ab / riss ab / hat abgerissen"
+    const form = parts.slice(0, 3).join(' / ')
+    const isPhrasal = wordRaw.includes(' ')
+    return {
+      word: wordRaw,
+      form,
+      pos: 'verb',
+      entry_type: isPhrasal ? 'phrasal-verb' : 'word',
+      translation: '',
+      status: 'new',
+    }
+  }
+
+  // Adjective / adverb / other
+  const word = line.replace(/,.*/, '').replace(/\(.*\)/, '').trim()
+  if (!word) return null
+  return { word, form: null, pos: 'adjective', entry_type: 'word', translation: '', status: 'new' }
+}
+
+// ── Bulk import modal ─────────────────────────────────────────────────────
+function BulkImportModal({ onClose, onImport }) {
+  const [text, setText] = useState('')
+  const [preview, setPreview] = useState([])
+  const [importing, setImporting] = useState(false)
+  const [done, setDone] = useState(false)
+
+  function handleParse() {
+    const lines = text.split('\n')
+    const parsed = lines.map(parseBulkLine).filter(Boolean)
+    setPreview(parsed)
+  }
+
+  async function handleImport() {
+    setImporting(true)
+    await onImport(preview)
+    setImporting(false)
+    setDone(true)
+  }
+
+  const posColor = {
+    noun: 'bg-blue-50 text-blue-600',
+    verb: 'bg-purple-50 text-purple-600',
+    adjective: 'bg-yellow-50 text-yellow-600',
+  }
+
+  if (done) return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+        <div className="text-4xl mb-3">🎉</div>
+        <h2 className="text-xl font-bold text-gray-900 mb-1">{preview.length} words imported!</h2>
+        <p className="text-sm text-gray-500 mb-6">Translations are empty — click any word to add them via AI.</p>
+        <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Done</button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-900">Bulk import words</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        {preview.length === 0 ? (
+          <div className="p-6 flex flex-col gap-4 flex-1">
+            <p className="text-sm text-gray-500">Paste your word list — one word per line. Supports German dictionary format (e.g. <em>die Architektur, -en</em> or <em>abreißen (reißt ab, riss ab, hat abgerissen)</em>).</p>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              className="flex-1 min-h-64 border border-gray-200 rounded-xl p-3 text-sm font-mono resize-none focus:outline-none focus:border-indigo-400"
+              placeholder="die Architektur, -en&#10;abreißen (reißt ab, riss ab, hat abgerissen)&#10;altmodisch&#10;..."
+            />
+            <button
+              onClick={handleParse}
+              disabled={!text.trim()}
+              className="py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 text-white text-sm font-semibold transition-colors"
+            >
+              Preview ({text.split('\n').filter(l => l.trim()).length} lines)
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="overflow-y-auto flex-1">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs text-gray-400 font-semibold uppercase tracking-wide sticky top-0">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Word</th>
+                    <th className="px-4 py-2 text-left">Form</th>
+                    <th className="px-4 py-2 text-left">POS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {preview.map((w, i) => (
+                    <tr key={i} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 font-medium text-gray-900">{w.word}</td>
+                      <td className="px-4 py-2 text-gray-400 text-xs">{w.form || '—'}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posColor[w.pos] || 'bg-gray-100 text-gray-500'}`}>{w.pos}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+              <button onClick={() => setPreview([])} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50">← Back</button>
+              <button
+                onClick={handleImport}
+                disabled={importing}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold transition-colors"
+              >
+                {importing ? 'Importing…' : `Import ${preview.length} words`}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 export default function Dictionary() {
   const navigate = useNavigate()
@@ -865,6 +1014,7 @@ export default function Dictionary() {
   const [dragOver, setDragOver]         = useState(null)
   const [selectedWord, setSelectedWord] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showBulkModal, setShowBulkModal] = useState(false)
   const dragCol = useRef(null)
 
   // Keep column labels in sync when language changes
@@ -986,6 +1136,25 @@ export default function Dictionary() {
     setSelectedWord(updated)
   }
 
+  async function handleBulkImport(entries) {
+    if (!user) return
+    const rows = entries.map(e => ({
+      user_id: user.id,
+      word: e.word,
+      translation: e.translation,
+      form: e.form || null,
+      pos: e.pos,
+      entry_type: e.entry_type,
+      status: 'new',
+      date_added: new Date().toISOString().split('T')[0],
+    }))
+    // Insert in chunks of 20 to avoid request size limits
+    for (let i = 0; i < rows.length; i += 20) {
+      await supabase.from('words').insert(rows.slice(i, i + 20))
+    }
+    await fetchWords()
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
@@ -1011,12 +1180,20 @@ export default function Dictionary() {
             <h1 className="text-2xl font-bold text-gray-900">{t('dict.title')}</h1>
             <p className="text-sm text-gray-500 mt-0.5">{loadingWords ? '…' : `${words.length} ${t('dict.entries')}`} · {t('dict.language')}</p>
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
-          >
-            {t('dict.addWord')}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowBulkModal(true)}
+              className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+            >
+              Import list
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+            >
+              {t('dict.addWord')}
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -1113,6 +1290,7 @@ export default function Dictionary() {
 
       {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} />}
       {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} />}
+      {showBulkModal && <BulkImportModal onClose={() => setShowBulkModal(false)} onImport={handleBulkImport} />}
     </div>
   )
 }
