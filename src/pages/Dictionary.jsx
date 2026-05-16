@@ -849,9 +849,41 @@ function WordPanel({ word, onClose, onUpdate, onDelete }) {
 }
 
 // ── Bulk import parser ────────────────────────────────────────────────────
+const PREPOSITIONS = ['auf','an','für','über','um','von','mit','nach','zu','bei','in','gegen','durch','aus','als']
+
 function parseBulkLine(line) {
   line = line.trim()
   if (!line) return null
+
+  // Skip section headers like "Dativ", "Akkusativ"
+  if (/^(Dativ|Akkusativ|Genitiv)$/i.test(line)) return null
+
+  // Verb + preposition formats:
+  // "achten (auf)" → "achten auf"
+  // "anmelden (sich) für" → "sich anmelden für"
+  // "abhängen von" (no parens)
+  const prepInParen = line.match(/^(\S+)\s+\((sich)\)\s+(\S+)$/)   // verb (sich) prep
+  const prepInParen2 = line.match(/^(\S+)\s+\((\S+)\)$/)            // verb (prep)
+  const verbPrepPlain = line.match(/^(\S+)\s+(auf|an|für|über|um|von|mit|nach|zu|bei|in|gegen|durch|aus|als)\s*$/)
+
+  if (prepInParen) {
+    const [, verb, , prep] = prepInParen
+    return { word: `sich ${verb} ${prep}`, form: null, pos: 'verb', entry_type: 'phrasal-verb', translation: '', status: 'new' }
+  }
+  if (prepInParen2 && PREPOSITIONS.includes(prepInParen2[2])) {
+    const [, verb, prep] = prepInParen2
+    return { word: `${verb} ${prep}`, form: null, pos: 'verb', entry_type: 'phrasal-verb', translation: '', status: 'new' }
+  }
+  if (verbPrepPlain) {
+    const [, verb, prep] = verbPrepPlain
+    return { word: `${verb} ${prep}`, form: null, pos: 'verb', entry_type: 'phrasal-verb', translation: '', status: 'new' }
+  }
+  // Multi-word verb + preposition: "einverstanden sein mit", "fertig sein mit", "beteiligt sein an"
+  const multiWordPrep = line.match(new RegExp(`^(.+?)\\s+(${PREPOSITIONS.join('|')})$`))
+  if (multiWordPrep && !line.includes('(')) {
+    const [, verb, prep] = multiWordPrep
+    return { word: `${verb} ${prep}`, form: null, pos: 'verb', entry_type: 'phrasal-verb', translation: '', status: 'new' }
+  }
 
   // Noun: starts with der/die/das
   if (/^(der|die|das)\s/i.test(line)) {
