@@ -290,8 +290,6 @@ export default function Flashcards() {
                 {card.grammarNote}
               </div>
 
-              {/* Explanation */}
-              <p className="text-sm text-gray-500 leading-relaxed">{card.explanation}</p>
             </div>
           </div>
         </div>
