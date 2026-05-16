@@ -580,14 +580,40 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage }) {
 }
 
 // ── Word Panel ────────────────────────────────────────────────────────────
-function WordPanel({ word, onClose, onUpdate, onDelete }) {
+function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage }) {
   const { t } = useLanguage()
-  const [editing, setEditing]       = useState(false)
-  const [draft, setDraft]           = useState(word)
+  const [editing, setEditing]             = useState(false)
+  const [draft, setDraft]                 = useState(word)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [identifying, setIdentifying]     = useState(false)
+  const [identifyError, setIdentifyError] = useState(null)
 
   const pos        = POS_STYLES[word.pos] || POS_STYLES.preposition
   const entryBadge = ENTRY_TYPE_STYLES[word.entryType]
+
+  async function handleIdentify() {
+    setIdentifying(true)
+    setIdentifyError(null)
+    try {
+      const result = await identifyWordAI(word.word, 'German', interfaceLanguage || 'English')
+      const updated = {
+        ...word,
+        translation:  result.translation  || word.translation,
+        explanation:  result.explanation  || word.explanation,
+        grammarNote:  result.grammarNote  || word.grammarNote,
+        form:         result.form         || word.form,
+        pos:          result.pos          || word.pos,
+        isException:  result.isException  ?? word.isException,
+        conjugation:  result.conjugation  || word.conjugation,
+        examples:     result.examples?.map(ex => ({ de: ex.de, en: ex.en, tense: ex.tense })) || word.examples,
+      }
+      onUpdate(updated)
+    } catch (e) {
+      setIdentifyError('AI identification failed. Try again.')
+    } finally {
+      setIdentifying(false)
+    }
+  }
 
   function startEdit() {
     setDraft(word)   // reset draft to latest saved state
@@ -723,6 +749,22 @@ function WordPanel({ word, onClose, onUpdate, onDelete }) {
                 </div>
               </div>
             )}
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleIdentify}
+                disabled={identifying}
+                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+              >
+                {identifying ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    Identifying…
+                  </>
+                ) : '✨ Identify with AI'}
+              </button>
+              {identifyError && <p className="text-xs text-red-500 text-center">{identifyError}</p>}
+            </div>
 
             <div className="flex gap-2 pt-1">
               <button className="flex-1 py-2.5 rounded-xl border border-indigo-200 text-indigo-600 text-sm font-medium hover:bg-indigo-50 transition-colors">
@@ -1090,7 +1132,7 @@ export default function Dictionary() {
   const filtered = words
     .filter((w) => {
       const matchSearch  = w.word.toLowerCase().includes(search.toLowerCase()) ||
-                           w.translation.toLowerCase().includes(search.toLowerCase())
+                           (w.translation || '').toLowerCase().includes(search.toLowerCase())
       const matchStatus  = filterStatus === 'all' || w.status === filterStatus
       const matchType    = filterType   === 'all' || w.entryType === filterType
       return matchSearch && matchStatus && matchType
@@ -1140,6 +1182,7 @@ export default function Dictionary() {
     }
 
     // Reload to get fresh data with examples
+    setSelectedWord(updated)
     fetchWords()
   }
 
@@ -1160,12 +1203,28 @@ export default function Dictionary() {
         status: updated.status,
         grammar_note: updated.grammarNote,
         explanation: updated.explanation,
+        form: updated.form || null,
+        pos: updated.pos || null,
+        is_exception: updated.isException ?? false,
+        conjugation: updated.conjugation || null,
       })
       .eq('id', updated.id)
       .eq('user_id', user.id)
 
-    setWords((prev) => prev.map((w) => (w.id === updated.id ? updated : w)))
-    setSelectedWord(updated)
+    // Upsert examples if provided
+    if (updated.examples?.length) {
+      await supabase.from('examples').delete().eq('word_id', updated.id)
+      await supabase.from('examples').insert(
+        updated.examples.map((ex) => ({
+          word_id: updated.id,
+          sentence_target: ex.de,
+          sentence_translation: ex.en,
+          tense: ex.tense || null,
+        }))
+      )
+    }
+
+    fetchWords()
   }
 
   async function handleBulkImport(entries) {
@@ -1320,7 +1379,7 @@ export default function Dictionary() {
         </div>
       </main>
 
-      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} />}
+      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} />}
       {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} />}
       {showBulkModal && <BulkImportModal onClose={() => setShowBulkModal(false)} onImport={handleBulkImport} />}
     </div>
