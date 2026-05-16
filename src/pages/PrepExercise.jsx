@@ -492,6 +492,29 @@ export default function PrepExercise() {
                       </button>
                     )
                   })}
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <p className="text-xs text-gray-400 mb-2">
+                      {lang === 'uk' ? 'Хочете більше практики?' : 'Want a deeper workout?'}
+                    </p>
+                    <button
+                      onClick={() => navigate('/prep-session', { state: { mode: 'suggested' } })}
+                      disabled={prepVerbs.length < 3}
+                      className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <span className="text-2xl">🎯</span>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-indigo-800">
+                          {lang === 'uk' ? 'Глибока практика' : 'Deep practice'}
+                        </p>
+                        <p className="text-xs text-indigo-500 mt-0.5">
+                          {lang === 'uk'
+                            ? 'Флеш-картки → банк слів → вправа з відмінками'
+                            : 'Flashcards → word bank → case exercise — all in one session'}
+                        </p>
+                      </div>
+                      <span className="text-indigo-300 text-lg">›</span>
+                    </button>
+                  </div>
                 </div>
               )
             })()}

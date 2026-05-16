@@ -12,6 +12,7 @@ import MultipleChoice from './pages/MultipleChoice'
 import WordChoice from './pages/WordChoice'
 import Chat from './pages/Chat'
 import PrepExercise from './pages/PrepExercise'
+import PrepSession from './pages/PrepSession'
 
 // Wraps pages that require login
 function Protected({ children }) {
@@ -46,6 +47,7 @@ function App() {
           <Route path="/word-choice" element={<Protected><WordChoice /></Protected>} />
           <Route path="/chat"        element={<Protected><Chat /></Protected>} />
           <Route path="/prepositions" element={<Protected><PrepExercise /></Protected>} />
+          <Route path="/prep-session" element={<Protected><PrepSession /></Protected>} />
           <Route path="*"            element={<Navigate to="/" />} />
         </Routes>
       </AuthProvider>

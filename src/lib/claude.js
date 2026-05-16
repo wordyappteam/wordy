@@ -137,6 +137,52 @@ Rules:
   return JSON.parse(match[0])
 }
 
+// ── Word bank exercises (Phase 2 of deep prep session) ────────────────────
+export async function generateWordBankExercises(verbs, interfaceLanguage = 'English') {
+  const verbList = verbs.map((v, i) => `${i + 1}. ${v.word} (${v.translation})`).join('\n')
+
+  const system = `You are a German grammar teacher creating exercises.
+Return ONLY valid JSON — no markdown, no code blocks.`
+
+  const prompt = `Create fill-in-the-blank sentences for these German verbs with fixed prepositions:
+${verbList}
+
+For each verb create ONE sentence with exactly TWO blanks marked ___:
+- First blank: the correctly conjugated verb form
+- Second blank: the correct preposition
+
+Return a JSON array, one object per verb (same order as the list):
+[
+  {
+    "verbBase": "sich erinnern an",
+    "sentence": "Ich ___ mich ___ unseren ersten Schultag.",
+    "verbAnswer": "erinnere",
+    "prepAnswer": "an"
+  }
+]
+
+Rules:
+- First blank is ALWAYS the conjugated verb, second blank is ALWAYS the preposition
+- Vary subjects: ich, du, er/sie, wir, ihr — don't repeat the same subject
+- Keep sentences short and natural (6–10 words)
+- For separable verbs (eingehen, einsetzen, anrufen, aufhören, etc.): the separable prefix stays as plain text at the END of the sentence — only the verb stem goes in the blank. Example: "eingehen auf" → "Der Lehrer ___ ausführlich ___ die Frage ein." with verbAnswer "geht"
+- The two blanks must appear in order: verb blank first, preposition blank second — always
+- Generate exactly one sentence per verb, in the same order as the input list`
+
+  const text = await callClaude({
+    system,
+    messages: [{ role: 'user', content: prompt }],
+    model: 'claude-haiku-4-5',
+    maxTokens: 2048,
+  })
+
+  console.log('generateWordBankExercises raw response:', text)
+  const clean = text.replace(/```json|```/g, '').trim()
+  const match = clean.match(/\[[\s\S]*\]/)
+  if (!match) throw new Error('No JSON array found in response')
+  return JSON.parse(match[0])
+}
+
 // ── Chat tutor ─────────────────────────────────────────────────────────────
 export async function chatWithTutor(messages, targetLanguage = 'German', interfaceLanguage = 'English') {
   const system = `You are a friendly, knowledgeable ${targetLanguage} language tutor.
