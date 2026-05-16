@@ -119,6 +119,7 @@ Rules:
 - "nominativeNoun" is the full noun with its nominative article, e.g. "der Zug", "die Frau", "das Kind"
 - explanation must be in ${interfaceLanguage} — explain which case the preposition governs and how the article changed
 - Vary the cases across exercises (some Akkusativ, some Dativ) for good practice
+- IMPORTANT — separable verbs: if the verb has a separable prefix (e.g. "eingehen", "anrufen", "aufhören"), the prefix MUST appear at the END of the sentence in your example. e.g. for "eingehen auf": "Der Professor geht ___ ___ Fragen der Studenten ein." not "Der Professor geht ___ ___ Fragen."
 - Generate exactly 5 exercises, no more`
 
   const text = await callClaude({
