@@ -135,28 +135,30 @@ function SentenceWithBlanks({ sentence, answers, onChange, submitted, exercise, 
   }
 
   return (
-    <p className="text-base text-gray-800 flex flex-wrap items-end gap-1 leading-loose">
-      <span>{parts[0]}</span>
-      <input
-        value={answers.prep ?? ''}
-        onChange={(e) => onChange(index, 'prep', e.target.value)}
-        disabled={submitted}
-        className={`${inputCls(prepCorrect)} w-14`}
-        placeholder="prep."
-      />
-      <span>{parts[1] ?? ' '}</span>
-      <input
-        value={answers.article ?? ''}
-        onChange={(e) => onChange(index, 'article', e.target.value)}
-        disabled={submitted}
-        className={`${inputCls(articleCorrect)} w-16`}
-        placeholder="art."
-      />
-      <span>{parts[2] ?? ''}</span>
+    <div>
+      <p className="text-base text-gray-800 flex flex-wrap items-end gap-1 leading-loose">
+        <span>{parts[0]}</span>
+        <input
+          value={answers.prep ?? ''}
+          onChange={(e) => onChange(index, 'prep', e.target.value)}
+          disabled={submitted}
+          className={`${inputCls(prepCorrect)} w-14`}
+          placeholder="prep."
+        />
+        <span>{parts[1] ?? ' '}</span>
+        <input
+          value={answers.article ?? ''}
+          onChange={(e) => onChange(index, 'article', e.target.value)}
+          disabled={submitted}
+          className={`${inputCls(articleCorrect)} w-16`}
+          placeholder="art."
+        />
+        <span>{parts[2] ?? ''}</span>
+      </p>
       {settings.genderHints && !submitted && exercise.nominativeNoun && (
-        <span className="text-xs text-violet-400 italic ml-1">({exercise.nominativeNoun})</span>
+        <p className="text-xs text-violet-400 italic mt-1">({exercise.nominativeNoun})</p>
       )}
-    </p>
+    </div>
   )
 }
 
