@@ -22,12 +22,32 @@ function cleanForm(form, baseWord) {
   return form.replace(/^(der|die|das)\s+/i, '').trim()
 }
 
-// Extract "+A" / "+D" from grammarNote for verbs with prepositions
+// Determine case badge for prep verbs
+// Priority: fixed-case prepositions → grammarNote → default Akk for common two-way preps
+const PREP_ALWAYS_AKK = new Set(['für','gegen','ohne','um','durch','bis'])
+const PREP_ALWAYS_DAT = new Set(['mit','von','nach','bei','zu','aus','seit','ab'])
+const PREP_DEFAULT_AKK = new Set(['auf','über','an','in']) // two-way but Akk in most verb phrases
+
 function extractCaseBadge(w) {
   if (w.pos !== 'verb') return null
+  const tokens = w.word.toLowerCase().split(/\s+/)
+  const AKK = { label: '+A', cls: 'bg-blue-50 text-blue-500 border-blue-100' }
+  const DAT = { label: '+D', cls: 'bg-amber-50 text-amber-600 border-amber-100' }
+
+  for (const t of tokens) {
+    if (PREP_ALWAYS_AKK.has(t)) return AKK
+    if (PREP_ALWAYS_DAT.has(t)) return DAT
+  }
+
+  // Two-way prepositions: trust grammarNote if available, else default to Akk
   const note = (w.grammarNote || '').toLowerCase()
-  if (note.includes('akkusativ')) return { label: '+A', cls: 'bg-blue-50 text-blue-500 border-blue-100' }
-  if (note.includes('dativ'))     return { label: '+D', cls: 'bg-amber-50 text-amber-600 border-amber-100' }
+  const hasTwoWay = tokens.some(t => PREP_DEFAULT_AKK.has(t))
+  if (hasTwoWay) {
+    if (note.includes('dativ'))     return DAT
+    if (note.includes('akkusativ')) return AKK
+    return AKK // safe default — most verb phrases with auf/über/an/in take Akk
+  }
+
   return null
 }
 
