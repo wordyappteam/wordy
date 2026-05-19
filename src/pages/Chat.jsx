@@ -827,7 +827,7 @@ export default function Chat() {
         <div className="flex items-center gap-6 text-sm font-medium text-gray-500">
           <button onClick={() => navigate('/dashboard')} className="hover:text-gray-900 transition-colors">{t('nav.dashboard')}</button>
           <button onClick={() => navigate('/dictionary')} className="hover:text-gray-900 transition-colors">{t('nav.dictionary')}</button>
-          <button onClick={() => navigate('/dashboard')} className="hover:text-gray-900 transition-colors">{t('nav.exercises')}</button>
+          <button onClick={() => navigate('/exercises')} className="hover:text-gray-900 transition-colors">{t('nav.exercises')}</button>
           <button className="text-indigo-600">{t('nav.chat')}</button>
         </div>
         <div className="flex items-center gap-3">
