@@ -37,7 +37,7 @@ export default function Dashboard() {
     if (!user) return
     supabase
       .from('words')
-      .select('id, word, translation, status, date_added, pos')
+      .select('id, word, translation, status, date_added, pos, next_review_date')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
@@ -68,6 +68,12 @@ export default function Dashboard() {
   ).length
 
   const recentWords = words.slice(0, 6)
+
+  // ── Today's plan ───────────────────────────────────────────────────────────
+  const todayStr  = new Date().toISOString().split('T')[0]
+  const dueToday  = words.filter(w => w.next_review_date && w.next_review_date <= todayStr && w.status !== 'new').length
+  const newToday  = Math.min(byStatus.new, 10)
+  const sessionSize = dueToday + newToday
 
   // ── User display name ──────────────────────────────────────────────────────
   const displayName = profile?.full_name?.split(' ')[0]
@@ -303,6 +309,27 @@ export default function Dashboard() {
 
           {/* Right (1 col) — stat cards + recent words */}
           <div className="flex flex-col gap-4">
+
+            {/* Today's plan */}
+            {!loading && sessionSize > 0 && (
+              <div className="bg-indigo-600 rounded-2xl p-5 text-white">
+                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-200 mb-2">
+                  {lang === 'uk' ? 'План на сьогодні' : "Today's plan"}
+                </div>
+                <div className="text-2xl font-bold mb-0.5">{sessionSize} {lang === 'uk' ? 'слів' : 'words'}</div>
+                <div className="text-xs text-indigo-200 mb-4">
+                  {dueToday > 0 && `${dueToday} ${lang === 'uk' ? 'до повторення' : 'to review'}`}
+                  {dueToday > 0 && newToday > 0 && ' · '}
+                  {newToday > 0 && `${newToday} ${lang === 'uk' ? 'нових' : 'new'}`}
+                </div>
+                <button
+                  onClick={() => navigate('/flashcards')}
+                  className="w-full bg-white text-indigo-600 text-sm font-semibold py-2 rounded-xl hover:bg-indigo-50 transition-colors"
+                >
+                  {lang === 'uk' ? 'Почати сесію →' : 'Start session →'}
+                </button>
+              </div>
+            )}
 
             {/* Stat cards */}
             {[

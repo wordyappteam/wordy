@@ -27,6 +27,46 @@ function speak(text, lang = 'de-DE') {
   window.speechSynthesis.speak(u)
 }
 
+// ── Spaced repetition helpers ──────────────────────────────────────────────
+
+function addDays(n) {
+  const d = new Date()
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
+
+function computeReview(interval, result) {
+  const i = interval ?? 1
+  switch (result) {
+    case 'difficult':
+    case 'practice':
+      return { next_review_date: addDays(1), review_interval: 1 }
+    case 'almost':
+      return { next_review_date: addDays(Math.max(1, i)), review_interval: Math.max(1, i) }
+    case 'easy': {
+      const next = Math.min(i <= 1 ? 2 : Math.round(i * 2), 30)
+      return { next_review_date: addDays(next), review_interval: next }
+    }
+    default:
+      return { next_review_date: addDays(1), review_interval: 1 }
+  }
+}
+
+function computeStatus(status, result, newInterval) {
+  if (result === 'easy') {
+    if (newInterval >= 21) return 'mastered'
+    if (newInterval >= 7)  return 'known'
+    if (status === 'new')  return 'learning'
+  }
+  if (result === 'difficult') {
+    if (status === 'mastered') return 'known'
+    if (status === 'known')    return 'learning'
+  }
+  return status
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
+
 export default function Flashcards() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -34,44 +74,69 @@ export default function Flashcards() {
 
   const [phase, setPhase]       = useState('picker')   // 'picker' | 'session' | 'done'
   const [cards, setCards]       = useState([])
-  const [counts, setCounts]     = useState({ new: 0, learning: 0, known: 0, mastered: 0 })
+  const [counts, setCounts]     = useState({ new: 0, learning: 0, known: 0, mastered: 0, due: 0 })
   const [loading, setLoading]   = useState(false)
   const [index, setIndex]       = useState(0)
   const [flipped, setFlipped]   = useState(false)
   const [results, setResults]   = useState([])
   const [speaking, setSpeaking] = useState(false)
 
-  // Load status counts on mount
+  // Load status counts + today's due count on mount
   useEffect(() => {
     if (!user) return
-    supabase
-      .from('words')
-      .select('status')
-      .eq('user_id', user.id)
-      .then(({ data }) => {
-        if (!data) return
-        const c = { new: 0, learning: 0, known: 0, mastered: 0 }
-        data.forEach((w) => { if (c[w.status] !== undefined) c[w.status]++ })
-        setCounts(c)
-      })
+    const today = new Date().toISOString().split('T')[0]
+
+    Promise.all([
+      supabase.from('words').select('status').eq('user_id', user.id),
+      supabase.from('words').select('id').eq('user_id', user.id)
+        .lte('next_review_date', today).neq('status', 'new'),
+    ]).then(([{ data: statusData }, { data: dueData }]) => {
+      if (!statusData) return
+      const c = { new: 0, learning: 0, known: 0, mastered: 0 }
+      statusData.forEach((w) => { if (c[w.status] !== undefined) c[w.status]++ })
+      setCounts({ ...c, due: dueData?.length ?? 0 })
+    })
   }, [user])
 
   const loadCards = async (mode) => {
     setLoading(true)
+    const today = new Date().toISOString().split('T')[0]
 
-    let query = supabase
-      .from('words')
-      .select('id, word, form, pos, translation, grammar_note, is_exception, status')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+    let wordData = []
 
-    if (mode === 'new')      query = query.eq('status', 'new')
-    else if (mode === 'learning') query = query.eq('status', 'learning')
-    else if (mode === 'review')   query = query.in('status', ['known', 'mastered'])
-    // 'all' — no filter
+    if (mode === 'today') {
+      const [{ data: dueWords }, { data: newWords }] = await Promise.all([
+        supabase
+          .from('words')
+          .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
+          .eq('user_id', user.id)
+          .lte('next_review_date', today)
+          .neq('status', 'new'),
+        supabase
+          .from('words')
+          .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
+          .eq('user_id', user.id)
+          .eq('status', 'new')
+          .limit(10),
+      ])
+      wordData = [...(dueWords ?? []), ...(newWords ?? [])]
+    } else {
+      let query = supabase
+        .from('words')
+        .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
 
-    const { data: wordData } = await query
-    if (!wordData || wordData.length === 0) {
+      if (mode === 'new')           query = query.eq('status', 'new')
+      else if (mode === 'learning') query = query.eq('status', 'learning')
+      else if (mode === 'review')   query = query.in('status', ['known', 'mastered'])
+      // 'all' — no filter
+
+      const { data } = await query
+      wordData = data ?? []
+    }
+
+    if (wordData.length === 0) {
       setCards([])
       setLoading(false)
       setPhase('session')
@@ -95,14 +160,16 @@ export default function Flashcards() {
     const mapped = wordData
       .filter((w) => w.translation && w.translation.trim() !== '')
       .map((w) => ({
-        id: w.id,
-        word: w.word,
-        form: w.form,
-        pos: w.pos || 'noun',
-        translation: w.translation,
-        grammarNote: w.grammar_note,
-        isException: w.is_exception,
-        example: exampleMap[w.id]?.sentence_target ?? null,
+        id:                 w.id,
+        word:               w.word,
+        form:               w.form,
+        pos:                w.pos || 'noun',
+        translation:        w.translation,
+        grammarNote:        w.grammar_note,
+        isException:        w.is_exception,
+        status:             w.status,
+        reviewInterval:     w.review_interval ?? 1,
+        example:            exampleMap[w.id]?.sentence_target ?? null,
         exampleTranslation: exampleMap[w.id]?.sentence_translation ?? null,
       }))
 
@@ -123,10 +190,18 @@ export default function Flashcards() {
     setTimeout(() => setSpeaking(false), 1500)
   }
 
-  const handleResult = (result) => {
+  const handleResult = async (result) => {
     const card = cards[index]
     const next = [...results, { id: card.id, result }]
     setResults(next)
+
+    // Compute and save spaced rep
+    const { next_review_date, review_interval } = computeReview(card.reviewInterval, result)
+    const newStatus = computeStatus(card.status, result, review_interval)
+    const updates = { next_review_date, review_interval }
+    if (newStatus !== card.status) updates.status = newStatus
+    supabase.from('words').update(updates).eq('id', card.id).then()
+
     if (index + 1 >= cards.length) {
       setPhase('done')
     } else {
@@ -144,15 +219,29 @@ export default function Flashcards() {
 
   // ── Session picker ─────────────────────────────────────────────────────────
   if (phase === 'picker') {
-    const total = counts.new + counts.learning + counts.known + counts.mastered
+    const total    = counts.new + counts.learning + counts.known + counts.mastered
+    const newToday = Math.min(counts.new, 10)
+    const todayTotal = counts.due + newToday
+
     const modes = [
+      ...(todayTotal > 0 ? [{
+        id: 'today',
+        label:   lang === 'uk' ? 'План на сьогодні' : "Today's plan",
+        count:   todayTotal,
+        color:   'bg-indigo-50 border-indigo-300',
+        dot:     'bg-indigo-500',
+        desc:    lang === 'uk'
+          ? `${counts.due} до повторення · ${newToday} нових`
+          : `${counts.due} due for review · ${newToday} new`,
+        highlight: true,
+      }] : []),
       {
         id: 'new',
         label:   lang === 'uk' ? 'Нові'       : 'New',
         count:   counts.new,
         color:   'bg-gray-50 border-gray-200',
         dot:     'bg-gray-400',
-        desc:    lang === 'uk' ? 'Слова, які ви ще не вивчали' : 'Words you haven\'t studied yet',
+        desc:    lang === 'uk' ? 'Слова, які ви ще не вивчали' : "Words you haven't studied yet",
       },
       {
         id: 'learning',
@@ -174,8 +263,8 @@ export default function Flashcards() {
         id: 'all',
         label:   lang === 'uk' ? 'Всі слова'  : 'All words',
         count:   total,
-        color:   'bg-indigo-50 border-indigo-200',
-        dot:     'bg-indigo-400',
+        color:   'bg-purple-50 border-purple-200',
+        dot:     'bg-purple-400',
         desc:    lang === 'uk' ? 'Повний словник' : 'Your full dictionary',
       },
     ]
@@ -204,12 +293,19 @@ export default function Flashcards() {
                   key={m.id}
                   onClick={() => loadCards(m.id)}
                   disabled={m.count === 0 || loading}
-                  className={`flex items-center justify-between px-5 py-4 rounded-2xl border text-left transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed ${m.color}`}
+                  className={`flex items-center justify-between px-5 py-4 rounded-2xl border-2 text-left transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed ${m.color} ${m.highlight ? 'shadow-md shadow-indigo-100' : ''}`}
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${m.dot}`} />
                     <div>
-                      <div className="font-semibold text-gray-900 text-sm">{m.label}</div>
+                      <div className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+                        {m.label}
+                        {m.highlight && (
+                          <span className="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-full font-medium">
+                            {lang === 'uk' ? 'рекомендовано' : 'recommended'}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-gray-400 mt-0.5">{m.desc}</div>
                     </div>
                   </div>
@@ -248,7 +344,11 @@ export default function Flashcards() {
         </nav>
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <p className="text-gray-400 mb-4">
+            <div className="text-4xl mb-4">✅</div>
+            <p className="text-gray-700 font-semibold mb-1">
+              {lang === 'uk' ? 'Все повторено на сьогодні!' : "You're all caught up!"}
+            </p>
+            <p className="text-gray-400 text-sm mb-4">
               {lang === 'uk' ? 'Немає слів у цій категорії.' : 'No words in this category.'}
             </p>
             <button onClick={restart} className="text-indigo-600 text-sm font-semibold hover:underline">
@@ -447,7 +547,6 @@ export default function Flashcards() {
 
         {/* Result buttons — only after flip */}
         <div className={`mt-8 w-full max-w-lg flex flex-col gap-2 transition-all duration-300 ${flipped ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}>
-          {/* Three rating buttons */}
           <div className="flex gap-2">
             <button
               onClick={() => handleResult('difficult')}
@@ -469,7 +568,6 @@ export default function Flashcards() {
             </button>
           </div>
 
-          {/* Add to next session */}
           <button
             onClick={() => handleResult('practice')}
             className="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-600 border border-indigo-100 rounded-2xl text-sm font-medium transition-all"
