@@ -163,8 +163,37 @@ export default function Dashboard() {
           {/* Left col — exercises + breakdown */}
           <div className="col-span-2 flex flex-col gap-6">
 
-            {/* Exercises */}
+            {/* Exercises + breakdown */}
             <div id="exercises" className="bg-white rounded-2xl border border-gray-100 p-6">
+
+              {/* Word breakdown — sits above exercises when there are words */}
+              {!loading && total > 0 && (
+                <div className="mb-5 pb-5 border-b border-gray-100">
+                  <h2 className="text-base font-semibold text-gray-900 mb-3">{lbl.breakdown}</h2>
+                  <div className="flex h-2.5 rounded-full overflow-hidden mb-3 gap-0.5">
+                    {(['new','learning','known','mastered']).map((s) =>
+                      byStatus[s] > 0 ? (
+                        <div
+                          key={s}
+                          className={`${STATUS_BAR_COLORS[s]} transition-all`}
+                          style={{ width: `${(byStatus[s] / total) * 100}%` }}
+                        />
+                      ) : null
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    {(['new','learning','known','mastered']).map((s) => (
+                      <div key={s} className="flex items-center gap-2">
+                        <div className={`w-2.5 h-2.5 rounded-full ${STATUS_BAR_COLORS[s]}`} />
+                        <span className="text-xs text-gray-600">
+                          <span className="font-semibold">{byStatus[s]}</span> {statusLabel[s]}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <h2 className="text-base font-semibold text-gray-900 mb-4">{lbl.session}</h2>
               <div className="grid grid-cols-2 gap-3">
                 {exercises.map((ex) => (
@@ -187,38 +216,6 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
-
-            {/* Word breakdown */}
-            {!loading && total > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 p-6">
-                <h2 className="text-base font-semibold text-gray-900 mb-4">{lbl.breakdown}</h2>
-
-                {/* Stacked bar */}
-                <div className="flex h-2.5 rounded-full overflow-hidden mb-4 gap-0.5">
-                  {(['new','learning','known','mastered']).map((s) =>
-                    byStatus[s] > 0 ? (
-                      <div
-                        key={s}
-                        className={`${STATUS_BAR_COLORS[s]} transition-all`}
-                        style={{ width: `${(byStatus[s] / total) * 100}%` }}
-                      />
-                    ) : null
-                  )}
-                </div>
-
-                {/* Legend */}
-                <div className="flex flex-wrap gap-4">
-                  {(['new','learning','known','mastered']).map((s) => (
-                    <div key={s} className="flex items-center gap-2">
-                      <div className={`w-2.5 h-2.5 rounded-full ${STATUS_BAR_COLORS[s]}`} />
-                      <span className="text-xs text-gray-600">
-                        <span className="font-semibold">{byStatus[s]}</span> {statusLabel[s]}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Right col — recent words */}
