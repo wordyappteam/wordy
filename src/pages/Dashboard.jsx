@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -20,11 +20,14 @@ const STATUS_BAR_COLORS = {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { user, profile } = useAuth()
+  const { user, profile, updateProfile } = useAuth()
   const { t, lang, switchLang } = useLanguage()
 
-  const [words,   setWords]   = useState([])
-  const [loading, setLoading] = useState(true)
+  const [words,      setWords]      = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [editingName, setEditingName] = useState(false)
+  const [nameInput,   setNameInput]   = useState('')
+  const nameRef = useRef(null)
 
   useEffect(() => {
     if (!user) return
@@ -66,6 +69,18 @@ export default function Dashboard() {
   const displayName = profile?.full_name?.split(' ')[0]
     ?? user?.email?.split('@')[0]
     ?? 'there'
+
+  function startEditName() {
+    setNameInput(profile?.full_name ?? '')
+    setEditingName(true)
+    setTimeout(() => nameRef.current?.focus(), 50)
+  }
+
+  async function saveName() {
+    const trimmed = nameInput.trim()
+    if (trimmed) await updateProfile({ full_name: trimmed })
+    setEditingName(false)
+  }
 
   // ── Hour-based greeting ────────────────────────────────────────────────────
   const hour = new Date().getHours()
@@ -130,31 +145,51 @@ export default function Dashboard() {
       </nav>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* Greeting */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">{greeting}, {displayName} 👋</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {loading ? '…' : total === 0
-              ? lbl.emptyDict
-              : lang === 'uk'
-                ? `${total} слів у словнику · ${activeWords} в роботі`
-                : `${total} words in your dictionary · ${activeWords} in progress`
-            }
-          </p>
-        </div>
+        {/* Greeting + stats on one line */}
+        <div className="flex items-center justify-between gap-6 mb-8">
+          {/* Greeting */}
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+              {greeting},{' '}
+              {editingName ? (
+                <input
+                  ref={nameRef}
+                  value={nameInput}
+                  onChange={e => setNameInput(e.target.value)}
+                  onBlur={saveName}
+                  onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }}
+                  className="text-2xl font-bold text-gray-900 bg-transparent border-b-2 border-indigo-400 outline-none w-36"
+                />
+              ) : (
+                <button onClick={startEditName} className="hover:text-indigo-600 transition-colors" title="Click to edit name">
+                  {displayName}
+                </button>
+              )}
+              👋
+            </h1>
+            <p className="text-gray-500 text-sm mt-1">
+              {loading ? '…' : total === 0
+                ? lbl.emptyDict
+                : lang === 'uk'
+                  ? `${total} слів у словнику · ${activeWords} в роботі`
+                  : `${total} words in your dictionary · ${activeWords} in progress`
+              }
+            </p>
+          </div>
 
-        {/* Stats row */}
-        <div className="grid grid-cols-2 gap-4 mb-8">
-          {[
-            { label: lbl.totalWords, value: loading ? '…' : total,         sub: lang === 'uk' ? 'German' : 'German' },
-            { label: lbl.thisWeek,   value: loading ? '…' : addedThisWeek, sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days' },
-          ].map((stat) => (
-            <div key={stat.label} className="bg-white rounded-2xl border border-gray-100 p-5">
-              <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
-              <div className="text-sm font-medium text-gray-700 mt-0.5">{stat.label}</div>
-              <div className="text-xs text-gray-400 mt-0.5">{stat.sub}</div>
-            </div>
-          ))}
+          {/* Stat cards */}
+          <div className="flex gap-3 shrink-0">
+            {[
+              { label: lbl.totalWords, value: loading ? '…' : total,         sub: lang === 'uk' ? 'German' : 'German' },
+              { label: lbl.thisWeek,   value: loading ? '…' : addedThisWeek, sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days' },
+            ].map((stat) => (
+              <div key={stat.label} className="bg-white rounded-2xl border border-gray-100 px-5 py-4 min-w-[120px]">
+                <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
+                <div className="text-xs font-medium text-gray-700 mt-0.5">{stat.label}</div>
+                <div className="text-xs text-gray-400">{stat.sub}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-6">
