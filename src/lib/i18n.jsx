@@ -3,6 +3,19 @@ import { createContext, useContext, useState } from 'react'
 // ── Translations ──────────────────────────────────────────────────────────────
 const translations = {
   en: {
+    landing: {
+      login:       'Log in',
+      getStarted:  'Get started',
+      badge:       'AI-powered vocabulary learning',
+      headline1:   'Learn words that',
+      headlineAccent: 'actually stay',
+      headline2:   'with you',
+      sub:         'An intelligent app that adapts to how you learn. Build vocabulary in 10+ languages, 300+ words a month — and actually remember them.',
+      cta:         'Start learning for free',
+      howItWorks:  'See how it works →',
+      pills:       ['10+ languages', 'Adaptive exercises', 'Browser extension', 'Personal dictionary', 'Grammar chat', 'Spaced repetition'],
+      footer:      'Free for your first month · No credit card required',
+    },
     nav: {
       dashboard:  'Dashboard',
       dictionary: 'Dictionary',
@@ -105,6 +118,19 @@ const translations = {
   },
 
   uk: {
+    landing: {
+      login:          'Увійти',
+      getStarted:     'Почати',
+      badge:          'Навчання лексики за допомогою AI',
+      headline1:      'Вивчайте слова, які',
+      headlineAccent: 'справді залишаються',
+      headline2:      'з вами',
+      sub:            'Розумний застосунок, що адаптується до вашого стилю навчання. Будуйте словниковий запас у 10+ мовах, 300+ слів на місяць — і справді їх запамʼятовуйте.',
+      cta:            'Почати навчання безкоштовно',
+      howItWorks:     'Як це працює →',
+      pills:          ['10+ мов', 'Адаптивні вправи', 'Розширення браузера', 'Особистий словник', 'Граматичний чат', 'Інтервальне повторення'],
+      footer:         'Перший місяць безкоштовно · Без кредитної картки',
+    },
     nav: {
       dashboard:  'Головна',
       dictionary: 'Словник',
