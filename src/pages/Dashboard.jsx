@@ -166,14 +166,6 @@ export default function Dashboard() {
             )}
             👋
           </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {loading ? '…' : total === 0
-              ? lbl.emptyDict
-              : lang === 'uk'
-                ? `${total} слів у словнику · ${activeWords} в роботі`
-                : `${total} words in your dictionary · ${activeWords} in progress`
-            }
-          </p>
         </div>
 
         {/* Three-column layout */}
@@ -234,10 +226,14 @@ export default function Dashboard() {
 
             {/* Stat cards */}
             {[
-              { label: lbl.totalWords, value: loading ? '…' : total,         sub: lang === 'uk' ? 'German' : 'German' },
-              { label: lbl.thisWeek,   value: loading ? '…' : addedThisWeek, sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days' },
+              { label: lbl.totalWords, value: loading ? '…' : total,         sub: lang === 'uk' ? 'German' : 'German',            path: '/dictionary' },
+              { label: lbl.thisWeek,   value: loading ? '…' : addedThisWeek, sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days', path: null },
             ].map((stat) => (
-              <div key={stat.label} className="bg-white rounded-2xl border border-gray-100 p-5">
+              <div
+                key={stat.label}
+                onClick={() => stat.path && navigate(stat.path)}
+                className={`bg-white rounded-2xl border border-gray-100 p-5 ${stat.path ? 'cursor-pointer hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors' : ''}`}
+              >
                 <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
                 <div className="text-sm font-medium text-gray-700 mt-0.5">{stat.label}</div>
                 <div className="text-xs text-gray-400">{stat.sub}</div>
