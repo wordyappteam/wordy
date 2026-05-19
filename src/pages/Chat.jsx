@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { chatWithTutor } from '../lib/claude'
+import { chatWithTutor, generateSessionMemory } from '../lib/claude'
 import { useLanguage } from '../lib/i18n'
 import { useAuth } from '../lib/AuthContext'
+import { supabase } from '../lib/supabase'
 
 const GREETINGS = {
   en: `Hi! I'm your German grammar tutor. Ask me anything — grammar rules, tricky sentences, word usage, or anything you've encountered while learning.\n\nI can also help you add new words or phrases directly to your dictionary from our conversation.`,
@@ -646,11 +647,25 @@ export default function Chat() {
       },
     ]
   })
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [toast, setToast] = useState(null)
+  const [input, setInput]           = useState('')
+  const [loading, setLoading]       = useState(false)
+  const [toast, setToast]           = useState(null)
+  const [memory, setMemory]         = useState(null)   // { profile, last_session, updated_at }
+  const [memorySaving, setMemorySaving] = useState(false)
+  const [memorySaved, setMemorySaved]   = useState(false)
   const bottomRef = useRef(null)
-  const inputRef = useRef(null)
+  const inputRef  = useRef(null)
+
+  // Load learner memory on mount
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('learner_memory')
+      .select('profile, last_session, updated_at')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => { if (data) setMemory(data) })
+  }, [user])
 
   // Persist chat history to localStorage
   useEffect(() => {
@@ -678,6 +693,29 @@ export default function Chat() {
     localStorage.removeItem('wordy_chat_history')
   }
 
+  async function handleSaveSession() {
+    const realMessages = messages.filter((m) => m.role === 'user' || m.role === 'assistant')
+    if (realMessages.length < 2) return  // nothing to save
+    setMemorySaving(true)
+    try {
+      const result = await generateSessionMemory(realMessages, memory?.profile ?? null, interfaceLanguage)
+      await supabase
+        .from('learner_memory')
+        .upsert({
+          user_id: user.id,
+          profile: result.profile,
+          last_session: result.last_session,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' })
+      setMemory({ profile: result.profile, last_session: result.last_session, updated_at: new Date().toISOString() })
+      setMemorySaved(true)
+      setTimeout(() => setMemorySaved(false), 3000)
+    } catch (e) {
+      console.error('Failed to save memory:', e)
+    }
+    setMemorySaving(false)
+  }
+
   function updateMessage(id, updates) {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...updates } : m)))
   }
@@ -691,7 +729,11 @@ export default function Chat() {
     setInput('')
     setLoading(true)
 
-    chatWithTutor([...messages, { role: 'user', text: trimmed }], 'German', interfaceLanguage)
+    const memoryText = memory
+      ? `LEARNER PROFILE:\n${memory.profile || ''}\n\nLAST SESSION:\n${memory.last_session || ''}`
+      : null
+
+    chatWithTutor([...messages, { role: 'user', text: trimmed }], 'German', interfaceLanguage, memoryText)
       .then((responseText) => {
         setMessages((prev) => [
           ...prev,
@@ -771,7 +813,6 @@ export default function Chat() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Nav */}
       <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between flex-shrink-0">
-        <div className="text-xl font-bold text-indigo-600">wordy</div>
         <div className="flex items-center gap-6 text-sm font-medium text-gray-500">
           <button onClick={() => navigate('/dashboard')} className="hover:text-gray-900 transition-colors">{t('nav.dashboard')}</button>
           <button onClick={() => navigate('/dictionary')} className="hover:text-gray-900 transition-colors">{t('nav.dictionary')}</button>
@@ -779,6 +820,17 @@ export default function Chat() {
           <button className="text-indigo-600">{t('nav.chat')}</button>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleSaveSession}
+            disabled={memorySaving || messages.filter(m => m.role === 'user').length === 0}
+            className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              memorySaved
+                ? 'bg-green-50 text-green-700 border-green-200'
+                : 'text-gray-500 hover:text-gray-800 border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            {memorySaving ? 'Saving…' : memorySaved ? '✓ Saved' : '💾 Save'}
+          </button>
           <button
             onClick={handleNewChat}
             className="text-xs font-medium text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 px-3 py-1.5 rounded-lg transition-colors"
@@ -807,6 +859,22 @@ export default function Chat() {
             </div>
             <div className="text-xs text-gray-500 leading-relaxed">{t('chat.focusHint')}</div>
           </div>
+
+          {memory && (
+            <div className="bg-indigo-50 rounded-2xl border border-indigo-100 p-4">
+              <div className="text-xs font-semibold text-indigo-400 uppercase tracking-wide mb-2">
+                {lang === 'uk' ? 'Пам\'ять увімкнена' : 'Memory active'}
+              </div>
+              {memory.last_session && (
+                <p className="text-xs text-indigo-700 leading-relaxed line-clamp-3">{memory.last_session}</p>
+              )}
+              {memory.updated_at && (
+                <p className="text-xs text-indigo-300 mt-1.5">
+                  {lang === 'uk' ? 'Оновлено' : 'Updated'} {new Date(memory.updated_at).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">{t('chat.tryAsking')}</div>

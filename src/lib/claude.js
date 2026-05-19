@@ -185,14 +185,18 @@ Rules:
 }
 
 // ── Chat tutor ─────────────────────────────────────────────────────────────
-export async function chatWithTutor(messages, targetLanguage = 'German', interfaceLanguage = 'English') {
+export async function chatWithTutor(messages, targetLanguage = 'German', interfaceLanguage = 'English', memory = null) {
+  const memorySection = memory
+    ? `\n\nLEARNER MEMORY (from previous sessions):\n${memory}\n\nUse this context to personalise your responses — reference their known struggles, build on topics they've already studied, adjust your explanations to their level.`
+    : ''
+
   const system = `You are a friendly, knowledgeable ${targetLanguage} language tutor.
 Always respond in ${interfaceLanguage}.
 When explaining grammar, use examples in ${targetLanguage} with ${interfaceLanguage} translations.
 Format responses clearly: use **bold** for key terms, *italics* for ${targetLanguage} words and examples.
 Use tables (markdown pipe format) when comparing forms or cases.
 Keep responses thorough but focused — no unnecessary padding.
-After explaining a grammar topic, end with a brief note that the user can practice this topic if they want.`
+After explaining a grammar topic, end with a brief note that the user can practice this topic if they want.${memorySection}`
 
   const apiMessages = messages
     .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -204,4 +208,44 @@ After explaining a grammar topic, end with a brief note that the user can practi
     model: 'claude-sonnet-4-6',
     maxTokens: 1024,
   })
+}
+
+// ── Session memory ──────────────────────────────────────────────────────────
+export async function generateSessionMemory(messages, existingProfile = null, interfaceLanguage = 'English') {
+  const conversation = messages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => `${m.role === 'user' ? 'Student' : 'Tutor'}: ${m.text}`)
+    .join('\n\n')
+
+  const profileContext = existingProfile
+    ? `\n\nEXISTING LEARNER PROFILE:\n${existingProfile}`
+    : ''
+
+  const system = `You are summarising a German language tutoring session to build a learner memory.
+Return ONLY valid JSON — no preamble, no markdown, no code blocks.`
+
+  const prompt = `Here is a tutoring session transcript:${profileContext}
+
+TRANSCRIPT:
+${conversation}
+
+Return exactly this JSON:
+{
+  "profile": "Updated cumulative learner profile (max 120 words). Merge the existing profile with new observations. Include: level estimate, recurring struggles, strengths, learning style, topics covered across sessions.",
+  "last_session": "What happened in THIS session only (max 80 words). Topics discussed, vocabulary that came up, specific questions asked, what the student seemed to find difficult or easy."
+}
+
+Write in ${interfaceLanguage}. Be specific and factual.`
+
+  const text = await callClaude({
+    system,
+    messages: [{ role: 'user', content: prompt }],
+    model: 'claude-haiku-4-5',
+    maxTokens: 512,
+  })
+
+  const clean = text.replace(/```json|```/g, '').trim()
+  const match = clean.match(/\{[\s\S]*\}/)
+  if (!match) throw new Error('No JSON found in memory response')
+  return JSON.parse(match[0])
 }
