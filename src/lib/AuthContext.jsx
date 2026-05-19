@@ -38,13 +38,23 @@ export function AuthProvider({ children }) {
 
   async function updateProfile(updates) {
     if (!user) return
-    const { data } = await supabase
+    // Try update first; if no rows matched, insert
+    const { data: updated, error } = await supabase
       .from('profiles')
-      .upsert({ id: user.id, ...updates })
+      .update(updates)
+      .eq('id', user.id)
       .select()
       .single()
-    if (data) setProfile(data)
-    return data
+    if (updated) { setProfile(updated); return updated }
+
+    // Row doesn't exist yet — insert it
+    const { data: inserted } = await supabase
+      .from('profiles')
+      .insert({ id: user.id, ...updates })
+      .select()
+      .single()
+    if (inserted) setProfile(inserted)
+    return inserted
   }
 
   async function signOut() {

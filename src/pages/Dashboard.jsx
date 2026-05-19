@@ -20,14 +20,18 @@ const STATUS_BAR_COLORS = {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { user, profile, updateProfile } = useAuth()
+  const { user, profile, updateProfile, signOut } = useAuth()
   const { t, lang, switchLang } = useLanguage()
 
-  const [words,      setWords]      = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [editingName, setEditingName] = useState(false)
-  const [nameInput,   setNameInput]   = useState('')
-  const nameRef = useRef(null)
+  const [words,        setWords]        = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [editingName,  setEditingName]  = useState(false)
+  const [nameInput,    setNameInput]    = useState('')
+  const [profileOpen,  setProfileOpen]  = useState(false)
+  const [profileName,  setProfileName]  = useState('')
+  const [savingName,   setSavingName]   = useState(false)
+  const nameRef    = useRef(null)
+  const profileRef = useRef(null)
 
   useEffect(() => {
     if (!user) return
@@ -81,6 +85,32 @@ export default function Dashboard() {
     if (trimmed) await updateProfile({ full_name: trimmed })
     setEditingName(false)
   }
+
+  // ── Profile dropdown ───────────────────────────────────────────────────────
+  function openProfile() {
+    setProfileName(profile?.full_name ?? '')
+    setProfileOpen(true)
+  }
+
+  async function saveProfileName() {
+    const trimmed = profileName.trim()
+    if (!trimmed) return
+    setSavingName(true)
+    await updateProfile({ full_name: trimmed })
+    setSavingName(false)
+    setProfileOpen(false)
+  }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e) {
+      if (profileRef.current && !profileRef.current.contains(e.target)) {
+        setProfileOpen(false)
+      }
+    }
+    if (profileOpen) document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [profileOpen])
 
   // ── Hour-based greeting ────────────────────────────────────────────────────
   const hour = new Date().getHours()
@@ -138,8 +168,58 @@ export default function Dashboard() {
             <button onClick={() => switchLang('en')} className={`px-2.5 py-1 transition-colors ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>EN</button>
             <button onClick={() => switchLang('uk')} className={`px-2.5 py-1 transition-colors ${lang === 'uk' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>UA</button>
           </div>
-          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-bold">
-            {displayName[0]?.toUpperCase()}
+          {/* Avatar + profile dropdown */}
+          <div className="relative" ref={profileRef}>
+            <button
+              onClick={openProfile}
+              className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-bold hover:bg-indigo-200 transition-colors"
+            >
+              {displayName[0]?.toUpperCase()}
+            </button>
+
+            {profileOpen && (
+              <div className="absolute right-0 top-10 w-64 bg-white rounded-2xl border border-gray-100 shadow-lg p-4 z-50">
+                <p className="text-xs text-gray-400 mb-1">{lang === 'uk' ? 'Signed in as' : 'Signed in as'}</p>
+                <p className="text-xs font-medium text-gray-600 mb-4 truncate">{user?.email}</p>
+
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  {lang === 'uk' ? "Ім'я" : 'Display name'}
+                </label>
+                <input
+                  autoFocus
+                  value={profileName}
+                  onChange={e => setProfileName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveProfileName(); if (e.key === 'Escape') setProfileOpen(false) }}
+                  placeholder={lang === 'uk' ? 'Введіть ім\'я' : 'Enter your name'}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-400 mb-3"
+                />
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={saveProfileName}
+                    disabled={savingName || !profileName.trim()}
+                    className="flex-1 bg-indigo-600 text-white text-xs font-semibold py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {savingName ? '…' : (lang === 'uk' ? 'Зберегти' : 'Save')}
+                  </button>
+                  <button
+                    onClick={() => setProfileOpen(false)}
+                    className="flex-1 text-xs font-medium text-gray-500 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                  >
+                    {lang === 'uk' ? 'Скасувати' : 'Cancel'}
+                  </button>
+                </div>
+
+                <div className="border-t border-gray-100 mt-4 pt-3">
+                  <button
+                    onClick={() => signOut()}
+                    className="w-full text-xs text-red-500 hover:text-red-700 font-medium text-left transition-colors"
+                  >
+                    {lang === 'uk' ? 'Вийти →' : 'Sign out →'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </nav>
