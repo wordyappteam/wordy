@@ -144,12 +144,10 @@ export default function Dashboard() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 gap-4 mb-8">
           {[
-            { label: lbl.totalWords,  value: loading ? '…' : total,            sub: lang === 'uk' ? 'German' : 'German' },
-            { label: lbl.learning,    value: loading ? '…' : byStatus.learning, sub: lang === 'uk' ? 'активних слів' : 'active words' },
-            { label: lbl.known,       value: loading ? '…' : byStatus.known + byStatus.mastered, sub: lang === 'uk' ? 'слів засвоєно' : 'words mastered' },
-            { label: lbl.thisWeek,    value: loading ? '…' : addedThisWeek,     sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days' },
+            { label: lbl.totalWords, value: loading ? '…' : total,         sub: lang === 'uk' ? 'German' : 'German' },
+            { label: lbl.thisWeek,   value: loading ? '…' : addedThisWeek, sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days' },
           ].map((stat) => (
             <div key={stat.label} className="bg-white rounded-2xl border border-gray-100 p-5">
               <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
