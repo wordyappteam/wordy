@@ -111,13 +111,15 @@ export default function Flashcards() {
           .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
           .eq('user_id', user.id)
           .lte('next_review_date', today)
-          .neq('status', 'new'),
+          .neq('status', 'new')
+          .order('next_review_date', { ascending: true })  // most overdue first
+          .limit(15),
         supabase
           .from('words')
           .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
           .eq('user_id', user.id)
           .eq('status', 'new')
-          .limit(10),
+          .limit(5),
       ])
       wordData = [...(dueWords ?? []), ...(newWords ?? [])]
     } else {
@@ -220,8 +222,9 @@ export default function Flashcards() {
   // ── Session picker ─────────────────────────────────────────────────────────
   if (phase === 'picker') {
     const total    = counts.new + counts.learning + counts.known + counts.mastered
-    const newToday = Math.min(counts.new, 10)
-    const todayTotal = counts.due + newToday
+    const newToday   = Math.min(counts.new, 5)
+    const dueToday   = Math.min(counts.due, 15)
+    const todayTotal = dueToday + newToday
 
     const modes = [
       ...(todayTotal > 0 ? [{
@@ -231,8 +234,8 @@ export default function Flashcards() {
         color:   'bg-indigo-50 border-indigo-300',
         dot:     'bg-indigo-500',
         desc:    lang === 'uk'
-          ? `${counts.due} до повторення · ${newToday} нових`
-          : `${counts.due} due for review · ${newToday} new`,
+          ? `${dueToday} до повторення · ${newToday} нових`
+          : `${dueToday} due for review · ${newToday} new`,
         highlight: true,
       }] : []),
       {

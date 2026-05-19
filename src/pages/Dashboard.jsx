@@ -69,10 +69,10 @@ export default function Dashboard() {
 
   const recentWords = words.slice(0, 6)
 
-  // ── Today's plan ───────────────────────────────────────────────────────────
-  const todayStr  = new Date().toISOString().split('T')[0]
-  const dueToday  = words.filter(w => w.next_review_date && w.next_review_date <= todayStr && w.status !== 'new').length
-  const newToday  = Math.min(byStatus.new, 10)
+  // ── Today's plan (capped at 20 words: 15 review + 5 new) ──────────────────
+  const todayStr    = new Date().toISOString().split('T')[0]
+  const dueToday    = Math.min(words.filter(w => w.next_review_date && w.next_review_date <= todayStr && w.status !== 'new').length, 15)
+  const newToday    = Math.min(byStatus.new, 5)
   const sessionSize = dueToday + newToday
 
   // ── User display name ──────────────────────────────────────────────────────
