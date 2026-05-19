@@ -101,6 +101,9 @@ export default function Dashboard() {
     { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          icon: '🃏', color: 'bg-indigo-50 border-indigo-100',  path: '/flashcards',    count: total },
     { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', icon: '🔗', color: 'bg-violet-50 border-violet-100',  path: '/prepositions',  count: prepVerbCount },
     { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   icon: '✏️', color: 'bg-purple-50 border-purple-100',  path: '/fill-blank',    count: total },
+    { type: lang === 'uk' ? 'Порядок слів'           : 'Word order',          icon: '🔀', color: 'bg-teal-50 border-teal-100',      path: '/word-order',    count: total },
+    { type: lang === 'uk' ? 'Активне відтворення'    : 'Active recall',       icon: '🧠', color: 'bg-amber-50 border-amber-100',    path: '/active-recall', count: byStatus.learning + byStatus.known + byStatus.mastered },
+    { type: lang === 'uk' ? 'Написання речень'       : 'Sentence writing',    icon: '✍️', color: 'bg-rose-50 border-rose-100',      path: '/sentence-writing', count: total },
     { type: lang === 'uk' ? 'Граматичний чат'         : 'Grammar chat',        icon: '💬', color: 'bg-green-50 border-green-100',    path: '/chat',          count: null },
   ]
 

@@ -184,6 +184,50 @@ Rules:
   return JSON.parse(match[0])
 }
 
+// ── Sentence review ────────────────────────────────────────────────────────
+export async function reviewSentence(word, translation, sentence, interfaceLanguage = 'English') {
+  const system = `You are a German grammar teacher reviewing a student's sentence.
+Return ONLY valid JSON — no markdown, no code blocks.`
+
+  const prompt = `The student is practising the word: "${word}" (${translation})
+
+They wrote this German sentence:
+"${sentence}"
+
+Evaluate it and return exactly this JSON:
+{
+  "isCorrect": true or false,
+  "corrected": "the corrected sentence (identical to input if already correct)",
+  "feedback": "your feedback in ${interfaceLanguage}"
+}
+
+Feedback format rules:
+- If correct: one short encouraging sentence confirming it's right. Max 15 words.
+- If incorrect: list each mistake as a numbered point. Max 3 points. Example format:
+  1. "träume Stelle" → **Traumstelle** — nouns form compounds in German; write as one word, capitalised.
+  2. Missing comma before **zu bewerben** — infinitive clauses with "zu" need a comma.
+- Wrap corrections and key grammar terms in **double asterisks** so they render bold
+- Show the wrong part first, then → then the correction in bold, then a dash and brief rule
+- Be direct — name the case, ending, or rule. No filler phrases, no "Great try"
+
+Other rules:
+- isCorrect is true only if the sentence is grammatically correct AND uses the target word naturally
+- Correct minor typos in "corrected" too
+- If the sentence doesn't use the target word at all, isCorrect is false`
+
+  const text = await callClaude({
+    system,
+    messages: [{ role: 'user', content: prompt }],
+    model: 'claude-haiku-4-5',
+    maxTokens: 512,
+  })
+
+  const clean = text.replace(/```json|```/g, '').trim()
+  const match = clean.match(/\{[\s\S]*\}/)
+  if (!match) throw new Error('No JSON in review response')
+  return JSON.parse(match[0])
+}
+
 // ── Chat tutor ─────────────────────────────────────────────────────────────
 export async function chatWithTutor(messages, targetLanguage = 'German', interfaceLanguage = 'English', memory = null) {
   const memorySection = memory

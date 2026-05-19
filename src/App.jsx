@@ -13,6 +13,9 @@ import WordChoice from './pages/WordChoice'
 import Chat from './pages/Chat'
 import PrepExercise from './pages/PrepExercise'
 import PrepSession from './pages/PrepSession'
+import WordOrder from './pages/WordOrder'
+import ActiveRecall from './pages/ActiveRecall'
+import SentenceWriting from './pages/SentenceWriting'
 
 // Wraps pages that require login
 function Protected({ children }) {
@@ -48,6 +51,9 @@ function App() {
           <Route path="/chat"        element={<Protected><Chat /></Protected>} />
           <Route path="/prepositions" element={<Protected><PrepExercise /></Protected>} />
           <Route path="/prep-session" element={<Protected><PrepSession /></Protected>} />
+          <Route path="/word-order"    element={<Protected><WordOrder /></Protected>} />
+          <Route path="/active-recall"    element={<Protected><ActiveRecall /></Protected>} />
+          <Route path="/sentence-writing" element={<Protected><SentenceWriting /></Protected>} />
           <Route path="*"            element={<Navigate to="/" />} />
         </Routes>
       </AuthProvider>

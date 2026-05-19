@@ -926,6 +926,237 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage }) {
   )
 }
 
+// ── Quick Sort mode ───────────────────────────────────────────────────────
+function QuickSortMode({ words, onClose, onStatusChange }) {
+  const [index, setIndex]   = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [done, setDone]     = useState(false)
+  const [counts, setCounts] = useState({ new: 0, learning: 0, known: 0, mastered: 0, skipped: 0 })
+
+  const current = words[index]
+
+  async function handleStatus(status) {
+    if (saving) return
+    setSaving(true)
+    await onStatusChange(current.id, status)
+    setCounts(prev => ({ ...prev, [status]: prev[status] + 1 }))
+    setSaving(false)
+    if (index + 1 >= words.length) { setDone(true) } else { setIndex(i => i + 1) }
+  }
+
+  function handleSkip() {
+    setCounts(prev => ({ ...prev, skipped: prev.skipped + 1 }))
+    if (index + 1 >= words.length) { setDone(true) } else { setIndex(i => i + 1) }
+  }
+
+  if (done || words.length === 0) {
+    const changed = words.length - counts.skipped
+    return (
+      <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center px-6 text-center">
+        <div className="text-4xl mb-4">🎉</div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">All sorted!</h2>
+        <p className="text-sm text-gray-500 mb-6">{changed} word{changed !== 1 ? 's' : ''} updated.</p>
+        <div className="flex gap-3 text-sm mb-8">
+          {[['new','gray'],['learning','yellow'],['known','green'],['mastered','indigo']].map(([s, c]) => counts[s] > 0 && (
+            <div key={s} className={`px-3 py-1.5 rounded-full font-medium bg-${c}-100 text-${c}-700`}>
+              {counts[s]} {s}
+            </div>
+          ))}
+        </div>
+        <button onClick={onClose} className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Done</button>
+      </div>
+    )
+  }
+
+  const progress = (index / words.length) * 100
+  const pos    = POS_STYLES[current.pos] || POS_STYLES.preposition
+  const eType  = ENTRY_TYPE_STYLES[current.entryType]
+
+  return (
+    <div className="fixed inset-0 bg-gray-50 z-50 flex flex-col">
+      {/* Top bar */}
+      <div className="bg-white border-b border-gray-100 px-6 py-3 flex items-center justify-between shrink-0">
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-sm font-medium">← Exit</button>
+        <span className="text-sm font-semibold text-gray-700">{index + 1} / {words.length}</span>
+        <span className="text-xs text-gray-400">{Math.round(progress)}% done</span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1 bg-gray-100 shrink-0">
+        <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+      </div>
+
+      {/* Card */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6">
+        <div className="bg-white rounded-3xl shadow-md border border-gray-100 w-full max-w-sm px-8 py-10 flex flex-col items-center text-center gap-4">
+          <div className="flex gap-1.5 flex-wrap justify-center">
+            {eType
+              ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${eType.className}`}>{eType.label}</span>
+              : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{pos.label}</span>
+            }
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[current.status]}`}>{current.status}</span>
+          </div>
+          <p className="text-3xl font-bold text-gray-900 leading-tight">{current.word}</p>
+          {current.form && current.pos !== 'noun' && (
+            <p className="text-sm text-gray-400 italic -mt-2">{current.form}</p>
+          )}
+          {current.translation
+            ? <p className="text-lg text-gray-600">{current.translation}</p>
+            : <p className="text-sm text-gray-300 italic">No translation yet</p>
+          }
+          {current.grammarNote && (
+            <p className="text-xs text-gray-400 border-t border-gray-100 pt-3 w-full">{current.grammarNote}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Status buttons */}
+      <div className="px-6 pb-8 flex flex-col gap-3 shrink-0 max-w-sm w-full mx-auto">
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => handleStatus('new')}
+            disabled={saving}
+            className="py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-semibold transition-colors disabled:opacity-50">
+            New
+          </button>
+          <button onClick={() => handleStatus('learning')}
+            disabled={saving}
+            className="py-3 rounded-xl bg-yellow-100 hover:bg-yellow-200 text-yellow-700 text-sm font-semibold transition-colors disabled:opacity-50">
+            Learning
+          </button>
+          <button onClick={() => handleStatus('known')}
+            disabled={saving}
+            className="py-3 rounded-xl bg-green-100 hover:bg-green-200 text-green-700 text-sm font-semibold transition-colors disabled:opacity-50">
+            Known
+          </button>
+          <button onClick={() => handleStatus('mastered')}
+            disabled={saving}
+            className="py-3 rounded-xl bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-sm font-semibold transition-colors disabled:opacity-50">
+            Mastered
+          </button>
+        </div>
+        <button onClick={handleSkip} className="py-2 text-gray-400 text-sm hover:text-gray-600 transition-colors">Skip →</button>
+      </div>
+    </div>
+  )
+}
+
+// ── Bulk Identify modal ───────────────────────────────────────────────────
+function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage }) {
+  const unidentified = words.filter(w => !w.translation || !w.explanation)
+  const [running, setRunning]     = useState(false)
+  const [index, setIndex]         = useState(0)
+  const [errors, setErrors]       = useState([])
+  const [done, setDone]           = useState(false)
+  const total = unidentified.length
+
+  async function handleStart() {
+    setRunning(true)
+    setErrors([])
+    for (let i = 0; i < unidentified.length; i++) {
+      setIndex(i)
+      const w = unidentified[i]
+      try {
+        const result = await identifyWordAI(w.word, 'German', interfaceLanguage)
+        const updated = {
+          ...w,
+          translation: result.translation  || w.translation,
+          explanation: result.explanation  || w.explanation,
+          grammarNote: result.grammarNote  || w.grammarNote,
+          form:        result.form         || w.form,
+          pos:         result.pos          || w.pos,
+          isException: result.isException  ?? w.isException,
+          conjugation: result.conjugation  || w.conjugation,
+          examples:    result.examples?.map(ex => ({ de: ex.de, en: ex.en, tense: ex.tense })) || w.examples,
+        }
+        await onWordIdentified(updated)
+      } catch (e) {
+        setErrors(prev => [...prev, w.word])
+      }
+    }
+    setDone(true)
+    setRunning(false)
+  }
+
+  const succeeded = done ? (total - errors.length) : 0
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={!running ? onClose : undefined} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-7">
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-lg font-bold text-gray-900">Identify unidentified words</h3>
+            {!running && <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none">×</button>}
+          </div>
+
+          {!running && !done && (
+            <>
+              <p className="text-sm text-gray-500 mb-4">
+                Found <span className="font-semibold text-gray-800">{total}</span> word{total !== 1 ? 's' : ''} without translation or explanation.
+                Claude will identify them one by one.
+              </p>
+              {total === 0
+                ? <p className="text-sm text-green-600 bg-green-50 rounded-xl px-4 py-3 mb-5">✓ All words are already identified!</p>
+                : (
+                  <div className="bg-gray-50 rounded-2xl px-4 py-3 mb-5 max-h-48 overflow-y-auto">
+                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Words to identify</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {unidentified.map(w => (
+                        <span key={w.id} className="px-2.5 py-1 bg-white border border-gray-200 rounded-full text-xs text-gray-600">{w.word}</span>
+                      ))}
+                    </div>
+                  </div>
+                )
+              }
+              <div className="flex gap-2">
+                <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50">Cancel</button>
+                {total > 0 && (
+                  <button onClick={handleStart} className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
+                    Identify all {total}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
+          {running && (
+            <div className="flex flex-col items-center py-4 gap-4">
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div className="h-2 bg-indigo-500 rounded-full transition-all duration-300" style={{ width: `${((index) / total) * 100}%` }} />
+              </div>
+              <p className="text-sm text-gray-500">
+                Identifying <span className="font-semibold text-gray-800">{index + 1}</span> / {total}
+              </p>
+              <p className="text-base font-semibold text-indigo-700 bg-indigo-50 px-4 py-2 rounded-xl">
+                {unidentified[index]?.word}
+              </p>
+              <p className="text-xs text-gray-400">This may take a minute — please don't close this tab.</p>
+            </div>
+          )}
+
+          {done && (
+            <div className="flex flex-col items-center py-4 gap-4 text-center">
+              <div className="text-4xl">{errors.length === 0 ? '✨' : '⚠️'}</div>
+              <p className="text-lg font-bold text-gray-900">
+                {succeeded} of {total} identified
+              </p>
+              {errors.length > 0 && (
+                <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 w-full text-left">
+                  <p className="text-xs text-red-600 font-semibold mb-1">Failed ({errors.length}):</p>
+                  <p className="text-xs text-red-500">{errors.join(', ')}</p>
+                </div>
+              )}
+              <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">Done</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Bulk import parser ────────────────────────────────────────────────────
 const PREPOSITIONS = ['auf','an','für','über','um','von','mit','nach','zu','bei','in','gegen','durch','aus','als']
 
@@ -1125,6 +1356,8 @@ export default function Dictionary() {
   const [selectedWord, setSelectedWord] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
+  const [showSortMode, setShowSortMode]   = useState(false)
+  const [showBulkIdentify, setShowBulkIdentify] = useState(false)
   const dragCol = useRef(null)
 
   // Keep column labels in sync when language changes
@@ -1218,7 +1451,6 @@ export default function Dictionary() {
     }
 
     // Reload to get fresh data with examples
-    setSelectedWord(updated)
     fetchWords()
   }
 
@@ -1261,6 +1493,12 @@ export default function Dictionary() {
     }
 
     fetchWords()
+  }
+
+  async function handleQuickStatusChange(wordId, newStatus) {
+    if (!user) return
+    await supabase.from('words').update({ status: newStatus }).eq('id', wordId).eq('user_id', user.id)
+    setWords(prev => prev.map(w => w.id === wordId ? { ...w, status: newStatus } : w))
   }
 
   async function handleBulkImport(entries) {
@@ -1307,12 +1545,26 @@ export default function Dictionary() {
             <h1 className="text-2xl font-bold text-gray-900">{t('dict.title')}</h1>
             <p className="text-sm text-gray-500 mt-0.5">{loadingWords ? '…' : `${words.length} ${t('dict.entries')}`} · {t('dict.language')}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setShowBulkModal(true)}
               className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
             >
               Import list
+            </button>
+            <button
+              onClick={() => setShowBulkIdentify(true)}
+              className="border border-gray-200 hover:border-amber-300 hover:bg-amber-50 text-gray-600 hover:text-amber-700 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+              title="Identify all words missing translation or explanation"
+            >
+              ✨ Identify all
+            </button>
+            <button
+              onClick={() => setShowSortMode(true)}
+              className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+              title="Go through all words and assign status levels"
+            >
+              🗂 Sort words
             </button>
             <button
               onClick={() => setShowAddModal(true)}
@@ -1418,6 +1670,21 @@ export default function Dictionary() {
       {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} />}
       {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} />}
       {showBulkModal && <BulkImportModal onClose={() => setShowBulkModal(false)} onImport={handleBulkImport} />}
+      {showSortMode && (
+        <QuickSortMode
+          words={words}
+          onClose={() => { setShowSortMode(false); fetchWords() }}
+          onStatusChange={handleQuickStatusChange}
+        />
+      )}
+      {showBulkIdentify && (
+        <BulkIdentifyModal
+          words={words}
+          onClose={() => { setShowBulkIdentify(false); fetchWords() }}
+          onWordIdentified={handleUpdate}
+          interfaceLanguage={interfaceLanguage}
+        />
+      )}
     </div>
   )
 }

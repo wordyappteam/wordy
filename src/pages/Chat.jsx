@@ -647,10 +647,21 @@ export default function Chat() {
       },
     ]
   })
-  const [input, setInput]           = useState('')
+  const [input, setInput]           = useState(() => {
+    const prefill = localStorage.getItem('wordy_chat_prefill')
+    if (prefill) { localStorage.removeItem('wordy_chat_prefill'); return prefill }
+    return ''
+  })
   const [loading, setLoading]       = useState(false)
   const [toast, setToast]           = useState(null)
   const [memory, setMemory]         = useState(null)   // { profile, last_session, updated_at }
+  const [exerciseReturn, setExerciseReturn] = useState(() => {
+    try {
+      const saved = localStorage.getItem('wordy_exercise_return')
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return null
+  })
   const [memorySaving, setMemorySaving] = useState(false)
   const [memorySaved, setMemorySaved]   = useState(false)
   const bottomRef = useRef(null)
@@ -844,6 +855,24 @@ export default function Chat() {
           <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-bold">{(user?.email?.[0] ?? 'U').toUpperCase()}</div>
         </div>
       </nav>
+
+      {exerciseReturn && (
+        <div className="bg-indigo-50 border-b border-indigo-100 px-6 py-2.5 flex items-center justify-between">
+          <span className="text-xs text-indigo-600 font-medium">
+            {lang === 'uk' ? '🔖 Вправа на паузі' : '🔖 Exercise paused'}
+          </span>
+          <button
+            onClick={() => {
+              localStorage.removeItem('wordy_exercise_return')
+              setExerciseReturn(null)
+              navigate(exerciseReturn.path)
+            }}
+            className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 transition-colors"
+          >
+            ← {exerciseReturn.label}
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden max-w-5xl mx-auto w-full px-6 py-6 gap-6">
         {/* Sidebar */}
