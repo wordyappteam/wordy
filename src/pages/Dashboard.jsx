@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import { planSession } from '../lib/sessionEngine'
 
 const STATUS_COLORS = {
   new:      'bg-gray-100 text-gray-500',
@@ -37,7 +38,7 @@ export default function Dashboard() {
     if (!user) return
     supabase
       .from('words')
-      .select('id, word, translation, status, date_added, pos, next_review_date')
+      .select('id, word, translation, status, date_added, pos, next_review_date, learning_stage, correct_recall_count, session_count, first_session_date')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
@@ -69,11 +70,11 @@ export default function Dashboard() {
 
   const recentWords = words.slice(0, 6)
 
-  // ── Today's plan (capped at 20 words: 15 review + 5 new) ──────────────────
-  const todayStr    = new Date().toISOString().split('T')[0]
-  const dueToday    = Math.min(words.filter(w => w.next_review_date && w.next_review_date <= todayStr && w.status !== 'new').length, 15)
-  const newToday    = Math.min(byStatus.new, 5)
-  const sessionSize = dueToday + newToday
+  // ── Session plans ──────────────────────────────────────────────────────────
+  const timeBudget = profile?.time_budget ?? 15   // minutes — from onboarding
+  const sessionPlans = !loading && words.length > 0
+    ? planSession(words, timeBudget, lang)
+    : []
 
   // ── User display name ──────────────────────────────────────────────────────
   const displayName = profile?.full_name?.split(' ')[0]
@@ -310,24 +311,42 @@ export default function Dashboard() {
           {/* Right (1 col) — stat cards + recent words */}
           <div className="flex flex-col gap-4">
 
-            {/* Today's plan */}
-            {!loading && sessionSize > 0 && (
-              <div className="bg-indigo-600 rounded-2xl p-5 text-white">
-                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-200 mb-2">
-                  {lang === 'uk' ? 'План на сьогодні' : "Today's plan"}
-                </div>
-                <div className="text-2xl font-bold mb-0.5">{sessionSize} {lang === 'uk' ? 'слів' : 'words'}</div>
-                <div className="text-xs text-indigo-200 mb-4">
-                  {dueToday > 0 && `${dueToday} ${lang === 'uk' ? 'до повторення' : 'to review'}`}
-                  {dueToday > 0 && newToday > 0 && ' · '}
-                  {newToday > 0 && `${newToday} ${lang === 'uk' ? 'нових' : 'new'}`}
-                </div>
-                <button
-                  onClick={() => navigate('/flashcards')}
-                  className="w-full bg-white text-indigo-600 text-sm font-semibold py-2 rounded-xl hover:bg-indigo-50 transition-colors"
-                >
-                  {lang === 'uk' ? 'Почати сесію →' : 'Start session →'}
-                </button>
+            {/* Session plans */}
+            {sessionPlans.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs text-gray-400 font-medium px-0.5">
+                  {lang === 'uk' ? 'У мене є для вас кілька варіантів на сьогодні:' : 'I have a few options for you today:'}
+                </p>
+                {sessionPlans.map((plan, i) => (
+                  <div key={plan.id} className={`rounded-2xl p-4 border ${
+                    i === 0
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'bg-white border-gray-100'
+                  }`}>
+                    <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${i === 0 ? 'text-indigo-200' : 'text-gray-400'}`}>
+                      {plan.durationMin} {lang === 'uk' ? 'хв' : 'min'}
+                    </div>
+                    <div className={`text-sm font-bold mb-1 ${i === 0 ? 'text-white' : 'text-gray-900'}`}>
+                      {plan.title}
+                    </div>
+                    <div className={`text-xs mb-3 leading-relaxed ${i === 0 ? 'text-indigo-200' : 'text-gray-400'}`}>
+                      {plan.description}
+                    </div>
+                    <button
+                      onClick={() => {
+                        sessionStorage.setItem('wordy_session', JSON.stringify(plan))
+                        navigate('/session')
+                      }}
+                      className={`w-full text-xs font-semibold py-2 rounded-xl transition-colors ${
+                        i === 0
+                          ? 'bg-white text-indigo-600 hover:bg-indigo-50'
+                          : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                      }`}
+                    >
+                      {lang === 'uk' ? 'Почати →' : 'Start →'}
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
