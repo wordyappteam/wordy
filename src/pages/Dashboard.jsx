@@ -145,72 +145,52 @@ export default function Dashboard() {
       </nav>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* Greeting + stats on one line */}
-        <div className="flex items-center justify-between gap-6 mb-8">
-          {/* Greeting */}
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
-              {greeting},{' '}
-              {editingName ? (
-                <input
-                  ref={nameRef}
-                  value={nameInput}
-                  onChange={e => setNameInput(e.target.value)}
-                  onBlur={saveName}
-                  onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }}
-                  className="text-2xl font-bold text-gray-900 bg-transparent border-b-2 border-indigo-400 outline-none w-36"
-                />
-              ) : (
-                <button onClick={startEditName} className="hover:text-indigo-600 transition-colors" title="Click to edit name">
-                  {displayName}
-                </button>
-              )}
-              👋
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">
-              {loading ? '…' : total === 0
-                ? lbl.emptyDict
-                : lang === 'uk'
-                  ? `${total} слів у словнику · ${activeWords} в роботі`
-                  : `${total} words in your dictionary · ${activeWords} in progress`
-              }
-            </p>
-          </div>
 
-          {/* Stat cards */}
-          <div className="flex gap-3 shrink-0">
-            {[
-              { label: lbl.totalWords, value: loading ? '…' : total,         sub: lang === 'uk' ? 'German' : 'German' },
-              { label: lbl.thisWeek,   value: loading ? '…' : addedThisWeek, sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days' },
-            ].map((stat) => (
-              <div key={stat.label} className="bg-white rounded-2xl border border-gray-100 px-5 py-4 min-w-[120px]">
-                <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
-                <div className="text-xs font-medium text-gray-700 mt-0.5">{stat.label}</div>
-                <div className="text-xs text-gray-400">{stat.sub}</div>
-              </div>
-            ))}
-          </div>
+        {/* Greeting — full width */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+            {greeting},{' '}
+            {editingName ? (
+              <input
+                ref={nameRef}
+                value={nameInput}
+                onChange={e => setNameInput(e.target.value)}
+                onBlur={saveName}
+                onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }}
+                className="text-2xl font-bold text-gray-900 bg-transparent border-b-2 border-indigo-400 outline-none w-36"
+              />
+            ) : (
+              <button onClick={startEditName} className="hover:text-indigo-600 transition-colors" title="Click to edit name">
+                {displayName}
+              </button>
+            )}
+            👋
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">
+            {loading ? '…' : total === 0
+              ? lbl.emptyDict
+              : lang === 'uk'
+                ? `${total} слів у словнику · ${activeWords} в роботі`
+                : `${total} words in your dictionary · ${activeWords} in progress`
+            }
+          </p>
         </div>
 
+        {/* Three-column layout */}
         <div className="grid grid-cols-3 gap-6">
-          {/* Left col — exercises + breakdown */}
-          <div className="col-span-2 flex flex-col gap-6">
 
-            {/* Exercises + breakdown */}
+          {/* Left (2 cols) — breakdown + exercises */}
+          <div className="col-span-2">
             <div id="exercises" className="bg-white rounded-2xl border border-gray-100 p-6">
 
-              {/* Word breakdown — sits above exercises when there are words */}
+              {/* Word breakdown */}
               {!loading && total > 0 && (
                 <div className="mb-5 pb-5 border-b border-gray-100">
                   <h2 className="text-base font-semibold text-gray-900 mb-3">{lbl.breakdown}</h2>
                   <div className="flex h-2.5 rounded-full overflow-hidden mb-3 gap-0.5">
                     {(['new','learning','known','mastered']).map((s) =>
                       byStatus[s] > 0 ? (
-                        <div
-                          key={s}
-                          className={`${STATUS_BAR_COLORS[s]} transition-all`}
-                          style={{ width: `${(byStatus[s] / total) * 100}%` }}
-                        />
+                        <div key={s} className={`${STATUS_BAR_COLORS[s]} transition-all`} style={{ width: `${(byStatus[s] / total) * 100}%` }} />
                       ) : null
                     )}
                   </div>
@@ -218,9 +198,7 @@ export default function Dashboard() {
                     {(['new','learning','known','mastered']).map((s) => (
                       <div key={s} className="flex items-center gap-2">
                         <div className={`w-2.5 h-2.5 rounded-full ${STATUS_BAR_COLORS[s]}`} />
-                        <span className="text-xs text-gray-600">
-                          <span className="font-semibold">{byStatus[s]}</span> {statusLabel[s]}
-                        </span>
+                        <span className="text-xs text-gray-600"><span className="font-semibold">{byStatus[s]}</span> {statusLabel[s]}</span>
                       </div>
                     ))}
                   </div>
@@ -251,55 +229,66 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Right col — recent words */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-gray-900">{lbl.recentWords}</h2>
-              <button onClick={() => navigate('/dictionary')} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                {lbl.viewAll}
-              </button>
-            </div>
+          {/* Right (1 col) — stat cards + recent words */}
+          <div className="flex flex-col gap-4">
 
-            {loading ? (
-              <div className="flex gap-1 justify-center py-8">
-                <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:0ms]" />
-                <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:150ms]" />
-                <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:300ms]" />
+            {/* Stat cards */}
+            {[
+              { label: lbl.totalWords, value: loading ? '…' : total,         sub: lang === 'uk' ? 'German' : 'German' },
+              { label: lbl.thisWeek,   value: loading ? '…' : addedThisWeek, sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days' },
+            ].map((stat) => (
+              <div key={stat.label} className="bg-white rounded-2xl border border-gray-100 p-5">
+                <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
+                <div className="text-sm font-medium text-gray-700 mt-0.5">{stat.label}</div>
+                <div className="text-xs text-gray-400">{stat.sub}</div>
               </div>
-            ) : recentWords.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-xs text-gray-400 mb-3">{lbl.noActivity}</p>
-                <button
-                  onClick={() => navigate('/dictionary')}
-                  className="text-xs text-indigo-600 font-semibold hover:underline"
-                >
-                  {lbl.goToDict}
+            ))}
+
+            {/* Recent words */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 flex-1">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-semibold text-gray-900">{lbl.recentWords}</h2>
+                <button onClick={() => navigate('/dictionary')} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                  {lbl.viewAll}
                 </button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {recentWords.map((w) => (
-                  <div key={w.id} className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">{w.word}</div>
-                      <div className="text-xs text-gray-400 truncate">{w.translation}</div>
-                    </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLORS[w.status]}`}>
-                      {statusLabel[w.status]}
-                    </span>
-                  </div>
-                ))}
-                {total > 6 && (
-                  <button
-                    onClick={() => navigate('/dictionary')}
-                    className="text-xs text-indigo-500 hover:text-indigo-700 font-medium pt-1"
-                  >
-                    +{total - 6} {lang === 'uk' ? 'більше →' : 'more →'}
+
+              {loading ? (
+                <div className="flex gap-1 justify-center py-8">
+                  <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:0ms]" />
+                  <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:150ms]" />
+                  <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:300ms]" />
+                </div>
+              ) : recentWords.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-xs text-gray-400 mb-3">{lbl.noActivity}</p>
+                  <button onClick={() => navigate('/dictionary')} className="text-xs text-indigo-600 font-semibold hover:underline">
+                    {lbl.goToDict}
                   </button>
-                )}
-              </div>
-            )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentWords.map((w) => (
+                    <div key={w.id} className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-900 truncate">{w.word}</div>
+                        <div className="text-xs text-gray-400 truncate">{w.translation}</div>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLORS[w.status]}`}>
+                        {statusLabel[w.status]}
+                      </span>
+                    </div>
+                  ))}
+                  {total > 6 && (
+                    <button onClick={() => navigate('/dictionary')} className="text-xs text-indigo-500 hover:text-indigo-700 font-medium pt-1">
+                      +{total - 6} {lang === 'uk' ? 'більше →' : 'more →'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
+
         </div>
       </main>
     </div>
