@@ -1351,7 +1351,18 @@ export default function Dictionary() {
   const [sortBy, setSortBy]             = useState('dateAdded')
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterType, setFilterType]     = useState('all')
-  const [columns, setColumns]           = useState(() => getDefaultColumns(t))
+  const [columns, setColumns]           = useState(() => {
+    try {
+      const saved = localStorage.getItem('wordy_col_order')
+      if (saved) {
+        const ids = JSON.parse(saved)
+        const map = Object.fromEntries(getDefaultColumns(t).map(c => [c.id, c]))
+        const restored = ids.map(id => map[id]).filter(Boolean)
+        if (restored.length === getDefaultColumns(t).length) return restored
+      }
+    } catch {}
+    return getDefaultColumns(t)
+  })
   const [dragOver, setDragOver]         = useState(null)
   const [selectedWord, setSelectedWord] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -1360,9 +1371,10 @@ export default function Dictionary() {
   const [showBulkIdentify, setShowBulkIdentify] = useState(false)
   const dragCol = useRef(null)
 
-  // Keep column labels in sync when language changes
+  // Keep column labels in sync when language changes, but preserve current order
   useEffect(() => {
-    setColumns(getDefaultColumns(t))
+    const map = Object.fromEntries(getDefaultColumns(t).map(c => [c.id, c]))
+    setColumns(prev => prev.map(col => map[col.id] || col))
   }, [lang])
 
   // ── Fetch words from Supabase ──────────────────────────────────────────
@@ -1425,6 +1437,7 @@ export default function Dictionary() {
     const [moved] = next.splice(from, 1)
     next.splice(to, 0, moved)
     setColumns(next)
+    localStorage.setItem('wordy_col_order', JSON.stringify(next.map(c => c.id)))
     setDragOver(null)
   }
 
