@@ -38,7 +38,7 @@ export default function Dashboard() {
     if (!user) return
     supabase
       .from('words')
-      .select('id, word, translation, status, date_added, pos, next_review_date, learning_stage, correct_recall_count, session_count, first_session_date')
+      .select('id, word, translation, status, date_added, pos, next_review_date, learning_stage')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
