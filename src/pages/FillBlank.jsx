@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { inSession, advanceSession, nextExerciseName } from '../lib/sessionFlow'
 
 // Parts: { text } = plain text | { blank: 'answer', baseWord, explanation }
 // wordBank = all words shown above the text (correct answers + optional distractors)
@@ -169,12 +170,18 @@ export default function FillBlank() {
               <div className="text-sm text-indigo-700 mt-1">blanks correct</div>
             </div>
             <div className="flex flex-col gap-3">
-              <button
-                onClick={() => { setExIndex(0); setFilled({}); setChecked(false); setDone(false); setScore(0) }}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-semibold text-sm"
-              >
-                Try again
-              </button>
+              {inSession() ? (
+                <button onClick={() => advanceSession(navigate)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-semibold text-sm">
+                  {nextExerciseName() ? `Next: ${nextExerciseName()} →` : 'Finish session →'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => { setExIndex(0); setFilled({}); setChecked(false); setDone(false); setScore(0) }}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-semibold text-sm"
+                >
+                  Try again
+                </button>
+              )}
               <button onClick={() => navigate('/dashboard')} className="w-full text-gray-500 hover:text-gray-900 py-2 text-sm">
                 Back to dashboard
               </button>

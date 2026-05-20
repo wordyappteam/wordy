@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import { inSession, advanceSession, nextExerciseName } from '../lib/sessionFlow'
 
 const POS_LABELS = {
   verb: 'verb', noun: 'noun', adjective: 'adj.',
@@ -406,12 +407,23 @@ export default function Flashcards() {
               </div>
             )}
             <div className="flex flex-col gap-3 mt-4">
-              <button
-                onClick={restart}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-semibold text-sm transition-colors"
-              >
-                {lang === 'uk' ? 'Практикувати знову' : 'Practice again'}
-              </button>
+              {inSession() ? (
+                <button
+                  onClick={() => advanceSession(navigate)}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-semibold text-sm transition-colors"
+                >
+                  {nextExerciseName(lang)
+                    ? `${lang === 'uk' ? 'Далі' : 'Next'}: ${nextExerciseName(lang)} →`
+                    : (lang === 'uk' ? 'Завершити сесію →' : 'Finish session →')}
+                </button>
+              ) : (
+                <button
+                  onClick={restart}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-semibold text-sm transition-colors"
+                >
+                  {lang === 'uk' ? 'Практикувати знову' : 'Practice again'}
+                </button>
+              )}
               <button
                 onClick={() => navigate('/dashboard')}
                 className="w-full text-gray-500 hover:text-gray-900 py-2 text-sm transition-colors"

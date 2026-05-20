@@ -27,15 +27,40 @@ export default function Session() {
   useEffect(() => {
     const raw = sessionStorage.getItem('wordy_session')
     if (!raw) { navigate('/dashboard'); return }
-    setPlan(JSON.parse(raw))
+    const loadedPlan = JSON.parse(raw)
+    setPlan(loadedPlan)
+
+    const currentStep = parseInt(sessionStorage.getItem('wordy_session_current_step') ?? '0')
+    const savedId     = sessionStorage.getItem('wordy_session_id')
+    if (savedId) setSessionId(parseInt(savedId))
+
+    if (currentStep === 0) {
+      setPhase('intro')
+    } else if (currentStep >= (loadedPlan.exercises?.length ?? 0)) {
+      setPhase('done')
+    } else {
+      // Returning from an exercise — auto-launch next
+      setStep(currentStep)
+      setPhase('auto')
+    }
   }, [])
 
   useEffect(() => {
     if (!plan || !user || sessionId) return
     startSession(user.id, plan.type, plan.words.length).then(id => {
-      if (id) setSessionId(id)
+      if (id) {
+        setSessionId(id)
+        sessionStorage.setItem('wordy_session_id', String(id))
+      }
     })
   }, [plan, user])
+
+  // Auto-launch next exercise when returning mid-session
+  useEffect(() => {
+    if (phase === 'auto' && plan) {
+      goToExercise(plan.exercises[step])
+    }
+  }, [phase, plan])
 
   if (!plan) return null
 
@@ -55,12 +80,6 @@ export default function Session() {
 
   // ── Launch next exercise ───────────────────────────────────────────────
   function goToExercise(exerciseId) {
-    // Store word ids + session context for the exercise page to pick up
-    sessionStorage.setItem('wordy_session_words', JSON.stringify(wordIds))
-    sessionStorage.setItem('wordy_session_exercise', exerciseId)
-    sessionStorage.setItem('wordy_session_id', String(sessionId ?? ''))
-    sessionStorage.setItem('wordy_session_step', JSON.stringify({ current: step, total: totalSteps }))
-
     const paths = {
       flashcards:       '/flashcards',
       word_order:       '/word-order',
