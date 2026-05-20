@@ -71,9 +71,14 @@ export default function Dashboard() {
   const recentWords = words.slice(0, 6)
 
   // ── Session plans ──────────────────────────────────────────────────────────
-  const timeBudget = profile?.time_budget ?? 15   // minutes — from onboarding
+  const timeBudget = profile?.time_budget ?? 15
+  const STATUS_TO_STAGE = { new: 0, learning: 1, known: 4, mastered: 5 }
+  const wordsWithStage = words.map(w => ({
+    ...w,
+    learning_stage: w.learning_stage ?? STATUS_TO_STAGE[w.status] ?? 0,
+  }))
   const sessionPlans = !loading && words.length > 0
-    ? planSession(words, timeBudget, lang)
+    ? planSession(wordsWithStage, timeBudget, lang)
     : []
 
   // ── User display name ──────────────────────────────────────────────────────
