@@ -4,19 +4,23 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
 import { planSession } from '../lib/sessionEngine'
+import {
+  FlashcardsIcon, PrepositionsIcon, FillBlankIcon,
+  WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
+} from '../components/ExerciseIcons'
 
 const STATUS_COLORS = {
   new:      'bg-gray-100 text-gray-500',
-  learning: 'bg-yellow-50 text-yellow-700',
-  known:    'bg-green-50 text-green-700',
-  mastered: 'bg-indigo-50 text-indigo-700',
+  learning: 'bg-yellow-100 text-yellow-700',
+  known:    'bg-green-100 text-green-700',
+  mastered: 'bg-indigo-100 text-indigo-700',
 }
 
 const STATUS_BAR_COLORS = {
   new:      'bg-gray-200',
-  learning: 'bg-yellow-400',
+  learning: 'bg-brand-yellow',
   known:    'bg-green-400',
-  mastered: 'bg-indigo-500',
+  mastered: 'bg-indigo-600',
 }
 
 export default function Dashboard() {
@@ -155,30 +159,32 @@ export default function Dashboard() {
   const statusLabel = { new: lbl.statusNew, learning: lbl.statusLearning, known: lbl.statusKnown, mastered: lbl.statusMastered }
 
   const exercises = [
-    { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          icon: '🃏', color: 'bg-indigo-50 border-indigo-100',  path: '/flashcards',    count: total },
-    { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', icon: '🔗', color: 'bg-violet-50 border-violet-100',  path: '/prepositions',  count: prepVerbCount },
-    { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   icon: '✏️', color: 'bg-purple-50 border-purple-100',  path: '/fill-blank',    count: total },
-    { type: lang === 'uk' ? 'Порядок слів'           : 'Word order',          icon: '🔀', color: 'bg-teal-50 border-teal-100',      path: '/word-order',    count: total },
-    { type: lang === 'uk' ? 'Активне відтворення'    : 'Active recall',       icon: '🧠', color: 'bg-amber-50 border-amber-100',    path: '/active-recall', count: byStatus.learning + byStatus.known + byStatus.mastered },
-    { type: lang === 'uk' ? 'Написання речень'       : 'Sentence writing',    icon: '✍️', color: 'bg-rose-50 border-rose-100',      path: '/sentence-writing', count: total },
-    { type: lang === 'uk' ? 'Граматичний чат'         : 'Grammar chat',        icon: '💬', color: 'bg-green-50 border-green-100',    path: '/chat',          count: null },
+    { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          Icon: FlashcardsIcon,      path: '/flashcards',       count: total },
+    { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', Icon: PrepositionsIcon,    path: '/prepositions',     count: prepVerbCount },
+    { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   Icon: FillBlankIcon,       path: '/fill-blank',       count: total },
+    { type: lang === 'uk' ? 'Порядок слів'           : 'Word order',          Icon: WordOrderIcon,       path: '/word-order',       count: total },
+    { type: lang === 'uk' ? 'Активне відтворення'    : 'Active recall',       Icon: ActiveRecallIcon,    path: '/active-recall',    count: byStatus.learning + byStatus.known + byStatus.mastered },
+    { type: lang === 'uk' ? 'Написання речень'       : 'Sentence writing',    Icon: SentenceWritingIcon, path: '/sentence-writing', count: total },
+    { type: lang === 'uk' ? 'Граматичний чат'         : 'Grammar chat',        Icon: GrammarChatIcon,     path: '/chat',             count: null },
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#F7F7FB]">
       {/* Nav */}
-      <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-        <div className="text-xl font-bold text-indigo-600">wordy</div>
-        <div className="flex items-center gap-6 text-sm font-medium text-gray-500">
-          <button className="text-indigo-600">{t('nav.dashboard')}</button>
-          <button onClick={() => navigate('/dictionary')} className="hover:text-gray-900 transition-colors">{t('nav.dictionary')}</button>
-          <button onClick={() => navigate('/exercises')} className="hover:text-gray-900 transition-colors">{t('nav.exercises')}</button>
-          <button onClick={() => navigate('/chat')} className="hover:text-gray-900 transition-colors">{t('nav.chat')}</button>
+      <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between shadow-sm">
+        <div className="text-xl font-bold tracking-tight">
+          <span className="text-indigo-600">word</span><span className="text-brand-yellow">y</span>
+        </div>
+        <div className="flex items-center gap-6 text-sm font-medium text-gray-400">
+          <button className="text-indigo-600 font-semibold">{t('nav.dashboard')}</button>
+          <button onClick={() => navigate('/dictionary')} className="hover:text-gray-800">{t('nav.dictionary')}</button>
+          <button onClick={() => navigate('/exercises')} className="hover:text-gray-800">{t('nav.exercises')}</button>
+          <button onClick={() => navigate('/chat')} className="hover:text-gray-800">{t('nav.chat')}</button>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
-            <button onClick={() => switchLang('en')} className={`px-2.5 py-1 transition-colors ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>EN</button>
-            <button onClick={() => switchLang('uk')} className={`px-2.5 py-1 transition-colors ${lang === 'uk' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>UA</button>
+          <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs font-semibold">
+            <button onClick={() => switchLang('en')} className={`px-3 py-1 transition-colors ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>EN</button>
+            <button onClick={() => switchLang('uk')} className={`px-3 py-1 transition-colors ${lang === 'uk' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>UA</button>
           </div>
           {/* Avatar + profile dropdown */}
           <div className="relative" ref={profileRef}>
@@ -236,11 +242,11 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
+      <main className="max-w-5xl mx-auto px-6 py-10">
 
-        {/* Greeting — full width */}
+        {/* Greeting */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
             {greeting},{' '}
             {editingName ? (
               <input
@@ -249,14 +255,14 @@ export default function Dashboard() {
                 onChange={e => setNameInput(e.target.value)}
                 onBlur={saveName}
                 onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }}
-                className="text-2xl font-bold text-gray-900 bg-transparent border-b-2 border-indigo-400 outline-none w-36"
+                className="text-3xl font-bold text-gray-900 bg-transparent border-b-2 border-indigo-400 outline-none w-36"
               />
             ) : (
-              <button onClick={startEditName} className="hover:text-indigo-600 transition-colors" title="Click to edit name">
+              <button onClick={startEditName} className="hover:text-indigo-500" title="Click to edit name">
                 {displayName}
               </button>
             )}
-            👋
+            <span>👋</span>
           </h1>
         </div>
 
@@ -265,13 +271,13 @@ export default function Dashboard() {
 
           {/* Left (2 cols) — breakdown + exercises */}
           <div className="col-span-2">
-            <div id="exercises" className="bg-white rounded-2xl border border-gray-100 p-6">
+            <div id="exercises" className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
 
               {/* Word breakdown */}
               {!loading && total > 0 && (
-                <div className="mb-5 pb-5 border-b border-gray-100">
-                  <h2 className="text-base font-semibold text-gray-900 mb-3">{lbl.breakdown}</h2>
-                  <div className="flex h-2.5 rounded-full overflow-hidden mb-3 gap-0.5">
+                <div className="mb-6 pb-6 border-b border-gray-100">
+                  <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{lbl.breakdown}</h2>
+                  <div className="flex h-3 rounded-full overflow-hidden mb-3 gap-0.5">
                     {(['new','learning','known','mastered']).map((s) =>
                       byStatus[s] > 0 ? (
                         <div key={s} className={`${STATUS_BAR_COLORS[s]} transition-all`} style={{ width: `${(byStatus[s] / total) * 100}%` }} />
@@ -281,25 +287,27 @@ export default function Dashboard() {
                   <div className="flex flex-wrap gap-4">
                     {(['new','learning','known','mastered']).map((s) => (
                       <div key={s} className="flex items-center gap-2">
-                        <div className={`w-2.5 h-2.5 rounded-full ${STATUS_BAR_COLORS[s]}`} />
-                        <span className="text-xs text-gray-600"><span className="font-semibold">{byStatus[s]}</span> {statusLabel[s]}</span>
+                        <div className={`w-2 h-2 rounded-full ${STATUS_BAR_COLORS[s]}`} />
+                        <span className="text-xs text-gray-500"><span className="font-semibold text-gray-700">{byStatus[s]}</span> {statusLabel[s]}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              <h2 className="text-base font-semibold text-gray-900 mb-4">{lbl.session}</h2>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">{lbl.session}</h2>
               <div className="grid grid-cols-2 gap-3">
                 {exercises.map((ex) => (
                   <button
                     key={ex.type}
                     onClick={() => navigate(ex.path)}
-                    className={`${ex.color} border rounded-xl p-4 text-left hover:scale-[1.02] transition-transform`}
+                    className="bg-white border border-gray-100 rounded-2xl p-4 text-left hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group"
                   >
-                    <div className="text-2xl mb-2">{ex.icon}</div>
-                    <div className="text-sm font-semibold text-gray-900">{ex.type}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 text-indigo-600 group-hover:bg-indigo-100">
+                      <ex.Icon size={20} />
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900 group-hover:text-indigo-600">{ex.type}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">
                       {ex.count === null
                         ? (lang === 'uk' ? 'Запитайте будь-що' : 'Ask anything')
                         : ex.count > 0
@@ -323,18 +331,18 @@ export default function Dashboard() {
                   {lang === 'uk' ? 'У мене є для вас кілька варіантів на сьогодні:' : 'I have a few options for you today:'}
                 </p>
                 {sessionPlans.map((plan, i) => (
-                  <div key={plan.id} className={`rounded-2xl p-4 border ${
+                  <div key={plan.id} className={`rounded-3xl p-4 ${
                     i === 0
-                      ? 'bg-indigo-600 border-indigo-600 text-white'
-                      : 'bg-white border-gray-100'
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                      : 'bg-white border border-gray-100 shadow-sm'
                   }`}>
-                    <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${i === 0 ? 'text-indigo-200' : 'text-gray-400'}`}>
+                    <div className={`text-xs font-semibold uppercase tracking-wider mb-1 ${i === 0 ? 'text-indigo-300' : 'text-gray-400'}`}>
                       {plan.durationMin} {lang === 'uk' ? 'хв' : 'min'}
                     </div>
                     <div className={`text-sm font-bold mb-1 ${i === 0 ? 'text-white' : 'text-gray-900'}`}>
                       {plan.title}
                     </div>
-                    <div className={`text-xs mb-3 leading-relaxed ${i === 0 ? 'text-indigo-200' : 'text-gray-400'}`}>
+                    <div className={`text-xs mb-3 leading-relaxed ${i === 0 ? 'text-indigo-300' : 'text-gray-400'}`}>
                       {plan.description}
                     </div>
                     <button
@@ -342,9 +350,9 @@ export default function Dashboard() {
                         sessionStorage.setItem('wordy_session', JSON.stringify(plan))
                         navigate('/session')
                       }}
-                      className={`w-full text-xs font-semibold py-2 rounded-xl transition-colors ${
+                      className={`w-full text-xs font-semibold py-2.5 rounded-xl transition-colors ${
                         i === 0
-                          ? 'bg-white text-indigo-600 hover:bg-indigo-50'
+                          ? 'bg-brand-yellow text-gray-900 hover:bg-yellow-300'
                           : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
                       }`}
                     >
@@ -363,16 +371,16 @@ export default function Dashboard() {
               <div
                 key={stat.label}
                 onClick={() => stat.path && navigate(stat.path)}
-                className={`bg-white rounded-2xl border border-gray-100 p-5 ${stat.path ? 'cursor-pointer hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors' : ''}`}
+                className={`bg-white rounded-3xl border border-gray-100 p-5 shadow-sm ${stat.path ? 'cursor-pointer hover:border-indigo-200 hover:shadow-md transition-all' : ''}`}
               >
-                <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
-                <div className="text-sm font-medium text-gray-700 mt-0.5">{stat.label}</div>
-                <div className="text-xs text-gray-400">{stat.sub}</div>
+                <div className="text-3xl font-bold text-gray-900">{stat.value}</div>
+                <div className="text-sm font-medium text-gray-700 mt-1">{stat.label}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{stat.sub}</div>
               </div>
             ))}
 
             {/* Recent words */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 flex-1">
+            <div className="bg-white rounded-3xl border border-gray-100 p-6 flex-1 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-semibold text-gray-900">{lbl.recentWords}</h2>
                 <button onClick={() => navigate('/dictionary')} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">

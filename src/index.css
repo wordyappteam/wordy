@@ -1,5 +1,25 @@
 @import "tailwindcss";
 
+@theme {
+  /* Brand fonts */
+  --font-sans: 'Poppins', system-ui, sans-serif;
+
+  /* Brand colors */
+  --color-brand-blue:        #4338CA;
+  --color-brand-blue-mid:    #5B52D6;
+  --color-brand-blue-light:  #EEF2FF;
+  --color-brand-yellow:      #FBBF24;
+  --color-brand-yellow-light:#FEF9C3;
+  --color-brand-yellow-pale: #FFFBEB;
+
+  /* Override indigo to match brand blue */
+  --color-indigo-600: #4338CA;
+  --color-indigo-700: #3730A3;
+  --color-indigo-500: #5B52D6;
+  --color-indigo-100: #E0E7FF;
+  --color-indigo-50:  #EEF2FF;
+}
+
 :root {
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -9,5 +29,13 @@
 
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Poppins', system-ui, 'Segoe UI', sans-serif;
+  background-color: #FAFAFA;
+}
+
+/* Smooth transitions globally */
+* {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
 }

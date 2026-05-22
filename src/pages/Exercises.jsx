@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import {
+  FlashcardsIcon, PrepositionsIcon, FillBlankIcon,
+  WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
+} from '../components/ExerciseIcons'
 
 const PREP_LIST = new Set(['an','auf','über','für','mit','zu','von','nach','bei','gegen','ohne','um','aus','in'])
 
@@ -35,7 +39,7 @@ export default function Exercises() {
   const EXERCISES = [
     {
       id: 'flashcards',
-      icon: '🃏',
+      Icon: FlashcardsIcon,
       name:        uk ? 'Флеш-картки'              : 'Flashcards',
       desc:        uk ? 'Гортайте картки зі словами та оцінюйте, наскільки добре їх знаєте.'
                       : 'Flip through your word cards and rate how well you know each one.',
@@ -50,7 +54,7 @@ export default function Exercises() {
     },
     {
       id: 'fill-blank',
-      icon: '✏️',
+      Icon: FillBlankIcon,
       name:        uk ? 'Заповніть пропуск'         : 'Fill in the blank',
       desc:        uk ? 'Оберіть правильне слово, щоб заповнити пропуск у реченні.'
                       : 'Choose the right word to complete each sentence.',
@@ -65,7 +69,7 @@ export default function Exercises() {
     },
     {
       id: 'word-order',
-      icon: '🔀',
+      Icon: WordOrderIcon,
       name:        uk ? 'Порядок слів'              : 'Word order',
       desc:        uk ? 'Складіть перемішані чіпи в правильному порядку, щоб утворити речення.'
                       : 'Tap scrambled word chips into the correct German sentence order.',
@@ -80,7 +84,7 @@ export default function Exercises() {
     },
     {
       id: 'active-recall',
-      icon: '🧠',
+      Icon: ActiveRecallIcon,
       name:        uk ? 'Активне відтворення'       : 'Active recall',
       desc:        uk ? 'Побачте переклад — введіть німецьке слово по памʼяті.'
                       : 'See the translation, type the German word from memory.',
@@ -97,7 +101,7 @@ export default function Exercises() {
     },
     {
       id: 'sentence-writing',
-      icon: '✍️',
+      Icon: SentenceWritingIcon,
       name:        uk ? 'Написання речень'          : 'Sentence writing',
       desc:        uk ? 'Напишіть власне речення з цільовим словом і отримайте AI-відгук.'
                       : 'Write your own sentence with the target word and get instant AI feedback.',
@@ -112,7 +116,7 @@ export default function Exercises() {
     },
     {
       id: 'prepositions',
-      icon: '🔗',
+      Icon: PrepositionsIcon,
       name:        uk ? 'Дієслова з прийменником'  : 'Verbs + prepositions',
       desc:        uk ? 'Відпрацьовуйте фіксовані прийменники та відмінкові закінчення з цільовими вправами.'
                       : 'Drill fixed prepositions and their case endings with targeted exercises.',
@@ -129,7 +133,7 @@ export default function Exercises() {
     },
     {
       id: 'chat',
-      icon: '💬',
+      Icon: GrammarChatIcon,
       name:        uk ? 'Граматичний чат'           : 'Grammar chat',
       desc:        uk ? 'Запитайте AI-репетитора про граматику, вживання слів або будь-що, що вас бентежить.'
                       : "Ask your AI tutor about grammar rules, tricky sentences, or anything you're unsure about.",
@@ -214,8 +218,8 @@ export default function Exercises() {
             >
               {/* Icon + level */}
               <div className="flex items-start justify-between">
-                <div className={`w-12 h-12 rounded-xl ${ex.iconBg} flex items-center justify-center text-2xl`}>
-                  {ex.icon}
+                <div className={`w-12 h-12 rounded-xl ${ex.iconBg} flex items-center justify-center text-indigo-600`}>
+                  <ex.Icon size={24} />
                 </div>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${ex.levelColor}`}>
                   {ex.level}
