@@ -72,7 +72,7 @@ export default function Dashboard() {
     (w) => w.date_added && new Date(w.date_added) >= oneWeekAgo
   ).length
 
-  const recentWords = words.slice(0, 6)
+  const recentWords = words.slice(0, 5)
 
   // ── Session plans ──────────────────────────────────────────────────────────
   const timeBudget = profile?.time_budget ?? 15
@@ -159,13 +159,13 @@ export default function Dashboard() {
   const statusLabel = { new: lbl.statusNew, learning: lbl.statusLearning, known: lbl.statusKnown, mastered: lbl.statusMastered }
 
   const exercises = [
+    { type: lang === 'uk' ? 'Граматичний чат'         : 'Grammar chat',        Icon: GrammarChatIcon,     path: '/chat',             count: null },
     { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          Icon: FlashcardsIcon,      path: '/flashcards',       count: total },
     { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', Icon: PrepositionsIcon,    path: '/prepositions',     count: prepVerbCount },
     { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   Icon: FillBlankIcon,       path: '/fill-blank',       count: total },
     { type: lang === 'uk' ? 'Порядок слів'           : 'Word order',          Icon: WordOrderIcon,       path: '/word-order',       count: total },
     { type: lang === 'uk' ? 'Активне відтворення'    : 'Active recall',       Icon: ActiveRecallIcon,    path: '/active-recall',    count: byStatus.learning + byStatus.known + byStatus.mastered },
     { type: lang === 'uk' ? 'Написання речень'       : 'Sentence writing',    Icon: SentenceWritingIcon, path: '/sentence-writing', count: total },
-    { type: lang === 'uk' ? 'Граматичний чат'         : 'Grammar chat',        Icon: GrammarChatIcon,     path: '/chat',             count: null },
   ]
 
   return (
@@ -246,7 +246,7 @@ export default function Dashboard() {
 
         {/* Greeting */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+          <h1 className="text-3xl font-bold text-indigo-600 flex items-center gap-2 flex-wrap">
             {greeting},{' '}
             {editingName ? (
               <input
@@ -255,10 +255,10 @@ export default function Dashboard() {
                 onChange={e => setNameInput(e.target.value)}
                 onBlur={saveName}
                 onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }}
-                className="text-3xl font-bold text-gray-900 bg-transparent border-b-2 border-indigo-400 outline-none w-36"
+                className="text-3xl font-bold text-indigo-600 bg-transparent border-b-2 border-indigo-400 outline-none w-36"
               />
             ) : (
-              <button onClick={startEditName} className="hover:text-indigo-500" title="Click to edit name">
+              <button onClick={startEditName} className="hover:text-indigo-800" title="Click to edit name">
                 {displayName}
               </button>
             )}
@@ -270,8 +270,8 @@ export default function Dashboard() {
         <div className="grid grid-cols-3 gap-6">
 
           {/* Left (2 cols) — breakdown + exercises */}
-          <div className="col-span-2">
-            <div id="exercises" className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
+          <div className="col-span-2 h-full">
+            <div id="exercises" className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm h-full">
 
               {/* Word breakdown */}
               {!loading && total > 0 && (
@@ -297,17 +297,17 @@ export default function Dashboard() {
 
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">{lbl.session}</h2>
               <div className="grid grid-cols-2 gap-3">
-                {exercises.map((ex) => (
+                {exercises.map((ex, i) => (
                   <button
                     key={ex.type}
                     onClick={() => navigate(ex.path)}
-                    className="bg-white border border-gray-100 rounded-2xl p-4 text-left hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group"
+                    className={`bg-white border border-gray-100 rounded-2xl p-4 text-left md:hover:bg-gradient-to-br md:hover:from-brand-yellow/40 md:hover:to-indigo-200 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group ${exercises.length % 2 !== 0 && i === 0 ? 'col-span-2' : ''}`}
                   >
                     <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 text-indigo-600 group-hover:bg-indigo-100">
                       <ex.Icon size={20} />
                     </div>
-                    <div className="text-sm font-semibold text-gray-900 group-hover:text-indigo-600">{ex.type}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">
+                    <div className="text-sm font-semibold text-gray-900 group-hover:text-indigo-800">{ex.type}</div>
+                    <div className="text-xs text-gray-400 group-hover:text-indigo-600 mt-0.5">
                       {ex.count === null
                         ? (lang === 'uk' ? 'Запитайте будь-що' : 'Ask anything')
                         : ex.count > 0
@@ -322,14 +322,12 @@ export default function Dashboard() {
           </div>
 
           {/* Right (1 col) — stat cards + recent words */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 h-full">
 
             {/* Session plans */}
             {sessionPlans.length > 0 && (
               <div className="flex flex-col gap-3">
-                <p className="text-xs text-gray-400 font-medium px-0.5">
-                  {lang === 'uk' ? 'У мене є для вас кілька варіантів на сьогодні:' : 'I have a few options for you today:'}
-                </p>
+
                 {sessionPlans.map((plan, i) => (
                   <div key={plan.id} className={`rounded-3xl p-4 ${
                     i === 0
@@ -383,9 +381,11 @@ export default function Dashboard() {
             <div className="bg-white rounded-3xl border border-gray-100 p-6 flex-1 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-semibold text-gray-900">{lbl.recentWords}</h2>
-                <button onClick={() => navigate('/dictionary')} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                  {lbl.viewAll}
-                </button>
+                {total > 5 && (
+                  <button onClick={() => navigate('/dictionary')} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                    {lang === 'uk' ? `Переглянути ще ${total - 5}+` : `View ${total - 5}+ more`}
+                  </button>
+                )}
               </div>
 
               {loading ? (
@@ -414,11 +414,6 @@ export default function Dashboard() {
                       </span>
                     </div>
                   ))}
-                  {total > 6 && (
-                    <button onClick={() => navigate('/dictionary')} className="text-xs text-indigo-500 hover:text-indigo-700 font-medium pt-1">
-                      +{total - 6} {lang === 'uk' ? 'більше →' : 'more →'}
-                    </button>
-                  )}
                 </div>
               )}
             </div>

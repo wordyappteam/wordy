@@ -27,32 +27,41 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function fetchProfile(userId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .single()
+    if (error) console.warn('[wordy] fetchProfile error:', error.message, error.code)
     setProfile(data)
     setLoading(false)
   }
 
   async function updateProfile(updates) {
     if (!user) return
-    // Try update first; if no rows matched, insert
-    const { data: updated, error } = await supabase
+    console.log('[wordy] updateProfile called with', updates, 'for user', user.id)
+
+    // Try update first
+    const { data: updated, error: updateErr } = await supabase
       .from('profiles')
       .update(updates)
       .eq('id', user.id)
       .select()
       .single()
+
+    console.log('[wordy] update result:', updated, updateErr?.message)
+
     if (updated) { setProfile(updated); return updated }
 
-    // Row doesn't exist yet — insert it
-    const { data: inserted } = await supabase
+    // No row exists yet — try insert
+    const { data: inserted, error: insertErr } = await supabase
       .from('profiles')
       .insert({ id: user.id, ...updates })
       .select()
       .single()
+
+    console.log('[wordy] insert result:', inserted, insertErr?.message)
+
     if (inserted) setProfile(inserted)
     return inserted
   }
