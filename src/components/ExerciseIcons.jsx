@@ -27,11 +27,11 @@ export function PrepositionsIcon({ size = 22, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
       {/* Left square */}
-      <rect x="2" y="7" width="9" height="10" rx="2" />
-      {/* Right square — overlaps to show binding */}
-      <rect x="13" y="7" width="9" height="10" rx="2" />
-      {/* Binding link in the middle */}
-      <path d="M11 10.5h2M11 13.5h2" />
+      <rect x="1" y="13" width="8" height="8" rx="1.5" />
+      {/* Right square */}
+      <rect x="15" y="13" width="8" height="8" rx="1.5" />
+      {/* Arc above connecting them */}
+      <path d="M5 13 C5 5, 19 5, 19 13" />
     </svg>
   )
 }
