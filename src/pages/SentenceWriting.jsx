@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import { useTargetLang } from '../lib/TargetLangContext'
 import { reviewSentence } from '../lib/claude'
 
 function renderFeedback(text) {
@@ -33,11 +34,11 @@ function shuffle(arr) {
   return a
 }
 
-function speak(text) {
+function speak(text, locale = 'de-DE') {
   if (!window.speechSynthesis) return
   window.speechSynthesis.cancel()
   const u = new SpeechSynthesisUtterance(text)
-  u.lang = 'de-DE'
+  u.lang = locale
   u.rate = 0.85
   window.speechSynthesis.speak(u)
 }
@@ -46,6 +47,7 @@ export default function SentenceWriting() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { lang } = useLanguage()
+  const { targetLang, targetLanguageName, speechLocale } = useTargetLang()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
   const textareaRef = useRef(null)
 
@@ -66,13 +68,14 @@ export default function SentenceWriting() {
       .from('words')
       .select('status')
       .eq('user_id', user.id)
+      .eq('target_language', targetLang)
       .then(({ data }) => {
         if (!data) return
         const c = { new: 0, learning: 0, known: 0, mastered: 0 }
         data.forEach((w) => { if (c[w.status] !== undefined) c[w.status]++ })
         setCounts(c)
       })
-  }, [user])
+  }, [user, targetLang])
 
   const loadCards = async (mode) => {
     setLoading(true)
@@ -80,6 +83,7 @@ export default function SentenceWriting() {
       .from('words')
       .select('id, word, translation, pos, grammar_note')
       .eq('user_id', user.id)
+      .eq('target_language', targetLang)
       .not('translation', 'is', null)
 
     if (mode === 'learning') query = query.eq('status', 'learning')
@@ -111,7 +115,7 @@ export default function SentenceWriting() {
     setReviewing(true)
     const card = cards[index]
     try {
-      const result = await reviewSentence(card.word, card.translation, input.trim(), interfaceLanguage)
+      const result = await reviewSentence(card.word, card.translation, input.trim(), interfaceLanguage, targetLanguageName)
       setFeedback(result)
       setResults((r) => [...r, { correct: result.isCorrect, word: card.word, sentence: input.trim(), corrected: result.corrected }])
     } catch (e) {
@@ -140,7 +144,7 @@ export default function SentenceWriting() {
 
   const handleSpeak = (text) => {
     setSpeaking(true)
-    speak(text)
+    speak(text, speechLocale)
     setTimeout(() => setSpeaking(false), 3000)
   }
 
@@ -341,7 +345,7 @@ export default function SentenceWriting() {
         {/* Text input */}
         <div className="w-full max-w-lg">
           <p className="text-xs text-gray-400 text-center mb-2">
-            {lang === 'uk' ? 'Напиши речення з цим словом по-німецьки' : 'Write a German sentence using this word'}
+            {lang === 'uk' ? `Напиши речення з цим словом ${targetLanguageName === 'German' ? 'по-німецьки' : 'по-англійськи'}` : `Write a ${targetLanguageName} sentence using this word`}
           </p>
           <textarea
             ref={textareaRef}

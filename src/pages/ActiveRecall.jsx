@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import { useTargetLang } from '../lib/TargetLangContext'
 
 const SESSION_SIZE = 15
 
@@ -21,11 +22,11 @@ function normalise(s) {
     .replace(/^(der|die|das)\s+/i, '')   // ignore article for comparison
 }
 
-function speak(text) {
+function speak(text, locale = 'de-DE') {
   if (!window.speechSynthesis) return
   window.speechSynthesis.cancel()
   const u = new SpeechSynthesisUtterance(text)
-  u.lang = 'de-DE'
+  u.lang = locale
   u.rate = 0.85
   window.speechSynthesis.speak(u)
 }
@@ -34,6 +35,7 @@ export default function ActiveRecall() {
   const navigate  = useNavigate()
   const { user }  = useAuth()
   const { lang }  = useLanguage()
+  const { targetLang, targetLanguageName, speechLocale } = useTargetLang()
   const inputRef  = useRef(null)
 
   const [phase, setPhase]       = useState('picker')
@@ -53,13 +55,14 @@ export default function ActiveRecall() {
       .from('words')
       .select('status')
       .eq('user_id', user.id)
+      .eq('target_language', targetLang)
       .then(({ data }) => {
         if (!data) return
         const c = { new: 0, learning: 0, known: 0, mastered: 0 }
         data.forEach((w) => { if (c[w.status] !== undefined) c[w.status]++ })
         setCounts(c)
       })
-  }, [user])
+  }, [user, targetLang])
 
   const loadCards = async (mode) => {
     setLoading(true)
@@ -67,6 +70,7 @@ export default function ActiveRecall() {
       .from('words')
       .select('id, word, translation, pos, form, grammar_note, is_exception')
       .eq('user_id', user.id)
+      .eq('target_language', targetLang)
       .not('translation', 'is', null)
 
     if (mode === 'learning') query = query.eq('status', 'learning')
@@ -118,7 +122,7 @@ export default function ActiveRecall() {
 
   const handleSpeak = (text) => {
     setSpeaking(true)
-    speak(text)
+    speak(text, speechLocale)
     setTimeout(() => setSpeaking(false), 2500)
   }
 
@@ -150,7 +154,7 @@ export default function ActiveRecall() {
             <div className="text-center mb-8">
               <div className="text-4xl mb-3">🧠</div>
               <h2 className="text-2xl font-bold text-gray-900 mb-1">{lang === 'uk' ? 'Активне згадування' : 'Active Recall'}</h2>
-              <p className="text-sm text-gray-400">{lang === 'uk' ? 'Побачиш переклад — напиши слово по-німецьки' : 'See the translation — type the German word from memory'}</p>
+              <p className="text-sm text-gray-400">{lang === 'uk' ? `Побачиш переклад — напиши слово ${targetLanguageName === 'German' ? 'по-німецьки' : 'по-англійськи'}` : `See the translation — type the ${targetLanguageName} word from memory`}</p>
             </div>
             <div className="flex flex-col gap-3">
               {modes.map((m) => (
@@ -325,7 +329,7 @@ export default function ActiveRecall() {
         {/* Translation prompt */}
         <div className="w-full max-w-lg bg-white rounded-3xl border border-gray-100 shadow-sm px-8 py-10 text-center">
           <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">
-            {lang === 'uk' ? 'Як це по-німецьки?' : 'How do you say this in German?'}
+            {lang === 'uk' ? `Як це ${targetLanguageName === 'German' ? 'по-німецьки' : 'по-англійськи'}?` : `How do you say this in ${targetLanguageName}?`}
           </p>
           <p className="text-2xl font-bold text-gray-900 mb-2">{card.translation}</p>
           {card.pos === 'noun' && card.form && (
@@ -345,7 +349,7 @@ export default function ActiveRecall() {
               value={input}
               onChange={(e) => !submitted && setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={lang === 'uk' ? 'Напишіть по-німецьки…' : 'Type in German…'}
+              placeholder={lang === 'uk' ? `Напишіть ${targetLanguageName === 'German' ? 'по-німецьки' : 'по-англійськи'}…` : `Type in ${targetLanguageName}…`}
               disabled={submitted}
               className="flex-1 text-base font-medium text-gray-800 placeholder-gray-300 outline-none bg-transparent"
               autoComplete="off"

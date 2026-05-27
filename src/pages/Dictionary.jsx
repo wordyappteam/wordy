@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { identifyWord as identifyWordAI } from '../lib/claude'
 import { useLanguage } from '../lib/i18n'
+import { useTargetLang } from '../lib/TargetLangContext'
+import NavBar from '../components/NavBar'
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 // Normalize noun form to full plural without article
@@ -69,14 +71,14 @@ function dbToWord(row, examples = []) {
     isException: row.is_exception,
     conjugation: row.conjugation || null,
     examples: examples.map((ex) => ({
-      de: ex.sentence_target,
-      en: ex.sentence_translation,
-      tense: ex.tense,
+      target:      ex.sentence_target,
+      translation: ex.sentence_translation,
+      tense:       ex.tense,
     })),
   }
 }
 
-function wordToDb(word, userId) {
+function wordToDb(word, userId, targetLang = 'de') {
   return {
     user_id: userId,
     word: word.word,
@@ -92,6 +94,7 @@ function wordToDb(word, userId) {
     source: word.source || 'manual',
     date_added: word.dateAdded || new Date().toISOString().slice(0, 10),
     last_reviewed: word.lastReviewed || '—',
+    target_language: targetLang,
   }
 }
 
@@ -475,7 +478,7 @@ function renderCell(colId, w, t) {
 }
 
 // ── Add Word Modal ────────────────────────────────────────────────────────
-function AddWordModal({ onAdd, onClose, interfaceLanguage }) {
+function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 'German' }) {
   const { t } = useLanguage()
   const [input, setInput]       = useState('')
   const [stage, setStage]       = useState('idle') // idle | loading | result
@@ -488,7 +491,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage }) {
     setStage('loading')
     setIdentifyError(null)
     try {
-      const data = await identifyWordAI(input, 'German', interfaceLanguage)
+      const data = await identifyWordAI(input, targetLanguageName, interfaceLanguage)
       setResult(data)
       setStage('result')
     } catch (e) {
@@ -616,7 +619,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage }) {
 }
 
 // ── Word Panel ────────────────────────────────────────────────────────────
-function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage }) {
+function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE' }) {
   const { t } = useLanguage()
   const [editing, setEditing]             = useState(false)
   const [draft, setDraft]                 = useState(word)
@@ -631,7 +634,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage }) {
     setIdentifying(true)
     setIdentifyError(null)
     try {
-      const result = await identifyWordAI(word.word, 'German', interfaceLanguage || 'English')
+      const result = await identifyWordAI(word.word, targetLanguageName, interfaceLanguage || 'English')
       const updated = {
         ...word,
         translation:  result.translation  || word.translation,
@@ -641,7 +644,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage }) {
         pos:          result.pos          || word.pos,
         isException:  result.isException  ?? word.isException,
         conjugation:  result.conjugation  || word.conjugation,
-        examples:     result.examples?.map(ex => ({ de: ex.de, en: ex.en, tense: ex.tense })) || word.examples,
+        examples:     result.examples?.map(ex => ({ target: ex.target, translation: ex.translation, tense: ex.tense })) || word.examples,
       }
       onUpdate(updated)
     } catch (e) {
@@ -706,7 +709,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage }) {
                 <p className="text-xl font-semibold text-gray-800">{word.translation}</p>
               </div>
               <button
-                onClick={() => speak(word.word)}
+                onClick={() => speak(word.word, speechLocale)}
                 className="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-sm text-gray-400 hover:text-indigo-600 hover:border-indigo-200 transition-colors"
               >
                 {t('dict.pronounce')}
@@ -738,17 +741,17 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage }) {
                   {word.examples.map((ex, i) => (
                     <div key={i} className="bg-gray-50 rounded-xl p-4">
                       <div className="flex items-start justify-between gap-2 mb-1.5">
-                        <p className="text-sm font-medium text-gray-800 leading-snug">{ex.de}</p>
+                        <p className="text-sm font-medium text-gray-800 leading-snug">{ex.target}</p>
                         <div className="flex items-center gap-1.5 shrink-0">
                           {ex.tense && TENSE_LABELS[ex.tense] && (
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TENSE_LABELS[ex.tense].className}`}>
                               {TENSE_LABELS[ex.tense].label}
                             </span>
                           )}
-                          <button onClick={() => speak(ex.de)} className="text-gray-300 hover:text-indigo-500 transition-colors text-base">🔈</button>
+                          <button onClick={() => speak(ex.target, speechLocale)} className="text-gray-300 hover:text-indigo-500 transition-colors text-base">🔈</button>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-400 italic">{ex.en}</p>
+                      <p className="text-xs text-gray-400 italic">{ex.translation}</p>
                     </div>
                   ))}
                 </div>
@@ -1041,7 +1044,7 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
 }
 
 // ── Bulk Identify modal ───────────────────────────────────────────────────
-function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage }) {
+function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage, targetLanguageName = 'German' }) {
   const unidentified = words.filter(w => !w.translation || !w.explanation)
   const [running, setRunning]     = useState(false)
   const [index, setIndex]         = useState(0)
@@ -1056,7 +1059,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
       setIndex(i)
       const w = unidentified[i]
       try {
-        const result = await identifyWordAI(w.word, 'German', interfaceLanguage)
+        const result = await identifyWordAI(w.word, targetLanguageName, interfaceLanguage)
         const updated = {
           ...w,
           translation: result.translation  || w.translation,
@@ -1066,7 +1069,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
           pos:         result.pos          || w.pos,
           isException: result.isException  ?? w.isException,
           conjugation: result.conjugation  || w.conjugation,
-          examples:    result.examples?.map(ex => ({ de: ex.de, en: ex.en, tense: ex.tense })) || w.examples,
+          examples:    result.examples?.map(ex => ({ target: ex.target, translation: ex.translation, tense: ex.tense })) || w.examples,
         }
         await onWordIdentified(updated)
       } catch (e) {
@@ -1342,7 +1345,8 @@ function BulkImportModal({ onClose, onImport }) {
 export default function Dictionary() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { t, lang, switchLang } = useLanguage()
+  const { t, lang } = useLanguage()
+  const { targetLang, targetLanguageName, speechLocale } = useTargetLang()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
 
   const [words, setWords]               = useState([])
@@ -1381,7 +1385,7 @@ export default function Dictionary() {
   useEffect(() => {
     if (!user) return
     fetchWords()
-  }, [user])
+  }, [user, targetLang])
 
   async function fetchWords() {
     setLoadingWords(true)
@@ -1389,6 +1393,7 @@ export default function Dictionary() {
       .from('words')
       .select('*')
       .eq('user_id', user.id)
+      .eq('target_language', targetLang)
       .order('created_at', { ascending: false })
 
     if (!wordRows) { setLoadingWords(false); return }
@@ -1446,7 +1451,7 @@ export default function Dictionary() {
     // Insert word
     const { data: newWord, error } = await supabase
       .from('words')
-      .insert(wordToDb(entry, user.id))
+      .insert(wordToDb(entry, user.id, targetLang))
       .select()
       .single()
     if (error || !newWord) return
@@ -1456,8 +1461,8 @@ export default function Dictionary() {
       await supabase.from('examples').insert(
         entry.examples.map((ex) => ({
           word_id: newWord.id,
-          sentence_target: ex.de,
-          sentence_translation: ex.en,
+          sentence_target: ex.target,
+          sentence_translation: ex.translation,
           tense: ex.tense || null,
         }))
       )
@@ -1498,8 +1503,8 @@ export default function Dictionary() {
       await supabase.from('examples').insert(
         updated.examples.map((ex) => ({
           word_id: updated.id,
-          sentence_target: ex.de,
-          sentence_translation: ex.en,
+          sentence_target: ex.target,
+          sentence_translation: ex.translation,
           tense: ex.tense || null,
         }))
       )
@@ -1525,6 +1530,7 @@ export default function Dictionary() {
       entry_type: e.entry_type,
       status: 'new',
       date_added: new Date().toISOString().split('T')[0],
+      target_language: targetLang,
     }))
     // Insert in chunks of 20 to avoid request size limits
     for (let i = 0; i < rows.length; i += 20) {
@@ -1535,28 +1541,13 @@ export default function Dictionary() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-        <div className="text-xl font-bold text-indigo-600">wordy</div>
-        <div className="flex items-center gap-6 text-sm font-medium text-gray-500">
-          <button onClick={() => navigate('/dashboard')} className="hover:text-gray-900 transition-colors">{t('nav.dashboard')}</button>
-          <button className="text-indigo-600">{t('nav.dictionary')}</button>
-          <button onClick={() => navigate('/exercises')} className="hover:text-gray-900 transition-colors">{t('nav.exercises')}</button>
-          <button onClick={() => navigate('/chat')} className="hover:text-gray-900 transition-colors">{t('nav.chat')}</button>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
-            <button onClick={() => switchLang('en')} className={`px-2.5 py-1 transition-colors ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>EN</button>
-            <button onClick={() => switchLang('uk')} className={`px-2.5 py-1 transition-colors ${lang === 'uk' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>UA</button>
-          </div>
-          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-bold">{(user?.email?.[0] ?? 'U').toUpperCase()}</div>
-        </div>
-      </nav>
+      <NavBar />
 
       <main className="max-w-5xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{t('dict.title')}</h1>
-            <p className="text-sm text-gray-500 mt-0.5">{loadingWords ? '…' : `${words.length} ${t('dict.entries')}`} · {t('dict.language')}</p>
+            <p className="text-sm text-gray-500 mt-0.5">{loadingWords ? '…' : `${words.length} ${t('dict.entries')}`} · {targetLanguageName}</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <button
@@ -1680,8 +1671,8 @@ export default function Dictionary() {
         </div>
       </main>
 
-      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} />}
-      {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} />}
+      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale} />}
+      {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} />}
       {showBulkModal && <BulkImportModal onClose={() => setShowBulkModal(false)} onImport={handleBulkImport} />}
       {showSortMode && (
         <QuickSortMode
@@ -1696,6 +1687,7 @@ export default function Dictionary() {
           onClose={() => { setShowBulkIdentify(false); fetchWords() }}
           onWordIdentified={handleUpdate}
           interfaceLanguage={interfaceLanguage}
+          targetLanguageName={targetLanguageName}
         />
       )}
     </div>

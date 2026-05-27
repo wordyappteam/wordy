@@ -2,14 +2,15 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { chatWithTutor, generateSessionMemory } from '../lib/claude'
 import { useLanguage } from '../lib/i18n'
+import { useTargetLang } from '../lib/TargetLangContext'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../lib/supabase'
+import NavBar from '../components/NavBar'
 
-const GREETINGS = {
-  en: `Hi! I'm your German grammar tutor. Ask me anything — grammar rules, tricky sentences, word usage, or anything you've encountered while learning.\n\nI can also help you add new words or phrases directly to your dictionary from our conversation.`,
-  uk: `Привіт! Я ваш репетитор з німецької граматики. Запитуйте будь-що — граматичні правила, складні речення, вживання слів або все, що зустріли під час навчання.\n\nЯ також можу допомогти додати нові слова або фрази до вашого словника прямо з нашої розмови.`,
+function buildGreeting(lang, targetLanguageName) {
+  if (lang === 'uk') return `Привіт! Я ваш репетитор з ${targetLanguageName === 'German' ? 'німецької' : 'англійської'} граматики. Запитуйте будь-що — граматичні правила, складні речення, вживання слів або все, що зустріли під час навчання.\n\nЯ також можу допомогти додати нові слова або фрази до вашого словника прямо з нашої розмови.`
+  return `Hi! I'm your ${targetLanguageName} tutor. Ask me anything — grammar rules, tricky sentences, word usage, or anything you've encountered while learning.\n\nI can also help you add new words or phrases directly to your dictionary from our conversation.`
 }
-function translations_greeting(lang) { return GREETINGS[lang] ?? GREETINGS.en }
 
 // ─── Simulated AI responses ───────────────────────────────────────────────────
 
@@ -627,20 +628,21 @@ function AddedWordToast({ word, onDismiss }) {
 
 export default function Chat() {
   const navigate = useNavigate()
-  const { t, lang, switchLang } = useLanguage()
+  const { t, lang } = useLanguage()
   const { user } = useAuth()
+  const { targetLang, targetLanguageName } = useTargetLang()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
 
   const [messages, setMessages] = useState(() => {
     try {
-      const saved = localStorage.getItem('wordy_chat_history')
+      const saved = localStorage.getItem(`wordy_chat_history_${targetLang}`)
       if (saved) return JSON.parse(saved)
     } catch {}
     return [
       {
         id: 0,
         role: 'assistant',
-        text: translations_greeting(lang),
+        text: buildGreeting(lang, targetLanguageName),
         words: [],
         topicKey: null,
         practiceState: null,
@@ -678,12 +680,34 @@ export default function Chat() {
       .then(({ data }) => { if (data) setMemory(data) })
   }, [user])
 
-  // Persist chat history to localStorage
+  // Ref always holds current targetLang so persist effect doesn't depend on it
+  const targetLangForStorage = useRef(targetLang)
+  useEffect(() => { targetLangForStorage.current = targetLang }, [targetLang])
+
+  // Persist chat history (only fires when messages change, not on lang switch)
   useEffect(() => {
     try {
-      localStorage.setItem('wordy_chat_history', JSON.stringify(messages))
+      localStorage.setItem(`wordy_chat_history_${targetLangForStorage.current}`, JSON.stringify(messages))
     } catch {}
   }, [messages])
+
+  // Reload history when switching target language
+  const isFirstLangRender = useRef(true)
+  useEffect(() => {
+    if (isFirstLangRender.current) { isFirstLangRender.current = false; return }
+    try {
+      const saved = localStorage.getItem(`wordy_chat_history_${targetLang}`)
+      if (saved) { setMessages(JSON.parse(saved)); return }
+    } catch {}
+    setMessages([{
+      id: Date.now(),
+      role: 'assistant',
+      text: buildGreeting(lang, targetLanguageName),
+      words: [],
+      topicKey: null,
+      practiceState: null,
+    }])
+  }, [targetLang])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -694,14 +718,14 @@ export default function Chat() {
       {
         id: Date.now(),
         role: 'assistant',
-        text: translations_greeting(lang),
+        text: buildGreeting(lang, targetLanguageName),
         words: [],
         topicKey: null,
         practiceState: null,
       },
     ]
     setMessages(fresh)
-    localStorage.removeItem('wordy_chat_history')
+    localStorage.removeItem(`wordy_chat_history_${targetLang}`)
   }
 
   async function handleSaveSession() {
@@ -709,7 +733,7 @@ export default function Chat() {
     if (realMessages.length < 2) return  // nothing to save
     setMemorySaving(true)
     try {
-      const result = await generateSessionMemory(realMessages, memory?.profile ?? null, interfaceLanguage)
+      const result = await generateSessionMemory(realMessages, memory?.profile ?? null, interfaceLanguage, targetLanguageName)
       await supabase
         .from('learner_memory')
         .upsert({
@@ -744,7 +768,7 @@ export default function Chat() {
       ? `LEARNER PROFILE:\n${memory.profile || ''}\n\nLAST SESSION:\n${memory.last_session || ''}`
       : null
 
-    chatWithTutor([...messages, { role: 'user', text: trimmed }], 'German', interfaceLanguage, memoryText)
+    chatWithTutor([...messages, { role: 'user', text: trimmed }], targetLanguageName, interfaceLanguage, memoryText)
       .then((responseText) => {
         setMessages((prev) => [
           ...prev,
@@ -822,15 +846,8 @@ export default function Chat() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Nav */}
-      <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-6 text-sm font-medium text-gray-500">
-          <button onClick={() => navigate('/dashboard')} className="hover:text-gray-900 transition-colors">{t('nav.dashboard')}</button>
-          <button onClick={() => navigate('/dictionary')} className="hover:text-gray-900 transition-colors">{t('nav.dictionary')}</button>
-          <button onClick={() => navigate('/exercises')} className="hover:text-gray-900 transition-colors">{t('nav.exercises')}</button>
-          <button className="text-indigo-600">{t('nav.chat')}</button>
-        </div>
-        <div className="flex items-center gap-3">
+      <NavBar className="flex-shrink-0" slot={
+        <div className="flex items-center gap-2">
           <button
             onClick={handleSaveSession}
             disabled={memorySaving || messages.filter(m => m.role === 'user').length === 0}
@@ -848,13 +865,8 @@ export default function Chat() {
           >
             {t('chat.newChat')}
           </button>
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
-            <button onClick={() => switchLang('en')} className={`px-2.5 py-1 transition-colors ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>EN</button>
-            <button onClick={() => switchLang('uk')} className={`px-2.5 py-1 transition-colors ${lang === 'uk' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>UA</button>
-          </div>
-          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-bold">{(user?.email?.[0] ?? 'U').toUpperCase()}</div>
         </div>
-      </nav>
+      } />
 
       {exerciseReturn && (
         <div className="bg-indigo-50 border-b border-indigo-100 px-6 py-2.5 flex items-center justify-between">
@@ -880,9 +892,9 @@ export default function Chat() {
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">{t('chat.currentFocus')}</div>
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-lg">🇩🇪</span>
+              <span className="text-lg">{targetLanguageName === 'German' ? '🇩🇪' : '🇬🇧'}</span>
               <div>
-                <div className="text-sm font-semibold text-gray-900">German</div>
+                <div className="text-sm font-semibold text-gray-900">{targetLanguageName}</div>
                 <div className="text-xs text-gray-400">B1 · 47 {t('chat.wordsLearned')}</div>
               </div>
             </div>

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import { useTargetLang } from '../lib/TargetLangContext'
+import NavBar from '../components/NavBar'
 import {
   FlashcardsIcon, PrepositionsIcon, FillBlankIcon,
   WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
@@ -13,7 +15,8 @@ const PREP_LIST = new Set(['an','auf','über','für','mit','zu','von','nach','be
 export default function Exercises() {
   const navigate = useNavigate()
   const { user }              = useAuth()
-  const { lang, switchLang }  = useLanguage()
+  const { lang }              = useLanguage()
+  const { targetLang, features } = useTargetLang()
 
   const [words,   setWords]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -24,6 +27,7 @@ export default function Exercises() {
       .from('words')
       .select('id, status, pos, word')
       .eq('user_id', user.id)
+      .eq('target_language', targetLang)
       .then(({ data }) => { setWords(data ?? []); setLoading(false) })
   }, [user])
 
@@ -54,6 +58,7 @@ export default function Exercises() {
     },
     {
       id: 'fill-blank',
+      hidden:      !features.fillBlank,
       Icon: FillBlankIcon,
       name:        uk ? 'Заповніть пропуск'         : 'Fill in the blank',
       desc:        uk ? 'Оберіть правильне слово, щоб заповнити пропуск у реченні.'
@@ -116,6 +121,7 @@ export default function Exercises() {
     },
     {
       id: 'prepositions',
+      hidden:      !features.prepositionDrills,
       Icon: PrepositionsIcon,
       name:        uk ? 'Дієслова з прийменником'  : 'Verbs + prepositions',
       desc:        uk ? 'Відпрацьовуйте фіксовані прийменники та відмінкові закінчення з цільовими вправами.'
@@ -150,30 +156,7 @@ export default function Exercises() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Nav */}
-      <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-        <div className="text-xl font-bold text-indigo-600">wordy</div>
-        <div className="flex items-center gap-6 text-sm font-medium text-gray-500">
-          <button onClick={() => navigate('/dashboard')} className="hover:text-gray-900 transition-colors">
-            {lang === 'uk' ? 'Головна' : 'Dashboard'}
-          </button>
-          <button onClick={() => navigate('/dictionary')} className="hover:text-gray-900 transition-colors">
-            {lang === 'uk' ? 'Словник' : 'Dictionary'}
-          </button>
-          <button className="text-indigo-600">
-            {lang === 'uk' ? 'Вправи' : 'Exercises'}
-          </button>
-          <button onClick={() => navigate('/chat')} className="hover:text-gray-900 transition-colors">
-            {lang === 'uk' ? 'Чат' : 'Chat'}
-          </button>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
-            <button onClick={() => switchLang('en')} className={`px-2.5 py-1 transition-colors ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>EN</button>
-            <button onClick={() => switchLang('uk')} className={`px-2.5 py-1 transition-colors ${lang === 'uk' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>UA</button>
-          </div>
-        </div>
-      </nav>
+      <NavBar />
 
       <main className="max-w-4xl mx-auto px-6 py-8">
         {/* Header */}
@@ -205,7 +188,7 @@ export default function Exercises() {
 
         {/* Exercise grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {EXERCISES.map((ex) => (
+          {EXERCISES.filter(ex => !ex.hidden).map((ex) => (
             <button
               key={ex.id}
               onClick={() => !ex.disabled && navigate(ex.path)}

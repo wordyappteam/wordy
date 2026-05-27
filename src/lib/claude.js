@@ -27,6 +27,35 @@ export async function identifyWord(input, targetLanguage = 'German', interfaceLa
 Return ONLY valid JSON — no markdown, no code blocks, no explanation outside the JSON.
 Write all explanatory text (the "explanation" and "grammarNote" fields) in ${interfaceLanguage}.`
 
+  const isGerman = targetLanguage === 'German'
+
+  const nounWordNote = isGerman
+    ? 'base/canonical form (with article for nouns, e.g. die Entscheidung)'
+    : 'base/canonical form'
+  const formNote = isGerman
+    ? "for nouns: the plural form WITHOUT article e.g. 'Krankheiten', 'Häuser'; if no plural exists write '–'; for verbs: conjugation e.g. 'macht / machte / gemacht'"
+    : "for nouns: plural form, e.g. 'cats', 'children'; for verbs: e.g. 'goes / went / gone'"
+  const translationNote = `concise ${interfaceLanguage} translation`
+
+  const conjugationSchema = isGerman ? `
+  "conjugation": null` : `
+  "conjugation": null`
+
+  const conjugationRules = isGerman ? `
+- If isException is true AND pos is "verb", replace "conjugation": null with a full conjugation object:
+  {
+    "präsens":    { "ich": "...", "du": "...", "er/sie/es": "...", "wir": "...", "ihr": "...", "sie/Sie": "..." },
+    "präteritum": { "ich": "...", "du": "...", "er/sie/es": "...", "wir": "...", "ihr": "...", "sie/Sie": "..." },
+    "partizip_ii": "...",
+    "auxiliary": "haben or sein"
+  }
+- For all other cases leave "conjugation" as null` : `
+- Always leave "conjugation" as null`
+
+  const nounArticleRule = isGerman
+    ? '- For nouns always include the definite article in "word"\n- For verbs with fixed prepositions include the preposition in "word", ALWAYS in the order verb + preposition (e.g. "achten auf", "sich erinnern an") — never preposition + verb'
+    : '- For nouns do NOT include an article in "word" (English nouns have no gender)'
+
   const prompt = `The user is learning ${targetLanguage} and typed: "${input}"
 
 The input may be in any language (e.g. Ukrainian, English, or ${targetLanguage} itself).
@@ -35,39 +64,29 @@ Always return the ${targetLanguage} base form — never the input word itself un
 
 Identify this entry and return ONLY this JSON structure:
 {
-  "word": "base/canonical form (with article for nouns, e.g. die Entscheidung)",
-  "form": "for nouns: the plural form WITHOUT article e.g. 'Krankheiten', 'Häuser', 'Kinder', 'Autos'; if no plural exists write '–'; for verbs: conjugation e.g. 'macht / machte / gemacht'",
+  "word": "${nounWordNote}",
+  "form": "${formNote}",
   "pos": "verb|noun|adjective|adverb|conjunction|preposition",
   "entryType": "word|phrase|idiom|phrasal-verb",
-  "translation": "concise English translation",
+  "translation": "${translationNote}",
   "grammarNote": "one key grammar rule, under 15 words",
   "explanation": "2-3 sentences on usage and nuance, under 60 words",
   "isException": true or false,
   "examples": [
-    { "de": "natural example sentence in ${targetLanguage}", "en": "English translation", "tense": "present" },
-    { "de": "natural example sentence in ${targetLanguage}", "en": "English translation", "tense": "past" },
-    { "de": "natural example sentence in ${targetLanguage}", "en": "English translation", "tense": null }
-  ],
-  "conjugation": null
+    { "target": "natural example sentence in ${targetLanguage}", "translation": "translation into ${interfaceLanguage}", "tense": "present" },
+    { "target": "natural example sentence in ${targetLanguage}", "translation": "translation into ${interfaceLanguage}", "tense": "past" },
+    { "target": "natural example sentence in ${targetLanguage}", "translation": "translation into ${interfaceLanguage}", "tense": null }
+  ],${conjugationSchema}
 }
 
 Rules:
 - If input is an inflected form, return the base/infinitive in "word"
-- For nouns always include the definite article in "word"
-- For verbs with fixed prepositions include the preposition in "word", ALWAYS in the order verb + preposition (e.g. "achten auf", "sich erinnern an", "warten auf") — never preposition + verb, regardless of the order the user typed it
+${nounArticleRule}
 - isException is true only for irregular verbs, exceptional grammar, or fixed collocations
 - "explanation" must always describe the BASE form (the word stored in "word"), not the inflected input the user typed
 - Always include exactly 3 example sentences that showcase the word naturally
 - For verbs: use present tense, past tense, and one more varied example; set "tense" accordingly
-- For nouns/adjectives/other: set "tense" to null for all examples
-- If isException is true AND pos is "verb", replace "conjugation": null with a full conjugation object:
-  {
-    "präsens":    { "ich": "...", "du": "...", "er/sie/es": "...", "wir": "...", "ihr": "...", "sie/Sie": "..." },
-    "präteritum": { "ich": "...", "du": "...", "er/sie/es": "...", "wir": "...", "ihr": "...", "sie/Sie": "..." },
-    "partizip_ii": "...",
-    "auxiliary": "haben or sein"
-  }
-- For all other cases leave "conjugation" as null`
+- For nouns/adjectives/other: set "tense" to null for all examples${conjugationRules}`
 
   const text = await callClaude({
     system,
@@ -185,13 +204,13 @@ Rules:
 }
 
 // ── Sentence review ────────────────────────────────────────────────────────
-export async function reviewSentence(word, translation, sentence, interfaceLanguage = 'English') {
-  const system = `You are a German grammar teacher reviewing a student's sentence.
+export async function reviewSentence(word, translation, sentence, interfaceLanguage = 'English', targetLanguage = 'German') {
+  const system = `You are a ${targetLanguage} language teacher reviewing a student's sentence.
 Return ONLY valid JSON — no markdown, no code blocks.`
 
-  const prompt = `The student is practising the word: "${word}" (${translation})
+  const prompt = `The student is practising the ${targetLanguage} word: "${word}" (${translation})
 
-They wrote this German sentence:
+They wrote this ${targetLanguage} sentence:
 "${sentence}"
 
 Evaluate it and return exactly this JSON:
@@ -255,7 +274,7 @@ After explaining a grammar topic, end with a brief note that the user can practi
 }
 
 // ── Session memory ──────────────────────────────────────────────────────────
-export async function generateSessionMemory(messages, existingProfile = null, interfaceLanguage = 'English') {
+export async function generateSessionMemory(messages, existingProfile = null, interfaceLanguage = 'English', targetLanguage = 'German') {
   const conversation = messages
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .map((m) => `${m.role === 'user' ? 'Student' : 'Tutor'}: ${m.text}`)
@@ -265,7 +284,7 @@ export async function generateSessionMemory(messages, existingProfile = null, in
     ? `\n\nEXISTING LEARNER PROFILE:\n${existingProfile}`
     : ''
 
-  const system = `You are summarising a German language tutoring session to build a learner memory.
+  const system = `You are summarising a ${targetLanguage ?? 'German'} language tutoring session to build a learner memory.
 Return ONLY valid JSON — no preamble, no markdown, no code blocks.`
 
   const prompt = `Here is a tutoring session transcript:${profileContext}

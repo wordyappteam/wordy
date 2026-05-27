@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { LanguageProvider } from './lib/i18n'
+import { TargetLangProvider } from './lib/TargetLangContext'
 import Landing from './pages/Landing'
 import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
@@ -40,6 +41,7 @@ function App() {
     <BrowserRouter>
       <LanguageProvider>
       <AuthProvider>
+      <TargetLangProvider>
         <Routes>
           <Route path="/"            element={<Landing />} />
           <Route path="/auth"        element={<Auth />} />
@@ -60,6 +62,7 @@ function App() {
           <Route path="/session"          element={<Protected><Session /></Protected>} />
           <Route path="*"            element={<Navigate to="/" />} />
         </Routes>
+      </TargetLangProvider>
       </AuthProvider>
       </LanguageProvider>
     </BrowserRouter>

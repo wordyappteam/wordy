@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import { useTargetLang } from '../lib/TargetLangContext'
 import { inSession, advanceSession, nextExerciseName } from '../lib/sessionFlow'
 
 const POS_LABELS = {
@@ -72,6 +73,7 @@ export default function Flashcards() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { lang } = useLanguage()
+  const { targetLang, speechLocale } = useTargetLang()
 
   const [phase, setPhase]       = useState('picker')   // 'picker' | 'session' | 'done'
   const [cards, setCards]       = useState([])
@@ -88,8 +90,8 @@ export default function Flashcards() {
     const today = new Date().toISOString().split('T')[0]
 
     Promise.all([
-      supabase.from('words').select('status').eq('user_id', user.id),
-      supabase.from('words').select('id').eq('user_id', user.id)
+      supabase.from('words').select('status').eq('user_id', user.id).eq('target_language', targetLang),
+      supabase.from('words').select('id').eq('user_id', user.id).eq('target_language', targetLang)
         .lte('next_review_date', today).neq('status', 'new'),
     ]).then(([{ data: statusData }, { data: dueData }]) => {
       if (!statusData) return
@@ -97,7 +99,7 @@ export default function Flashcards() {
       statusData.forEach((w) => { if (c[w.status] !== undefined) c[w.status]++ })
       setCounts({ ...c, due: dueData?.length ?? 0 })
     })
-  }, [user])
+  }, [user, targetLang])
 
   const loadCards = async (mode) => {
     setLoading(true)
@@ -110,15 +112,15 @@ export default function Flashcards() {
         supabase
           .from('words')
           .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
-          .eq('user_id', user.id)
+          .eq('user_id', user.id).eq('target_language', targetLang)
           .lte('next_review_date', today)
           .neq('status', 'new')
-          .order('next_review_date', { ascending: true })  // most overdue first
+          .order('next_review_date', { ascending: true })
           .limit(15),
         supabase
           .from('words')
           .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
-          .eq('user_id', user.id)
+          .eq('user_id', user.id).eq('target_language', targetLang)
           .eq('status', 'new')
           .limit(5),
       ])
@@ -127,7 +129,7 @@ export default function Flashcards() {
       let query = supabase
         .from('words')
         .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
-        .eq('user_id', user.id)
+        .eq('user_id', user.id).eq('target_language', targetLang)
         .order('created_at', { ascending: false })
 
       if (mode === 'new')           query = query.eq('status', 'new')
@@ -189,7 +191,7 @@ export default function Flashcards() {
   const handleSpeak = (text, e) => {
     e.stopPropagation()
     setSpeaking(true)
-    speak(text)
+    speak(text, speechLocale)
     setTimeout(() => setSpeaking(false), 1500)
   }
 

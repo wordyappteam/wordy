@@ -27,11 +27,11 @@ export function PrepositionsIcon({ size = 22, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
       {/* Left square */}
-      <rect x="1" y="13" width="8" height="8" rx="1.5" />
+      <rect x="2" y="13" width="8" height="8" rx="1.5" />
       {/* Right square */}
-      <rect x="15" y="13" width="8" height="8" rx="1.5" />
+      <rect x="13" y="13" width="8" height="8" rx="1.5" />
       {/* Arc above connecting them */}
-      <path d="M5 13 C5 5, 19 5, 19 13" />
+      <path d="M6 13 C6 5, 17 5, 17 13" />
     </svg>
   )
 }

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import { useTargetLang } from '../lib/TargetLangContext'
 import { generateWordBankExercises, generatePrepExercises } from '../lib/claude'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -12,11 +13,11 @@ function hasPrep(word) {
   return word.toLowerCase().split(/\s+/).some((t) => PREP_LIST.has(t))
 }
 
-function speak(text) {
+function speak(text, locale = 'de-DE') {
   if (!window.speechSynthesis) return
   window.speechSynthesis.cancel()
   const u = new SpeechSynthesisUtterance(text)
-  u.lang = 'de-DE'; u.rate = 0.85
+  u.lang = locale; u.rate = 0.85
   window.speechSynthesis.speak(u)
 }
 
@@ -91,7 +92,7 @@ function FlashcardPhase({ verbs, onComplete }) {
                 <span className="text-xl font-normal text-indigo-200"> + {card.caseLabel}</span>
               )}
             </h2>
-            <button onClick={(e) => { e.stopPropagation(); speak(card.word.replace(/\(.*?\)/g, '').trim()) }}
+            <button onClick={(e) => { e.stopPropagation(); speak(card.word.replace(/\(.*?\)/g, '').trim(), speechLocale) }}
               className="mt-1 text-xs text-indigo-200 hover:text-white border border-indigo-400 hover:border-white px-3 py-1 rounded-full transition-colors">
               🔈 Pronounce
             </button>
@@ -106,8 +107,8 @@ function FlashcardPhase({ verbs, onComplete }) {
             </div>
             {card.example && (
               <div className="bg-gray-50 rounded-2xl px-4 py-3">
-                <p className="text-sm font-medium text-gray-800">"{card.example.de}"</p>
-                <p className="text-xs text-gray-400 italic mt-1">{card.example.en}</p>
+                <p className="text-sm font-medium text-gray-800">"{card.example.target}"</p>
+                <p className="text-xs text-gray-400 italic mt-1">{card.example.translation}</p>
               </div>
             )}
             {card.grammarNote && (
@@ -455,6 +456,7 @@ export default function PrepSession() {
   const location  = useLocation()
   const { user }  = useAuth()
   const { lang }  = useLanguage()
+  const { targetLang, speechLocale } = useTargetLang()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
 
   const sessionMode = location.state?.mode ?? 'mixed'
@@ -475,7 +477,7 @@ export default function PrepSession() {
       // 1 — fetch prep verbs with status
       const { data: wordRows } = await supabase
         .from('words').select('id, word, translation, pos, status, grammar_note, is_exception')
-        .eq('user_id', user.id).eq('pos', 'verb')
+        .eq('user_id', user.id).eq('pos', 'verb').eq('target_language', targetLang)
 
       let pool = (wordRows ?? []).filter((w) => hasPrep(w.word))
 
@@ -516,7 +518,7 @@ export default function PrepSession() {
         isException: w.is_exception,
         status:     w.status,
         example:    exMap[w.id]?.[0]
-          ? { de: exMap[w.id][0].sentence_target, en: exMap[w.id][0].sentence_translation }
+          ? { target: exMap[w.id][0].sentence_target, translation: exMap[w.id][0].sentence_translation }
           : null,
       }))
 

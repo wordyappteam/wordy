@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import { useTargetLang } from '../lib/TargetLangContext'
 import { inSession, advanceSession, nextExerciseName } from '../lib/sessionFlow'
 import { identifyWord } from '../lib/claude'
 
@@ -21,11 +22,11 @@ function normalise(w) {
   return w.toLowerCase().replace(/[.,!?;:"""„»«'']/g, '').trim()
 }
 
-function speak(text) {
+function speak(text, locale = 'de-DE') {
   if (!window.speechSynthesis) return
   window.speechSynthesis.cancel()
   const u = new SpeechSynthesisUtterance(text)
-  u.lang = 'de-DE'
+  u.lang = locale
   u.rate = 0.85
   window.speechSynthesis.speak(u)
 }
@@ -34,6 +35,7 @@ export default function WordOrder() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { lang } = useLanguage()
+  const { targetLang, targetLanguageName, speechLocale } = useTargetLang()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
 
   const [phase, setPhase]       = useState('picker')   // picker | session | done
@@ -55,13 +57,14 @@ export default function WordOrder() {
       .from('words')
       .select('status')
       .eq('user_id', user.id)
+      .eq('target_language', targetLang)
       .then(({ data }) => {
         if (!data) return
         const c = { new: 0, learning: 0, known: 0, mastered: 0 }
         data.forEach((w) => { if (c[w.status] !== undefined) c[w.status]++ })
         setCounts(c)
       })
-  }, [user])
+  }, [user, targetLang])
 
   const loadCards = async (mode) => {
     setLoading(true)
@@ -70,6 +73,7 @@ export default function WordOrder() {
       .from('words')
       .select('id, word')
       .eq('user_id', user.id)
+      .eq('target_language', targetLang)
 
     if (mode === 'new')      query = query.eq('status', 'new')
     else if (mode === 'learning') query = query.eq('status', 'learning')
@@ -147,7 +151,7 @@ export default function WordOrder() {
   const handleSpeak = () => {
     if (!card) return
     setSpeaking(true)
-    speak(card.german)
+    speak(card.german, speechLocale)
     setTimeout(() => setSpeaking(false), 3000)
   }
 
@@ -174,7 +178,7 @@ export default function WordOrder() {
       if (existing) { setWordStatuses((s) => ({ ...s, [key]: 'added' })); return }
 
       // Identify with AI
-      const result = await identifyWord(word, 'German', interfaceLanguage)
+      const result = await identifyWord(word, targetLanguageName, interfaceLanguage)
 
       // Save word
       const { data: inserted } = await supabase
@@ -192,6 +196,7 @@ export default function WordOrder() {
           entry_type: result.entryType,
           status: 'new',
           date_added: new Date().toISOString().split('T')[0],
+          target_language: targetLang,
         })
         .select('id')
         .single()
@@ -201,8 +206,8 @@ export default function WordOrder() {
         await supabase.from('examples').insert(
           result.examples.map((ex) => ({
             word_id: inserted.id,
-            sentence_target: ex.de,
-            sentence_translation: ex.en,
+            sentence_target: ex.target,
+            sentence_translation: ex.translation,
             tense: ex.tense ?? null,
           }))
         )

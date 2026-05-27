@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
+import { useTargetLang } from '../lib/TargetLangContext'
 import { planSession } from '../lib/sessionEngine'
+import NavBar from '../components/NavBar'
 import {
   FlashcardsIcon, PrepositionsIcon, FillBlankIcon,
   WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
@@ -26,7 +28,8 @@ const STATUS_BAR_COLORS = {
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user, profile, updateProfile, signOut } = useAuth()
-  const { t, lang, switchLang } = useLanguage()
+  const { t, lang } = useLanguage()
+  const { targetLang, targetLanguageName, features } = useTargetLang()
 
   const [words,        setWords]        = useState([])
   const [loading,      setLoading]      = useState(true)
@@ -44,12 +47,13 @@ export default function Dashboard() {
       .from('words')
       .select('id, word, translation, status, date_added, pos')
       .eq('user_id', user.id)
+      .eq('target_language', targetLang)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         setWords(data ?? [])
         setLoading(false)
       })
-  }, [user])
+  }, [user, targetLang])
 
   // ── Derived stats ──────────────────────────────────────────────────────────
   const total    = words.length
@@ -161,86 +165,65 @@ export default function Dashboard() {
   const exercises = [
     { type: lang === 'uk' ? 'Граматичний чат'         : 'Grammar chat',        Icon: GrammarChatIcon,     path: '/chat',             count: null },
     { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          Icon: FlashcardsIcon,      path: '/flashcards',       count: total },
-    { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', Icon: PrepositionsIcon,    path: '/prepositions',     count: prepVerbCount },
-    { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   Icon: FillBlankIcon,       path: '/fill-blank',       count: total },
+    features.prepositionDrills && { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', Icon: PrepositionsIcon,    path: '/prepositions',     count: prepVerbCount },
+    features.fillBlank        && { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   Icon: FillBlankIcon,       path: '/fill-blank',       count: total },
     { type: lang === 'uk' ? 'Порядок слів'           : 'Word order',          Icon: WordOrderIcon,       path: '/word-order',       count: total },
     { type: lang === 'uk' ? 'Активне відтворення'    : 'Active recall',       Icon: ActiveRecallIcon,    path: '/active-recall',    count: byStatus.learning + byStatus.known + byStatus.mastered },
     { type: lang === 'uk' ? 'Написання речень'       : 'Sentence writing',    Icon: SentenceWritingIcon, path: '/sentence-writing', count: total },
-  ]
+  ].filter(Boolean)
 
   return (
     <div className="min-h-screen bg-[#F7F7FB]">
-      {/* Nav */}
-      <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between shadow-sm">
-        <div className="text-xl font-bold tracking-tight">
-          <span className="text-indigo-600">word</span><span className="text-brand-yellow">y</span>
-        </div>
-        <div className="flex items-center gap-6 text-sm font-medium text-gray-400">
-          <button className="text-indigo-600 font-semibold">{t('nav.dashboard')}</button>
-          <button onClick={() => navigate('/dictionary')} className="hover:text-gray-800">{t('nav.dictionary')}</button>
-          <button onClick={() => navigate('/exercises')} className="hover:text-gray-800">{t('nav.exercises')}</button>
-          <button onClick={() => navigate('/chat')} className="hover:text-gray-800">{t('nav.chat')}</button>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs font-semibold">
-            <button onClick={() => switchLang('en')} className={`px-3 py-1 transition-colors ${lang === 'en' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>EN</button>
-            <button onClick={() => switchLang('uk')} className={`px-3 py-1 transition-colors ${lang === 'uk' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>UA</button>
-          </div>
-          {/* Avatar + profile dropdown */}
-          <div className="relative" ref={profileRef}>
-            <button
-              onClick={openProfile}
-              className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-bold hover:bg-indigo-200 transition-colors"
-            >
-              {displayName[0]?.toUpperCase()}
-            </button>
-
-            {profileOpen && (
-              <div className="absolute right-0 top-10 w-64 bg-white rounded-2xl border border-gray-100 shadow-lg p-4 z-50">
-                <p className="text-xs text-gray-400 mb-1">{lang === 'uk' ? 'Signed in as' : 'Signed in as'}</p>
-                <p className="text-xs font-medium text-gray-600 mb-4 truncate">{user?.email}</p>
-
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  {lang === 'uk' ? "Ім'я" : 'Display name'}
-                </label>
-                <input
-                  autoFocus
-                  value={profileName}
-                  onChange={e => setProfileName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') saveProfileName(); if (e.key === 'Escape') setProfileOpen(false) }}
-                  placeholder={lang === 'uk' ? 'Введіть ім\'я' : 'Enter your name'}
-                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-400 mb-3"
-                />
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={saveProfileName}
-                    disabled={savingName || !profileName.trim()}
-                    className="flex-1 bg-indigo-600 text-white text-xs font-semibold py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                  >
-                    {savingName ? '…' : (lang === 'uk' ? 'Зберегти' : 'Save')}
-                  </button>
-                  <button
-                    onClick={() => setProfileOpen(false)}
-                    className="flex-1 text-xs font-medium text-gray-500 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                  >
-                    {lang === 'uk' ? 'Скасувати' : 'Cancel'}
-                  </button>
-                </div>
-
-                <div className="border-t border-gray-100 mt-4 pt-3">
-                  <button
-                    onClick={() => signOut()}
-                    className="w-full text-xs text-red-500 hover:text-red-700 font-medium text-left transition-colors"
-                  >
-                    {lang === 'uk' ? 'Вийти →' : 'Sign out →'}
-                  </button>
-                </div>
+      <NavBar slot={
+        <div className="relative" ref={profileRef}>
+          <button
+            onClick={openProfile}
+            className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-bold hover:bg-indigo-200 transition-colors"
+          >
+            {displayName[0]?.toUpperCase()}
+          </button>
+          {profileOpen && (
+            <div className="absolute right-0 top-10 w-64 bg-white rounded-2xl border border-gray-100 shadow-lg p-4 z-50">
+              <p className="text-xs text-gray-400 mb-1">Signed in as</p>
+              <p className="text-xs font-medium text-gray-600 mb-4 truncate">{user?.email}</p>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                {lang === 'uk' ? "Ім'я" : 'Display name'}
+              </label>
+              <input
+                autoFocus
+                value={profileName}
+                onChange={e => setProfileName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveProfileName(); if (e.key === 'Escape') setProfileOpen(false) }}
+                placeholder={lang === 'uk' ? 'Введіть ім\'я' : 'Enter your name'}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-400 mb-3"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={saveProfileName}
+                  disabled={savingName || !profileName.trim()}
+                  className="flex-1 bg-indigo-600 text-white text-xs font-semibold py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {savingName ? '…' : (lang === 'uk' ? 'Зберегти' : 'Save')}
+                </button>
+                <button
+                  onClick={() => setProfileOpen(false)}
+                  className="flex-1 text-xs font-medium text-gray-500 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                >
+                  {lang === 'uk' ? 'Скасувати' : 'Cancel'}
+                </button>
               </div>
-            )}
-          </div>
+              <div className="border-t border-gray-100 mt-4 pt-3">
+                <button
+                  onClick={() => signOut()}
+                  className="w-full text-xs text-red-500 hover:text-red-700 font-medium text-left transition-colors"
+                >
+                  {lang === 'uk' ? 'Вийти →' : 'Sign out →'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      </nav>
+      } />
 
       <main className="max-w-5xl mx-auto px-6 py-10">
 
@@ -363,7 +346,7 @@ export default function Dashboard() {
 
             {/* Stat cards */}
             {[
-              { label: lbl.totalWords, value: loading ? '…' : total,         sub: lang === 'uk' ? 'German' : 'German',            path: '/dictionary' },
+              { label: lbl.totalWords, value: loading ? '…' : total,         sub: targetLanguageName,            path: '/dictionary' },
               { label: lbl.thisWeek,   value: loading ? '…' : addedThisWeek, sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days', path: null },
             ].map((stat) => (
               <div
