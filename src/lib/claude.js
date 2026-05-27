@@ -22,77 +22,80 @@ async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTok
 }
 
 // ── Word identification ────────────────────────────────────────────────────
-export async function identifyWord(input, targetLanguage = 'German', interfaceLanguage = 'English') {
+// Returns { word, entryType, senses: [...] }
+// Each sense: { pos, wordForm, translation, form, grammarNote, explanation, isException, examples, conjugation }
+// When context (sentence) is provided, returns only the matching sense.
+export async function identifyWord(input, targetLanguage = 'German', interfaceLanguage = 'English', context = null) {
   const system = `You are a language expert specialising in ${targetLanguage}.
 Return ONLY valid JSON — no markdown, no code blocks, no explanation outside the JSON.
-Write all explanatory text (the "explanation" and "grammarNote" fields) in ${interfaceLanguage}.`
+Write all explanatory text (explanation and grammarNote fields) in ${interfaceLanguage}.`
 
   const isGerman = targetLanguage === 'German'
 
-  const nounWordNote = isGerman
-    ? 'base/canonical form (with article for nouns, e.g. die Entscheidung)'
-    : 'base/canonical form'
   const formNote = isGerman
-    ? "for nouns: the plural form WITHOUT article e.g. 'Krankheiten', 'Häuser'; if no plural exists write '–'; for verbs: conjugation e.g. 'macht / machte / gemacht'"
-    : "for nouns: plural form, e.g. 'cats', 'children'; for verbs: e.g. 'goes / went / gone'"
-  const translationNote = `concise ${interfaceLanguage} translation`
+    ? "for nouns: plural WITHOUT article e.g. 'Häuser'; if no plural write '–'; for verbs: 'macht / machte / gemacht'"
+    : "for nouns: plural e.g. 'cats', 'children'; for verbs: 'goes / went / gone'"
 
-  const conjugationSchema = isGerman ? `
-  "conjugation": null` : `
-  "conjugation": null`
+  const wordFormNote = isGerman
+    ? 'canonical form for this sense — with definite article for nouns (e.g. das Buch), plain infinitive for verbs (e.g. buchen), verb+prep for phrasal verbs (e.g. achten auf)'
+    : 'canonical form for this sense — plain form, no article'
 
   const conjugationRules = isGerman ? `
-- If isException is true AND pos is "verb", replace "conjugation": null with a full conjugation object:
-  {
-    "präsens":    { "ich": "...", "du": "...", "er/sie/es": "...", "wir": "...", "ihr": "...", "sie/Sie": "..." },
-    "präteritum": { "ich": "...", "du": "...", "er/sie/es": "...", "wir": "...", "ihr": "...", "sie/Sie": "..." },
-    "partizip_ii": "...",
-    "auxiliary": "haben or sein"
-  }
-- For all other cases leave "conjugation" as null` : `
+- If isException is true AND pos is "verb", replace "conjugation": null with:
+  { "präsens": {"ich":"...","du":"...","er/sie/es":"...","wir":"...","ihr":"...","sie/Sie":"..."}, "präteritum": {"ich":"...","du":"...","er/sie/es":"...","wir":"...","ihr":"...","sie/Sie":"..."}, "partizip_ii": "...", "auxiliary": "haben or sein" }
+- Otherwise leave "conjugation" as null` : `
 - Always leave "conjugation" as null`
 
   const nounArticleRule = isGerman
-    ? '- For nouns always include the definite article in "word"\n- For verbs with fixed prepositions include the preposition in "word", ALWAYS in the order verb + preposition (e.g. "achten auf", "sich erinnern an") — never preposition + verb'
-    : '- For nouns do NOT include an article in "word" (English nouns have no gender)'
+    ? '- In "wordForm": include the definite article for nouns (e.g. die Entscheidung). For verb+prep phrases always order verb then preposition (e.g. "sich erinnern an"), never the reverse.'
+    : '- In "wordForm": no article for nouns.'
 
-  const prompt = `The user is learning ${targetLanguage} and typed: "${input}"
+  const contextInstruction = context
+    ? `\nThe word appears in this sentence: "${context}"\nReturn ONLY the one sense that matches this context. The senses array must contain exactly one entry.`
+    : `\nReturn ALL commonly used senses (separate POS or clearly distinct meaning groups). Most words have exactly one sense — only return multiple when there are genuinely distinct usages worth learning separately.`
 
-The input may be in any language (e.g. Ukrainian, English, or ${targetLanguage} itself).
-If it is NOT in ${targetLanguage}, treat it as a translation and find the best ${targetLanguage} equivalent.
-Always return the ${targetLanguage} base form — never the input word itself unless it is already ${targetLanguage}.
+  const prompt = `The user is learning ${targetLanguage} and typed: "${input}"${contextInstruction}
 
-Identify this entry and return ONLY this JSON structure:
+The input may be in any language (Ukrainian, English, or ${targetLanguage}).
+If it is NOT in ${targetLanguage}, find the best ${targetLanguage} equivalent.
+Always return the ${targetLanguage} base form.
+
+Return ONLY this JSON:
 {
-  "word": "${nounWordNote}",
-  "form": "${formNote}",
-  "pos": "verb|noun|adjective|adverb|conjunction|preposition",
+  "word": "primary display form — with article for ${isGerman ? 'German nouns (e.g. die Entscheidung)' : 'nouns'}, plain for verbs",
   "entryType": "word|phrase|idiom|phrasal-verb",
-  "translation": "${translationNote}",
-  "grammarNote": "one key grammar rule, under 15 words",
-  "explanation": "2-3 sentences on usage and nuance, under 60 words",
-  "isException": true or false,
-  "examples": [
-    { "target": "natural example sentence in ${targetLanguage}", "translation": "translation into ${interfaceLanguage}", "tense": "present" },
-    { "target": "natural example sentence in ${targetLanguage}", "translation": "translation into ${interfaceLanguage}", "tense": "past" },
-    { "target": "natural example sentence in ${targetLanguage}", "translation": "translation into ${interfaceLanguage}", "tense": null }
-  ],${conjugationSchema}
+  "senses": [
+    {
+      "pos": "verb|noun|adjective|adverb|conjunction|preposition",
+      "wordForm": "${wordFormNote}",
+      "translation": "concise ${interfaceLanguage} translation for THIS sense only",
+      "form": "${formNote}",
+      "grammarNote": "one key grammar rule, under 15 words",
+      "explanation": "2-3 sentences on usage and nuance, under 60 words",
+      "isException": true or false,
+      "examples": [
+        { "target": "natural ${targetLanguage} example", "translation": "${interfaceLanguage} translation", "tense": "present|past|null" },
+        { "target": "...", "translation": "...", "tense": "..." },
+        { "target": "...", "translation": "...", "tense": "..." }
+      ],
+      "conjugation": null
+    }
+  ]
 }
 
 Rules:
-- If input is an inflected form, return the base/infinitive in "word"
+- If input is an inflected form, return the base/infinitive
 ${nounArticleRule}
-- isException is true only for irregular verbs, exceptional grammar, or fixed collocations
-- "explanation" must always describe the BASE form (the word stored in "word"), not the inflected input the user typed
-- Always include exactly 3 example sentences that showcase the word naturally
-- For verbs: use present tense, past tense, and one more varied example; set "tense" accordingly
-- For nouns/adjectives/other: set "tense" to null for all examples${conjugationRules}`
+- isException: true only for irregular verbs, exceptional grammar, or fixed collocations
+- Always include exactly 3 example sentences per sense
+- For verbs: present, past, one varied — set "tense" accordingly. For nouns/adj/other: "tense": null
+${conjugationRules}`
 
   const text = await callClaude({
     system,
     messages: [{ role: 'user', content: prompt }],
     model: 'claude-haiku-4-5',
-    maxTokens: 1024,
+    maxTokens: 1500,
   })
 
   console.log('identifyWord raw response:', text)

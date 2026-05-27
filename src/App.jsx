@@ -19,6 +19,7 @@ import ActiveRecall from './pages/ActiveRecall'
 import SentenceWriting from './pages/SentenceWriting'
 import Exercises from './pages/Exercises'
 import Session from './pages/Session'
+import Migrate from './pages/Migrate'
 
 // Wraps pages that require login
 function Protected({ children }) {
@@ -60,6 +61,7 @@ function App() {
           <Route path="/sentence-writing" element={<Protected><SentenceWriting /></Protected>} />
           <Route path="/exercises"        element={<Protected><Exercises /></Protected>} />
           <Route path="/session"          element={<Protected><Session /></Protected>} />
+          <Route path="/migrate"          element={<Protected><Migrate /></Protected>} />
           <Route path="*"            element={<Navigate to="/" />} />
         </Routes>
       </TargetLangProvider>

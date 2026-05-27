@@ -179,20 +179,21 @@ export default function WordOrder() {
 
       // Identify with AI
       const result = await identifyWord(word, targetLanguageName, interfaceLanguage)
+      const primary = result.senses?.[0] ?? result
 
-      // Save word
+      // Save word header
       const { data: inserted } = await supabase
         .from('words')
         .insert({
           user_id: user.id,
           word: result.word,
-          translation: result.translation,
-          pos: result.pos,
-          form: result.form,
-          grammar_note: result.grammarNote,
-          explanation: result.explanation,
-          is_exception: result.isException,
-          conjugation: result.conjugation ?? null,
+          translation: primary.translation,
+          pos: primary.pos,
+          form: primary.form,
+          grammar_note: primary.grammarNote,
+          explanation: primary.explanation,
+          is_exception: primary.isException,
+          conjugation: primary.conjugation ?? null,
           entry_type: result.entryType,
           status: 'new',
           date_added: new Date().toISOString().split('T')[0],
@@ -201,14 +202,24 @@ export default function WordOrder() {
         .select('id')
         .single()
 
-      // Save examples
-      if (inserted?.id && result.examples?.length) {
-        await supabase.from('examples').insert(
-          result.examples.map((ex) => ({
+      // Save senses
+      if (inserted?.id && result.senses?.length) {
+        await supabase.from('word_senses').insert(
+          result.senses.map(s => ({
             word_id: inserted.id,
-            sentence_target: ex.target,
-            sentence_translation: ex.translation,
-            tense: ex.tense ?? null,
+            user_id: user.id,
+            target_language: targetLang,
+            pos: s.pos,
+            word_form: s.wordForm || result.word,
+            translation: s.translation,
+            form: s.form || null,
+            grammar_note: s.grammarNote || null,
+            explanation: s.explanation || null,
+            is_exception: s.isException || false,
+            conjugation: s.conjugation || null,
+            examples: s.examples || [],
+            learning_stage: 'new',
+            correct_recall_count: 0,
           }))
         )
       }

@@ -54,47 +54,55 @@ function extractCaseBadge(w) {
 }
 
 // ── DB ↔ Frontend mapping ─────────────────────────────────────────────────
-function dbToWord(row, examples = []) {
+function dbSenseToFrontend(s) {
+  return {
+    id: s.id,
+    pos: s.pos,
+    wordForm: s.word_form,
+    translation: s.translation,
+    form: s.form,
+    grammarNote: s.grammar_note,
+    explanation: s.explanation,
+    isException: s.is_exception,
+    conjugation: s.conjugation || null,
+    examples: (s.examples || []).map(ex => ({
+      target: ex.target,
+      translation: ex.translation,
+      tense: ex.tense || null,
+    })),
+    learningStage: s.learning_stage,
+    correctRecallCount: s.correct_recall_count,
+    nextReviewDate: s.next_review_date,
+  }
+}
+
+function dbToWord(row, legacyExamples = [], senses = []) {
+  const frontendSenses = senses.map(dbSenseToFrontend)
+  const primary = frontendSenses[0] || null
   return {
     id: row.id,
     entryType: row.entry_type,
     word: row.word,
-    form: row.form,
-    pos: row.pos,
-    translation: row.translation,
+    // Legacy flat fields — used for list display and backward compat
+    form: primary?.form ?? row.form,
+    pos: primary?.pos ?? row.pos,
+    translation: primary?.translation ?? row.translation,
     status: row.status,
     dateAdded: row.date_added,
     source: row.source,
     lastReviewed: row.last_reviewed,
-    explanation: row.explanation,
-    grammarNote: row.grammar_note,
-    isException: row.is_exception,
-    conjugation: row.conjugation || null,
-    examples: examples.map((ex) => ({
-      target:      ex.sentence_target,
+    explanation: primary?.explanation ?? row.explanation,
+    grammarNote: primary?.grammarNote ?? row.grammar_note,
+    isException: primary?.isException ?? row.is_exception,
+    conjugation: primary?.conjugation ?? row.conjugation ?? null,
+    examples: primary?.examples ?? legacyExamples.map(ex => ({
+      target: ex.sentence_target,
       translation: ex.sentence_translation,
-      tense:       ex.tense,
+      tense: ex.tense,
     })),
-  }
-}
-
-function wordToDb(word, userId, targetLang = 'de') {
-  return {
-    user_id: userId,
-    word: word.word,
-    form: word.form || null,
-    pos: word.pos,
-    entry_type: word.entryType,
-    translation: word.translation,
-    grammar_note: word.grammarNote || null,
-    explanation: word.explanation || null,
-    is_exception: word.isException || false,
-    conjugation: word.conjugation || null,
-    status: word.status || 'new',
-    source: word.source || 'manual',
-    date_added: word.dateAdded || new Date().toISOString().slice(0, 10),
-    last_reviewed: word.lastReviewed || '—',
-    target_language: targetLang,
+    // Senses (new model)
+    senses: frontendSenses,
+    hasSenses: frontendSenses.length > 0,
   }
 }
 
@@ -480,10 +488,10 @@ function renderCell(colId, w, t) {
 // ── Add Word Modal ────────────────────────────────────────────────────────
 function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 'German' }) {
   const { t } = useLanguage()
-  const [input, setInput]       = useState('')
-  const [stage, setStage]       = useState('idle') // idle | loading | result
-  const [result, setResult]     = useState(null)
-
+  const [input, setInput]           = useState('')
+  const [stage, setStage]           = useState('idle') // idle | loading | result
+  const [result, setResult]         = useState(null)
+  const [checkedSenses, setCheckedSenses] = useState([])
   const [identifyError, setIdentifyError] = useState(null)
 
   const handleIdentify = async () => {
@@ -493,6 +501,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
     try {
       const data = await identifyWordAI(input, targetLanguageName, interfaceLanguage)
       setResult(data)
+      setCheckedSenses((data.senses || []).map((_, i) => i)) // pre-check all
       setStage('result')
     } catch (e) {
       setIdentifyError(t('dict.identifyError'))
@@ -500,26 +509,24 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
     }
   }
 
+  const toggleSense = (i) => setCheckedSenses(prev =>
+    prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]
+  )
+
   const handleAdd = () => {
     if (!result) return
-    onAdd({
-      ...result,
-      status: 'new',
-      dateAdded: new Date().toISOString().slice(0, 10),
-      source: 'manual',
-      lastReviewed: '—',
-    })
+    const selectedSenses = (result.senses || []).filter((_, i) => checkedSenses.includes(i))
+    onAdd({ ...result, senses: selectedSenses, source: 'manual' })
     onClose()
   }
 
   const entryBadge = result ? ENTRY_TYPE_STYLES[result.entryType] : null
-  const posBadge   = result ? (POS_STYLES[result.pos] || POS_STYLES.preposition) : null
 
   return (
     <>
       <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-7">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-7 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-lg font-bold text-gray-900">{t('dict.modalTitle')}</h3>
             <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none">×</button>
@@ -549,7 +556,6 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
             <div className="bg-red-50 border border-red-100 text-red-600 text-xs px-3 py-2 rounded-xl mb-3">{identifyError}</div>
           )}
 
-          {/* Loading */}
           {stage === 'loading' && (
             <div className="flex items-center gap-3 py-6 justify-center text-gray-400 text-sm">
               <span className="animate-spin text-indigo-500 text-lg">⟳</span>
@@ -557,44 +563,46 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
             </div>
           )}
 
-          {/* Result */}
+          {/* Sense picker */}
           {stage === 'result' && result && (
-            <div className="border border-gray-100 rounded-2xl overflow-hidden mb-5">
-              <div className="bg-gray-50 px-4 py-3 flex items-center gap-2">
-                <span className="text-xs text-gray-400 uppercase tracking-wide">{t('dict.aiIdentified')}</span>
-                <span className="ml-auto flex gap-1.5">
-                  {entryBadge && (
-                    <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>
-                      {entryBadge.label}
-                    </span>
-                  )}
-                  {posBadge && (
-                    <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>
-                      {posBadge.label}
-                    </span>
-                  )}
-                </span>
+            <div className="mb-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-semibold text-gray-900">{result.word}</span>
+                {entryBadge && (
+                  <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
+                )}
+                {(result.senses || []).length > 1 && (
+                  <span className="text-xs text-gray-400 ml-auto">{(result.senses || []).length} senses — uncheck any you don't want</span>
+                )}
               </div>
-              <div className="px-4 py-4 flex flex-col gap-3">
-                <div>
-                  <p className="text-lg font-bold text-gray-900">{result.word}</p>
-                  {result.form && (
-                    <p className="text-xs text-gray-400 italic mt-0.5">{result.form}</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">{t('dict.translation')}</p>
-                  <p className="text-sm font-medium text-gray-700">{result.translation}</p>
-                </div>
-                <div className={`rounded-xl px-3 py-2 text-xs font-medium flex items-start gap-2 ${
-                  result.grammarNote?.startsWith('⚠')
-                    ? 'bg-amber-50 text-amber-800 border border-amber-100'
-                    : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
-                }`}>
-                  <span>{result.grammarNote?.startsWith('⚠') ? '⚠️' : 'ℹ️'}</span>
-                  <span>{result.grammarNote}</span>
-                </div>
-                <p className="text-xs text-gray-500 leading-relaxed">{result.explanation}</p>
+              <div className="flex flex-col gap-2">
+                {(result.senses || []).map((sense, i) => {
+                  const posBadge = POS_STYLES[sense.pos] || POS_STYLES.preposition
+                  const checked  = checkedSenses.includes(i)
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => toggleSense(i)}
+                      className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
+                        checked
+                          ? 'border-indigo-300 bg-indigo-50'
+                          : 'border-gray-200 bg-white opacity-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posBadge.label}</span>
+                        <span className="text-sm font-medium text-gray-900">{sense.wordForm}</span>
+                        <span className={`ml-auto w-4 h-4 rounded border flex items-center justify-center text-xs shrink-0 ${
+                          checked ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'
+                        }`}>{checked ? '✓' : ''}</span>
+                      </div>
+                      <p className="text-sm text-gray-600">{sense.translation}</p>
+                      {sense.grammarNote && (
+                        <p className="text-xs text-gray-400 mt-1">{sense.grammarNote}</p>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -606,7 +614,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
             </button>
             <button
               onClick={handleAdd}
-              disabled={stage !== 'result'}
+              disabled={stage !== 'result' || checkedSenses.length === 0}
               className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors disabled:opacity-30"
             >
               {t('dict.addToDictBtn')}
@@ -635,16 +643,19 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
     setIdentifyError(null)
     try {
       const result = await identifyWordAI(word.word, targetLanguageName, interfaceLanguage || 'English')
+      const primary = result.senses?.[0]
       const updated = {
         ...word,
-        translation:  result.translation  || word.translation,
-        explanation:  result.explanation  || word.explanation,
-        grammarNote:  result.grammarNote  || word.grammarNote,
-        form:         result.form         || word.form,
-        pos:          result.pos          || word.pos,
-        isException:  result.isException  ?? word.isException,
-        conjugation:  result.conjugation  || word.conjugation,
-        examples:     result.examples?.map(ex => ({ target: ex.target, translation: ex.translation, tense: ex.tense })) || word.examples,
+        senses: result.senses || word.senses || [],
+        hasSenses: (result.senses?.length ?? 0) > 0,
+        translation:  primary?.translation  || word.translation,
+        explanation:  primary?.explanation  || word.explanation,
+        grammarNote:  primary?.grammarNote  || word.grammarNote,
+        form:         primary?.form         || word.form,
+        pos:          primary?.pos          || word.pos,
+        isException:  primary?.isException  ?? word.isException,
+        conjugation:  primary?.conjugation  || word.conjugation,
+        examples:     primary?.examples || word.examples,
       }
       onUpdate(updated)
     } catch (e) {
@@ -703,11 +714,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
         {/* ── View mode ── */}
         {!editing && (
           <div className="px-6 py-5 flex flex-col gap-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{t('dict.translation')}</p>
-                <p className="text-xl font-semibold text-gray-800">{word.translation}</p>
-              </div>
+            {/* Pronounce button */}
+            <div className="flex justify-end">
               <button
                 onClick={() => speak(word.word, speechLocale)}
                 className="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-sm text-gray-400 hover:text-indigo-600 hover:border-indigo-200 transition-colors"
@@ -716,77 +724,162 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
               </button>
             </div>
 
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">{t('dict.explanation')}</p>
-              <p className="text-sm text-gray-600 leading-relaxed">{word.explanation}</p>
-            </div>
-
-            {word.grammarNote && (
-              <div className={`rounded-xl px-4 py-3 text-xs font-medium flex items-start gap-2 ${
-                word.isException
-                  ? 'bg-amber-50 text-amber-800 border border-amber-100'
-                  : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
-              }`}>
-                <span className="mt-0.5">{word.isException ? '⚠️' : 'ℹ️'}</span>
-                <span>{word.grammarNote}</span>
-              </div>
-            )}
-
-            {word.examples?.length > 0 && (
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">
-                  {word.pos === 'verb' ? t('dict.examplesVerb') : t('dict.examples')}
-                </p>
-                <div className="flex flex-col gap-3">
-                  {word.examples.map((ex, i) => (
-                    <div key={i} className="bg-gray-50 rounded-xl p-4">
-                      <div className="flex items-start justify-between gap-2 mb-1.5">
-                        <p className="text-sm font-medium text-gray-800 leading-snug">{ex.target}</p>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {ex.tense && TENSE_LABELS[ex.tense] && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TENSE_LABELS[ex.tense].className}`}>
-                              {TENSE_LABELS[ex.tense].label}
-                            </span>
-                          )}
-                          <button onClick={() => speak(ex.target, speechLocale)} className="text-gray-300 hover:text-indigo-500 transition-colors text-base">🔈</button>
-                        </div>
+            {/* ── Sense-based display ── */}
+            {word.hasSenses ? (
+              <div className="flex flex-col gap-4">
+                {word.senses.map((sense, si) => {
+                  const posBadge = POS_STYLES[sense.pos] || POS_STYLES.preposition
+                  const STAGE_COLORS = { new: 'bg-gray-100 text-gray-500', early: 'bg-yellow-50 text-yellow-700', mid: 'bg-yellow-100 text-yellow-800', late: 'bg-orange-50 text-orange-700', known: 'bg-green-50 text-green-700', mastered: 'bg-indigo-50 text-indigo-700' }
+                  const stageColor = STAGE_COLORS[sense.learningStage] || STAGE_COLORS.new
+                  return (
+                    <div key={sense.id || si} className="border border-gray-100 rounded-2xl overflow-hidden">
+                      {/* Sense header */}
+                      <div className="bg-gray-50 px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posBadge.label}</span>
+                        <span className="text-sm font-semibold text-gray-800">{sense.wordForm}</span>
+                        {sense.form && <span className="text-xs text-gray-400 italic">({sense.form})</span>}
+                        <span className={`ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}>{sense.learningStage || 'new'}</span>
                       </div>
-                      <p className="text-xs text-gray-400 italic">{ex.translation}</p>
+                      <div className="px-4 py-3 flex flex-col gap-3">
+                        <p className="text-base font-medium text-gray-800">{sense.translation}</p>
+                        {sense.grammarNote && (
+                          <div className={`rounded-xl px-3 py-2 text-xs font-medium flex items-start gap-2 ${
+                            sense.isException ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
+                          }`}>
+                            <span>{sense.isException ? '⚠️' : 'ℹ️'}</span>
+                            <span>{sense.grammarNote}</span>
+                          </div>
+                        )}
+                        {sense.explanation && (
+                          <p className="text-sm text-gray-600 leading-relaxed">{sense.explanation}</p>
+                        )}
+                        {sense.examples?.length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            {sense.examples.map((ex, i) => (
+                              <div key={i} className="bg-gray-50 rounded-xl p-3">
+                                <div className="flex items-start justify-between gap-2 mb-1">
+                                  <p className="text-sm font-medium text-gray-800 leading-snug">{ex.target}</p>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {ex.tense && TENSE_LABELS[ex.tense] && (
+                                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TENSE_LABELS[ex.tense].className}`}>{TENSE_LABELS[ex.tense].label}</span>
+                                    )}
+                                    <button onClick={() => speak(ex.target, speechLocale)} className="text-gray-300 hover:text-indigo-500 transition-colors text-base">🔈</button>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-gray-400 italic">{ex.translation}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Conjugation table */}
+                        {sense.conjugation && (
+                          <div className="rounded-2xl overflow-hidden border border-amber-100">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-amber-50 text-xs text-amber-700 uppercase tracking-wide">
+                                  <th className="px-3 py-2 text-left font-medium w-1/3">{t('dict.pronoun')}</th>
+                                  <th className="px-3 py-2 text-left font-medium">Präsens</th>
+                                  <th className="px-3 py-2 text-left font-medium">Präteritum</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {['ich','du','er/sie/es','wir','ihr','sie/Sie'].map((pronoun, i) => (
+                                  <tr key={pronoun} className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50/30'}>
+                                    <td className="px-3 py-1.5 text-gray-400 font-medium text-xs">{pronoun}</td>
+                                    <td className="px-3 py-1.5 text-gray-800 italic">{sense.conjugation.präsens?.[pronoun] || '—'}</td>
+                                    <td className="px-3 py-1.5 text-gray-500 italic">{sense.conjugation.präteritum?.[pronoun] || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div className="bg-amber-50/50 px-3 py-2 flex items-center gap-4 border-t border-amber-100 text-xs text-amber-800">
+                              <span><span className="font-semibold">Partizip II:</span> {sense.conjugation.partizip_ii}</span>
+                              <span><span className="font-semibold">{t('dict.auxiliary')}:</span> {sense.conjugation.auxiliary}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
-            )}
-
-            {/* Conjugation table — irregular verbs only */}
-            {word.conjugation && (
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">{t('dict.conjugation')}</p>
-                <div className="rounded-2xl overflow-hidden border border-amber-100">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-amber-50 text-xs text-amber-700 uppercase tracking-wide">
-                        <th className="px-4 py-2 text-left font-medium w-1/3">{t('dict.pronoun')}</th>
-                        <th className="px-4 py-2 text-left font-medium">Präsens</th>
-                        <th className="px-4 py-2 text-left font-medium">Präteritum</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {['ich','du','er/sie/es','wir','ihr','sie/Sie'].map((pronoun, i) => (
-                        <tr key={pronoun} className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50/30'}>
-                          <td className="px-4 py-2 text-gray-400 font-medium text-xs">{pronoun}</td>
-                          <td className="px-4 py-2 text-gray-800 italic">{word.conjugation.präsens?.[pronoun] || '—'}</td>
-                          <td className="px-4 py-2 text-gray-500 italic">{word.conjugation.präteritum?.[pronoun] || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="bg-amber-50/50 px-4 py-2.5 flex items-center gap-4 border-t border-amber-100 text-xs text-amber-800">
-                    <span><span className="font-semibold">Partizip II:</span> {word.conjugation.partizip_ii}</span>
-                    <span><span className="font-semibold">{t('dict.auxiliary')}:</span> {word.conjugation.auxiliary}</span>
+            ) : (
+              /* ── Legacy flat display (pre-migration words) ── */
+              <>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{t('dict.translation')}</p>
+                  <p className="text-xl font-semibold text-gray-800">{word.translation}</p>
+                </div>
+                {word.explanation && (
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">{t('dict.explanation')}</p>
+                    <p className="text-sm text-gray-600 leading-relaxed">{word.explanation}</p>
                   </div>
-                </div>
-              </div>
+                )}
+                {word.grammarNote && (
+                  <div className={`rounded-xl px-4 py-3 text-xs font-medium flex items-start gap-2 ${
+                    word.isException ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
+                  }`}>
+                    <span className="mt-0.5">{word.isException ? '⚠️' : 'ℹ️'}</span>
+                    <span>{word.grammarNote}</span>
+                  </div>
+                )}
+                {word.examples?.length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">
+                      {word.pos === 'verb' ? t('dict.examplesVerb') : t('dict.examples')}
+                    </p>
+                    <div className="flex flex-col gap-3">
+                      {word.examples.map((ex, i) => (
+                        <div key={i} className="bg-gray-50 rounded-xl p-4">
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <p className="text-sm font-medium text-gray-800 leading-snug">{ex.target}</p>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {ex.tense && TENSE_LABELS[ex.tense] && (
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TENSE_LABELS[ex.tense].className}`}>{TENSE_LABELS[ex.tense].label}</span>
+                              )}
+                              <button onClick={() => speak(ex.target, speechLocale)} className="text-gray-300 hover:text-indigo-500 transition-colors text-base">🔈</button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-400 italic">{ex.translation}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {word.conjugation && (
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">{t('dict.conjugation')}</p>
+                    <div className="rounded-2xl overflow-hidden border border-amber-100">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-amber-50 text-xs text-amber-700 uppercase tracking-wide">
+                            <th className="px-4 py-2 text-left font-medium w-1/3">{t('dict.pronoun')}</th>
+                            <th className="px-4 py-2 text-left font-medium">Präsens</th>
+                            <th className="px-4 py-2 text-left font-medium">Präteritum</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {['ich','du','er/sie/es','wir','ihr','sie/Sie'].map((pronoun, i) => (
+                            <tr key={pronoun} className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50/30'}>
+                              <td className="px-4 py-2 text-gray-400 font-medium text-xs">{pronoun}</td>
+                              <td className="px-4 py-2 text-gray-800 italic">{word.conjugation.präsens?.[pronoun] || '—'}</td>
+                              <td className="px-4 py-2 text-gray-500 italic">{word.conjugation.präteritum?.[pronoun] || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="bg-amber-50/50 px-4 py-2.5 flex items-center gap-4 border-t border-amber-100 text-xs text-amber-800">
+                        <span><span className="font-semibold">Partizip II:</span> {word.conjugation.partizip_ii}</span>
+                        <span><span className="font-semibold">{t('dict.auxiliary')}:</span> {word.conjugation.auxiliary}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                  Run the senses migration to see this word in the new format.
+                </p>
+              </>
             )}
 
             <div className="flex flex-col gap-2">
@@ -1398,20 +1491,25 @@ export default function Dictionary() {
 
     if (!wordRows) { setLoadingWords(false); return }
 
-    // Fetch all examples for these words in one query
     const wordIds = wordRows.map((w) => w.id)
-    const { data: exampleRows } = await supabase
-      .from('examples')
-      .select('*')
-      .in('word_id', wordIds)
+
+    const [{ data: exampleRows }, { data: senseRows }] = await Promise.all([
+      supabase.from('examples').select('*').in('word_id', wordIds),
+      supabase.from('word_senses').select('*').in('word_id', wordIds).order('created_at', { ascending: true }),
+    ])
 
     const examplesByWordId = {}
     for (const ex of exampleRows || []) {
       if (!examplesByWordId[ex.word_id]) examplesByWordId[ex.word_id] = []
       examplesByWordId[ex.word_id].push(ex)
     }
+    const sensesByWordId = {}
+    for (const s of senseRows || []) {
+      if (!sensesByWordId[s.word_id]) sensesByWordId[s.word_id] = []
+      sensesByWordId[s.word_id].push(s)
+    }
 
-    setWords(wordRows.map((row) => dbToWord(row, examplesByWordId[row.id] || [])))
+    setWords(wordRows.map(row => dbToWord(row, examplesByWordId[row.id] || [], sensesByWordId[row.id] || [])))
     setLoadingWords(false)
   }
 
@@ -1448,27 +1546,52 @@ export default function Dictionary() {
 
   async function handleAdd(entry) {
     if (!user) return
-    // Insert word
+    const primarySense = entry.senses?.[0]
     const { data: newWord, error } = await supabase
       .from('words')
-      .insert(wordToDb(entry, user.id, targetLang))
-      .select()
+      .insert({
+        user_id: user.id,
+        word: entry.word,
+        entry_type: entry.entryType || 'word',
+        target_language: targetLang,
+        status: 'new',
+        source: entry.source || 'manual',
+        date_added: new Date().toISOString().slice(0, 10),
+        last_reviewed: '—',
+        // Keep legacy cols in sync for backward compat with exercise pages
+        translation: primarySense?.translation ?? entry.translation ?? '',
+        pos: primarySense?.pos ?? entry.pos ?? 'noun',
+        form: primarySense?.form ?? entry.form ?? null,
+        grammar_note: primarySense?.grammarNote ?? entry.grammarNote ?? null,
+        explanation: primarySense?.explanation ?? entry.explanation ?? null,
+        is_exception: primarySense?.isException ?? entry.isException ?? false,
+        conjugation: primarySense?.conjugation ?? entry.conjugation ?? null,
+      })
+      .select('id')
       .single()
     if (error || !newWord) return
 
-    // Insert examples if any
-    if (entry.examples?.length > 0) {
-      await supabase.from('examples').insert(
-        entry.examples.map((ex) => ({
+    if (entry.senses?.length > 0) {
+      await supabase.from('word_senses').insert(
+        entry.senses.map(s => ({
           word_id: newWord.id,
-          sentence_target: ex.target,
-          sentence_translation: ex.translation,
-          tense: ex.tense || null,
+          user_id: user.id,
+          target_language: targetLang,
+          pos: s.pos,
+          word_form: s.wordForm || entry.word,
+          translation: s.translation,
+          form: s.form || null,
+          grammar_note: s.grammarNote || null,
+          explanation: s.explanation || null,
+          is_exception: s.isException || false,
+          conjugation: s.conjugation || null,
+          examples: s.examples || [],
+          learning_stage: 'new',
+          correct_recall_count: 0,
         }))
       )
     }
 
-    // Reload to get fresh data with examples
     fetchWords()
   }
 
@@ -1482,26 +1605,48 @@ export default function Dictionary() {
 
   async function handleUpdate(updated) {
     if (!user) return
+    const primarySense = updated.senses?.[0]
     await supabase
       .from('words')
       .update({
-        translation: updated.translation,
+        translation: primarySense?.translation ?? updated.translation,
         status: updated.status,
-        grammar_note: updated.grammarNote,
-        explanation: updated.explanation,
-        form: updated.form || null,
-        pos: updated.pos || null,
-        is_exception: updated.isException ?? false,
-        conjugation: updated.conjugation || null,
+        grammar_note: primarySense?.grammarNote ?? updated.grammarNote,
+        explanation: primarySense?.explanation ?? updated.explanation,
+        form: primarySense?.form ?? updated.form ?? null,
+        pos: primarySense?.pos ?? updated.pos ?? null,
+        is_exception: primarySense?.isException ?? updated.isException ?? false,
+        conjugation: primarySense?.conjugation ?? updated.conjugation ?? null,
       })
       .eq('id', updated.id)
       .eq('user_id', user.id)
 
-    // Upsert examples if provided
-    if (updated.examples?.length) {
+    // If senses provided, replace all sense rows for this word
+    if (updated.senses?.length) {
+      await supabase.from('word_senses').delete().eq('word_id', updated.id)
+      await supabase.from('word_senses').insert(
+        updated.senses.map(s => ({
+          word_id: updated.id,
+          user_id: user.id,
+          target_language: targetLang,
+          pos: s.pos,
+          word_form: s.wordForm || updated.word,
+          translation: s.translation,
+          form: s.form || null,
+          grammar_note: s.grammarNote || null,
+          explanation: s.explanation || null,
+          is_exception: s.isException || false,
+          conjugation: s.conjugation || null,
+          examples: s.examples || [],
+          learning_stage: s.learningStage || 'new',
+          correct_recall_count: s.correctRecallCount || 0,
+          next_review_date: s.nextReviewDate || null,
+        }))
+      )
+    } else if (updated.examples?.length) {
       await supabase.from('examples').delete().eq('word_id', updated.id)
       await supabase.from('examples').insert(
-        updated.examples.map((ex) => ({
+        updated.examples.map(ex => ({
           word_id: updated.id,
           sentence_target: ex.target,
           sentence_translation: ex.translation,
