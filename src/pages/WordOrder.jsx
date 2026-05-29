@@ -50,18 +50,23 @@ export default function WordOrder() {
   const [speaking, setSpeaking]     = useState(false)
   const [wordStatuses, setWordStatuses] = useState({}) // key → 'loading'|'added'|'error'
 
-  // Load status counts on mount
+  // Load sense counts on mount
   useEffect(() => {
     if (!user) return
     supabase
-      .from('words')
-      .select('status')
+      .from('word_senses')
+      .select('learning_stage, word_id')
       .eq('user_id', user.id)
       .eq('target_language', targetLang)
       .then(({ data }) => {
         if (!data) return
         const c = { new: 0, learning: 0, known: 0, mastered: 0 }
-        data.forEach((w) => { if (c[w.status] !== undefined) c[w.status]++ })
+        data.forEach(({ learning_stage: s }) => {
+          if (s === 'new') c.new++
+          else if (s === 'early' || s === 'mid' || s === 'late') c.learning++
+          else if (s === 'known') c.known++
+          else if (s === 'mastered') c.mastered++
+        })
         setCounts(c)
       })
   }, [user, targetLang])
@@ -70,16 +75,20 @@ export default function WordOrder() {
     setLoading(true)
 
     let query = supabase
-      .from('words')
-      .select('id, word')
+      .from('word_senses')
+      .select('word_id, word_form')
       .eq('user_id', user.id)
       .eq('target_language', targetLang)
 
-    if (mode === 'new')      query = query.eq('status', 'new')
-    else if (mode === 'learning') query = query.eq('status', 'learning')
-    else if (mode === 'review')   query = query.in('status', ['known', 'mastered'])
+    if (mode === 'new')           query = query.eq('learning_stage', 'new')
+    else if (mode === 'learning') query = query.in('learning_stage', ['early', 'mid', 'late'])
+    else if (mode === 'review')   query = query.in('learning_stage', ['known', 'mastered'])
 
-    const { data: wordData } = await query
+    const { data: senseData } = await query
+    // Deduplicate word_ids (multiple senses per word → one set of examples)
+    const senseWordMap = {}
+    ;(senseData ?? []).forEach((s) => { if (!senseWordMap[s.word_id]) senseWordMap[s.word_id] = s.word_form })
+    const wordData = Object.entries(senseWordMap).map(([id, word]) => ({ id: Number(id), word }))
     if (!wordData?.length) { setCards([]); setLoading(false); setPhase('session'); return }
 
     const wordIds = wordData.map((w) => w.id)

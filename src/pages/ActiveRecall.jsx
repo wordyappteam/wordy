@@ -48,18 +48,23 @@ export default function ActiveRecall() {
   const [results, setResults]   = useState([])   // { correct: bool, typed: string }[]
   const [speaking, setSpeaking] = useState(false)
 
-  // Load status counts
+  // Load sense counts
   useEffect(() => {
     if (!user) return
     supabase
-      .from('words')
-      .select('status')
+      .from('word_senses')
+      .select('learning_stage')
       .eq('user_id', user.id)
       .eq('target_language', targetLang)
       .then(({ data }) => {
         if (!data) return
         const c = { new: 0, learning: 0, known: 0, mastered: 0 }
-        data.forEach((w) => { if (c[w.status] !== undefined) c[w.status]++ })
+        data.forEach(({ learning_stage: s }) => {
+          if (s === 'new') c.new++
+          else if (s === 'early' || s === 'mid' || s === 'late') c.learning++
+          else if (s === 'known') c.known++
+          else if (s === 'mastered') c.mastered++
+        })
         setCounts(c)
       })
   }, [user, targetLang])
@@ -67,20 +72,22 @@ export default function ActiveRecall() {
   const loadCards = async (mode) => {
     setLoading(true)
     let query = supabase
-      .from('words')
-      .select('id, word, translation, pos, form, grammar_note, is_exception')
+      .from('word_senses')
+      .select('id, word_form, translation, pos, form, grammar_note, is_exception')
       .eq('user_id', user.id)
       .eq('target_language', targetLang)
       .not('translation', 'is', null)
 
-    if (mode === 'learning') query = query.eq('status', 'learning')
-    else if (mode === 'review')  query = query.in('status', ['known', 'mastered'])
-    else query = query.in('status', ['learning', 'known', 'mastered'])  // 'all' = active only
+    if (mode === 'learning') query = query.in('learning_stage', ['early', 'mid', 'late'])
+    else if (mode === 'review')  query = query.in('learning_stage', ['known', 'mastered'])
+    else query = query.in('learning_stage', ['early', 'mid', 'late', 'known', 'mastered'])  // 'all' = active only
 
     const { data } = await query
     if (!data?.length) { setCards([]); setLoading(false); setPhase('session'); return }
 
-    const filtered = data.filter((w) => w.translation && w.translation.trim() !== '')
+    const filtered = data
+      .filter((s) => s.translation && s.translation.trim() !== '')
+      .map((s) => ({ ...s, word: s.word_form }))
     const selected = shuffle(filtered).slice(0, SESSION_SIZE)
     setCards(selected)
     setIndex(0)

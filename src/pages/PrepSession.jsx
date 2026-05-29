@@ -474,20 +474,39 @@ export default function PrepSession() {
     setPhase('loading')
     setErrorMsg(null)
     try {
-      // 1 — fetch prep verbs with status
-      const { data: wordRows } = await supabase
-        .from('words').select('id, word, translation, pos, status, grammar_note, is_exception')
+      // 1 — fetch prep verbs from word_senses
+      const { data: senseRows } = await supabase
+        .from('word_senses').select('id, word_id, word_form, translation, pos, learning_stage, grammar_note, is_exception, examples')
         .eq('user_id', user.id).eq('pos', 'verb').eq('target_language', targetLang)
 
-      let pool = (wordRows ?? []).filter((w) => hasPrep(w.word))
+      // Deduplicate: one sense per word (prefer first sense if multiple verb senses exist)
+      const seenWordIds = new Set()
+      const dedupedRows = (senseRows ?? []).filter((s) => {
+        if (seenWordIds.has(s.word_id)) return false
+        seenWordIds.add(s.word_id)
+        return true
+      })
+      // Map to word-like shape expected by rest of function
+      const wordRows = dedupedRows.map((s) => ({
+        id: s.word_id,
+        word: s.word_form,
+        translation: s.translation,
+        pos: s.pos,
+        status: s.learning_stage,
+        grammar_note: s.grammar_note,
+        is_exception: s.is_exception,
+        _senseExamples: s.examples,
+      }))
 
-      // filter by mode
+      let pool = wordRows.filter((w) => hasPrep(w.word))
+
+      // filter by mode (learning_stage mapped to old status names for compat)
       const byMode = {
         new:       pool.filter((v) => v.status === 'new'),
-        learning:  pool.filter((v) => v.status === 'learning'),
+        learning:  pool.filter((v) => ['early', 'mid', 'late'].includes(v.status)),
         review:    pool.filter((v) => v.status === 'known' || v.status === 'mastered'),
         suggested: [
-          ...pool.filter((v) => v.status === 'learning'),
+          ...pool.filter((v) => ['early', 'mid', 'late'].includes(v.status)),
           ...pool.filter((v) => v.status === 'new'),
           ...pool.filter((v) => v.status === 'known' || v.status === 'mastered'),
         ],
@@ -502,23 +521,15 @@ export default function PrepSession() {
 
       const selected = pool.sort(() => Math.random() - 0.5).slice(0, SESSION_SIZE)
 
-      // 2 — fetch examples
-      const ids = selected.map((w) => w.id)
-      const { data: exRows } = await supabase.from('examples').select('*').in('word_id', ids)
-      const exMap = {}
-      for (const ex of exRows ?? []) {
-        if (!exMap[ex.word_id]) exMap[ex.word_id] = []
-        exMap[ex.word_id].push(ex)
-      }
-
+      // 2 — build examples from sense jsonb (falls back to null if empty)
       const enriched = selected.map((w) => ({
-        word:       w.word,
+        word:        w.word,
         translation: w.translation ?? '',
         grammarNote: w.grammar_note,
         isException: w.is_exception,
-        status:     w.status,
-        example:    exMap[w.id]?.[0]
-          ? { target: exMap[w.id][0].sentence_target, translation: exMap[w.id][0].sentence_translation }
+        status:      w.status,
+        example:     w._senseExamples?.[0]
+          ? { target: w._senseExamples[0].target, translation: w._senseExamples[0].translation }
           : null,
       }))
 

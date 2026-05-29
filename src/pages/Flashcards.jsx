@@ -31,40 +31,23 @@ function speak(text, lang = 'de-DE') {
 
 // ── Spaced repetition helpers ──────────────────────────────────────────────
 
+const STAGE_ORDER    = ['new', 'early', 'mid', 'late', 'known', 'mastered']
+const STAGE_INTERVAL = { new: 1, early: 2, mid: 4, late: 8, known: 14, mastered: 30 }
+
 function addDays(n) {
   const d = new Date()
   d.setDate(d.getDate() + n)
   return d.toISOString().split('T')[0]
 }
 
-function computeReview(interval, result) {
-  const i = interval ?? 1
-  switch (result) {
-    case 'difficult':
-    case 'practice':
-      return { next_review_date: addDays(1), review_interval: 1 }
-    case 'almost':
-      return { next_review_date: addDays(Math.max(1, i)), review_interval: Math.max(1, i) }
-    case 'easy': {
-      const next = Math.min(i <= 1 ? 2 : Math.round(i * 2), 30)
-      return { next_review_date: addDays(next), review_interval: next }
-    }
-    default:
-      return { next_review_date: addDays(1), review_interval: 1 }
-  }
-}
-
-function computeStatus(status, result, newInterval) {
-  if (result === 'easy') {
-    if (newInterval >= 21) return 'mastered'
-    if (newInterval >= 7)  return 'known'
-    if (status === 'new')  return 'learning'
-  }
-  if (result === 'difficult') {
-    if (status === 'mastered') return 'known'
-    if (status === 'known')    return 'learning'
-  }
-  return status
+function computeSenseReview(stage, result) {
+  const i = STAGE_ORDER.indexOf(stage ?? 'new')
+  let newStage = stage ?? 'new'
+  if (result === 'easy')      newStage = STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)]
+  else if (result === 'difficult') newStage = STAGE_ORDER[Math.max(i - 1, 0)]
+  // 'almost' and 'practice' → no stage change
+  const interval = STAGE_INTERVAL[newStage] ?? 1
+  return { learning_stage: newStage, next_review_date: addDays(interval) }
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -84,19 +67,24 @@ export default function Flashcards() {
   const [results, setResults]   = useState([])
   const [speaking, setSpeaking] = useState(false)
 
-  // Load status counts + today's due count on mount
+  // Load sense counts + today's due count on mount
   useEffect(() => {
     if (!user) return
     const today = new Date().toISOString().split('T')[0]
 
     Promise.all([
-      supabase.from('words').select('status').eq('user_id', user.id).eq('target_language', targetLang),
-      supabase.from('words').select('id').eq('user_id', user.id).eq('target_language', targetLang)
-        .lte('next_review_date', today).neq('status', 'new'),
-    ]).then(([{ data: statusData }, { data: dueData }]) => {
-      if (!statusData) return
+      supabase.from('word_senses').select('learning_stage').eq('user_id', user.id).eq('target_language', targetLang),
+      supabase.from('word_senses').select('id').eq('user_id', user.id).eq('target_language', targetLang)
+        .lte('next_review_date', today).neq('learning_stage', 'new'),
+    ]).then(([{ data: stageData }, { data: dueData }]) => {
+      if (!stageData) return
       const c = { new: 0, learning: 0, known: 0, mastered: 0 }
-      statusData.forEach((w) => { if (c[w.status] !== undefined) c[w.status]++ })
+      stageData.forEach(({ learning_stage: s }) => {
+        if (s === 'new') c.new++
+        else if (s === 'early' || s === 'mid' || s === 'late') c.learning++
+        else if (s === 'known') c.known++
+        else if (s === 'mastered') c.mastered++
+      })
       setCounts({ ...c, due: dueData?.length ?? 0 })
     })
   }, [user, targetLang])
@@ -105,77 +93,62 @@ export default function Flashcards() {
     setLoading(true)
     const today = new Date().toISOString().split('T')[0]
 
-    let wordData = []
+    let senseData = []
 
     if (mode === 'today') {
-      const [{ data: dueWords }, { data: newWords }] = await Promise.all([
+      const [{ data: dueSenses }, { data: newSenses }] = await Promise.all([
         supabase
-          .from('words')
-          .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
+          .from('word_senses')
+          .select('id, word_form, form, pos, translation, grammar_note, is_exception, examples, learning_stage')
           .eq('user_id', user.id).eq('target_language', targetLang)
           .lte('next_review_date', today)
-          .neq('status', 'new')
+          .neq('learning_stage', 'new')
           .order('next_review_date', { ascending: true })
           .limit(15),
         supabase
-          .from('words')
-          .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
+          .from('word_senses')
+          .select('id, word_form, form, pos, translation, grammar_note, is_exception, examples, learning_stage')
           .eq('user_id', user.id).eq('target_language', targetLang)
-          .eq('status', 'new')
+          .eq('learning_stage', 'new')
           .limit(5),
       ])
-      wordData = [...(dueWords ?? []), ...(newWords ?? [])]
+      senseData = [...(dueSenses ?? []), ...(newSenses ?? [])]
     } else {
       let query = supabase
-        .from('words')
-        .select('id, word, form, pos, translation, grammar_note, is_exception, status, review_interval')
+        .from('word_senses')
+        .select('id, word_form, form, pos, translation, grammar_note, is_exception, examples, learning_stage')
         .eq('user_id', user.id).eq('target_language', targetLang)
         .order('created_at', { ascending: false })
 
-      if (mode === 'new')           query = query.eq('status', 'new')
-      else if (mode === 'learning') query = query.eq('status', 'learning')
-      else if (mode === 'review')   query = query.in('status', ['known', 'mastered'])
+      if (mode === 'new')           query = query.eq('learning_stage', 'new')
+      else if (mode === 'learning') query = query.in('learning_stage', ['early', 'mid', 'late'])
+      else if (mode === 'review')   query = query.in('learning_stage', ['known', 'mastered'])
       // 'all' — no filter
 
       const { data } = await query
-      wordData = data ?? []
+      senseData = data ?? []
     }
 
-    if (wordData.length === 0) {
+    if (senseData.length === 0) {
       setCards([])
       setLoading(false)
       setPhase('session')
       return
     }
 
-    // Fetch one example per word
-    const wordIds = wordData.map((w) => w.id)
-    const { data: exampleData } = await supabase
-      .from('examples')
-      .select('word_id, sentence_target, sentence_translation')
-      .in('word_id', wordIds)
-
-    const exampleMap = {}
-    if (exampleData) {
-      exampleData.forEach((ex) => {
-        if (!exampleMap[ex.word_id]) exampleMap[ex.word_id] = ex
-      })
-    }
-
-    const mapped = wordData
-      .filter((w) => w.translation && w.translation.trim() !== '')
-      .map((w) => ({
-        id:                 w.id,
-        word:               w.word,
-        form:               w.form,
-        pos:                w.pos || 'noun',
-        translation:        w.translation,
-        grammarNote:        w.grammar_note,
-        isException:        w.is_exception,
-        status:             w.status,
-        reviewInterval:     w.review_interval ?? 1,
-        example:            exampleMap[w.id]?.sentence_target ?? null,
-        exampleTranslation: exampleMap[w.id]?.sentence_translation ?? null,
+    const mapped = senseData
+      .filter((s) => s.translation && s.translation.trim() !== '')
+      .map((s) => ({
+        id:                 s.id,
+        word:               s.word_form,
+        form:               s.form,
+        pos:                s.pos || 'noun',
+        translation:        s.translation,
+        grammarNote:        s.grammar_note,
+        isException:        s.is_exception,
+        stage:              s.learning_stage ?? 'new',
+        example:            s.examples?.[0]?.target ?? null,
+        exampleTranslation: s.examples?.[0]?.translation ?? null,
       }))
 
     setCards(shuffle(mapped))
@@ -200,12 +173,9 @@ export default function Flashcards() {
     const next = [...results, { id: card.id, result }]
     setResults(next)
 
-    // Compute and save spaced rep
-    const { next_review_date, review_interval } = computeReview(card.reviewInterval, result)
-    const newStatus = computeStatus(card.status, result, review_interval)
-    const updates = { next_review_date, review_interval }
-    if (newStatus !== card.status) updates.status = newStatus
-    supabase.from('words').update(updates).eq('id', card.id).then()
+    // Compute and save spaced rep on word_senses
+    const { learning_stage, next_review_date } = computeSenseReview(card.stage, result)
+    supabase.from('word_senses').update({ learning_stage, next_review_date }).eq('id', card.id).then()
 
     if (index + 1 >= cards.length) {
       setPhase('done')
