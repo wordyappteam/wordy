@@ -20,6 +20,7 @@ import SentenceWriting from './pages/SentenceWriting'
 import Exercises from './pages/Exercises'
 import Session from './pages/Session'
 import Migrate from './pages/Migrate'
+import Reader from './pages/Reader'
 
 // Wraps pages that require login
 function Protected({ children }) {
@@ -62,6 +63,7 @@ function App() {
           <Route path="/exercises"        element={<Protected><Exercises /></Protected>} />
           <Route path="/session"          element={<Protected><Session /></Protected>} />
           <Route path="/migrate"          element={<Protected><Migrate /></Protected>} />
+          <Route path="/reader"           element={<Protected><Reader /></Protected>} />
           <Route path="*"            element={<Navigate to="/" />} />
         </Routes>
       </TargetLangProvider>

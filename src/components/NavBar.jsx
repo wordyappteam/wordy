@@ -14,6 +14,7 @@ export default function NavBar({ slot, className = '' }) {
     { path: '/dashboard',  label: t('nav.dashboard')  },
     { path: '/dictionary', label: t('nav.dictionary') },
     { path: '/exercises',  label: t('nav.exercises')  },
+    { path: '/reader',     label: 'Reader'            },
     { path: '/chat',       label: t('nav.chat')       },
   ]
 
