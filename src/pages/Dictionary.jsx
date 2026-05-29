@@ -64,6 +64,8 @@ function dbSenseToFrontend(s) {
     grammarNote: s.grammar_note,
     explanation: s.explanation,
     isException: s.is_exception,
+    register: s.register ?? 'neutral',
+    cefr: s.cefr ?? null,
     conjugation: s.conjugation || null,
     examples: (s.examples || []).map(ex => ({
       target: ex.target,
@@ -449,6 +451,9 @@ function renderCell(colId, w, t) {
   switch (colId) {
     case 'word': {
       const caseBadge = extractCaseBadge(w)
+      const CEFR_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+      const cefrLevels = (w.senses || []).map(s => s.cefr).filter(Boolean)
+      const lowestCefr = cefrLevels.sort((a, b) => CEFR_ORDER.indexOf(a) - CEFR_ORDER.indexOf(b))[0] ?? null
       return (
         <span className="font-medium text-gray-900 flex items-center gap-1.5 flex-wrap">
           <span>{w.word}</span>
@@ -459,6 +464,9 @@ function renderCell(colId, w, t) {
             <span className={`text-xs font-semibold px-1.5 py-0.5 rounded border ${caseBadge.cls}`}>
               {caseBadge.label}
             </span>
+          )}
+          {lowestCefr && (
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-indigo-600 text-white">{lowestCefr}</span>
           )}
         </span>
       )
@@ -475,7 +483,23 @@ function renderCell(colId, w, t) {
         </span>
       )
     }
-    case 'translation':  return <span className="text-gray-500">{w.translation}</span>
+    case 'translation': {
+      const translations = w.senses?.length > 0
+        ? w.senses.map((s) => s.translation).filter(Boolean)
+        : [w.translation].filter(Boolean)
+      const shown   = translations.slice(0, 3)
+      const overflow = translations.length - shown.length
+      return (
+        <span className="flex flex-col gap-0.5">
+          {shown.map((t, i) => (
+            <span key={i} className="text-gray-500 text-sm leading-snug">{t}</span>
+          ))}
+          {overflow > 0 && (
+            <span className="text-xs text-gray-400 italic">+{overflow} more</span>
+          )}
+        </span>
+      )
+    }
     case 'status': {
       const statusLabel = { new: t('dict.statusNew'), learning: t('dict.statusLearning'), known: t('dict.statusKnown'), mastered: t('dict.statusMastered') }
       return <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[w.status]}`}>{statusLabel[w.status] ?? w.status}</span>
@@ -738,11 +762,17 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                         <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posBadge.label}</span>
                         <span className="text-sm font-semibold text-gray-800">{sense.wordForm}</span>
                         {sense.form && <span className="text-xs text-gray-400 italic">({sense.form})</span>}
+                        {sense.cefr && (
+                          <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-600 text-white">{sense.cefr}</span>
+                        )}
+                        {sense.register && sense.register !== 'neutral' && (
+                          <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 capitalize">{sense.register}</span>
+                        )}
                         <span className={`ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}>{sense.learningStage || 'new'}</span>
                       </div>
                       <div className="px-4 py-3 flex flex-col gap-3">
                         <p className="text-base font-medium text-gray-800">{sense.translation}</p>
-                        {sense.grammarNote && (
+                        {sense.grammarNote && !/^(countable|uncountable) noun/i.test(sense.grammarNote) && (
                           <div className={`rounded-xl px-3 py-2 text-xs font-medium flex items-start gap-2 ${
                             sense.isException ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
                           }`}>
@@ -816,7 +846,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                     <p className="text-sm text-gray-600 leading-relaxed">{word.explanation}</p>
                   </div>
                 )}
-                {word.grammarNote && (
+                {word.grammarNote && !/^(countable|uncountable) noun/i.test(word.grammarNote) && (
                   <div className={`rounded-xl px-4 py-3 text-xs font-medium flex items-start gap-2 ${
                     word.isException ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
                   }`}>
@@ -1584,6 +1614,8 @@ export default function Dictionary() {
           grammar_note: s.grammarNote || null,
           explanation: s.explanation || null,
           is_exception: s.isException || false,
+          register: s.register || 'neutral',
+          cefr: s.cefr || null,
           conjugation: s.conjugation || null,
           examples: s.examples || [],
           learning_stage: 'new',
@@ -1636,6 +1668,8 @@ export default function Dictionary() {
           grammar_note: s.grammarNote || null,
           explanation: s.explanation || null,
           is_exception: s.isException || false,
+          register: s.register || 'neutral',
+          cefr: s.cefr || null,
           conjugation: s.conjugation || null,
           examples: s.examples || [],
           learning_stage: s.learningStage || 'new',

@@ -23,7 +23,7 @@ async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTok
 
 // ── Word identification ────────────────────────────────────────────────────
 // Returns { word, entryType, senses: [...] }
-// Each sense: { pos, wordForm, translation, form, grammarNote, explanation, isException, examples, conjugation }
+// Each sense: { pos, wordForm, translation, form, grammarNote, explanation, isException, examples, conjugation, register, cefr }
 // When context (sentence) is provided, returns only the matching sense.
 export async function identifyWord(input, targetLanguage = 'German', interfaceLanguage = 'English', context = null) {
   const system = `You are a language expert specialising in ${targetLanguage}.
@@ -73,6 +73,8 @@ Return ONLY this JSON:
       "grammarNote": "one key grammar rule, under 15 words",
       "explanation": "2-3 sentences on usage and nuance, under 60 words",
       "isException": true or false,
+      "register": "neutral|formal|informal|colloquial|slang|archaic|vulgar",
+      "cefr": "A1|A2|B1|B2|C1|C2",
       "examples": [
         { "target": "natural ${targetLanguage} example", "translation": "${interfaceLanguage} translation", "tense": "present|past|null" },
         { "target": "...", "translation": "...", "tense": "..." },
@@ -89,6 +91,8 @@ ${nounArticleRule}
 - isException: true only for irregular verbs, exceptional grammar, or fixed collocations
 - Always include exactly 3 example sentences per sense
 - For verbs: present, past, one varied — set "tense" accordingly. For nouns/adj/other: "tense": null
+- register: language register for this specific sense. Use "neutral" for everyday vocabulary with no special register
+- cefr: CEFR level for this specific sense based on standard vocabulary lists. When between two levels, pick the more common/lower one
 ${conjugationRules}`
 
   const text = await callClaude({
