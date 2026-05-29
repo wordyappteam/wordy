@@ -25,10 +25,18 @@ async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTok
 // Returns { word, entryType, senses: [...] }
 // Each sense: { pos, wordForm, translation, form, grammarNote, explanation, isException, examples, conjugation, register, cefr }
 // When context (sentence) is provided, returns only the matching sense.
+// Adds script hint so Haiku doesn't confuse e.g. Ukrainian (Cyrillic) with Polish
+function langWithScript(lang) {
+  if (lang === 'Ukrainian') return 'Ukrainian (write in Cyrillic script, e.g. слово, речення, приклад)'
+  return lang
+}
+
 export async function identifyWord(input, targetLanguage = 'German', interfaceLanguage = 'English', context = null) {
+  const ifaceLang = langWithScript(interfaceLanguage)
+
   const system = `You are a language expert specialising in ${targetLanguage}.
 Return ONLY valid JSON — no markdown, no code blocks, no explanation outside the JSON.
-Write all explanatory text (explanation and grammarNote fields) in ${interfaceLanguage}.`
+Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.`
 
   const isGerman = targetLanguage === 'German'
 
@@ -68,7 +76,7 @@ Return ONLY this JSON:
     {
       "pos": "verb|noun|adjective|adverb|conjunction|preposition",
       "wordForm": "${wordFormNote}",
-      "translation": "concise ${interfaceLanguage} translation for THIS sense only",
+      "translation": "concise ${ifaceLang} translation for THIS sense only",
       "form": "${formNote}",
       "grammarNote": "one key grammar rule, under 15 words",
       "explanation": "2-3 sentences on usage and nuance, under 60 words",
@@ -76,7 +84,7 @@ Return ONLY this JSON:
       "register": "neutral|formal|informal|colloquial|slang|archaic|vulgar",
       "cefr": "A1|A2|B1|B2|C1|C2",
       "examples": [
-        { "target": "natural ${targetLanguage} example", "translation": "${interfaceLanguage} translation", "tense": "present|past|null" },
+        { "target": "natural ${targetLanguage} example", "translation": "${ifaceLang} translation", "tense": "present|past|null" },
         { "target": "...", "translation": "...", "tense": "..." },
         { "target": "...", "translation": "...", "tense": "..." }
       ],

@@ -20,12 +20,13 @@ export default function Migrate() {
   async function loadWords() {
     const { data } = await supabase
       .from('words')
-      .select('id, word')
+      .select('id, word, target_language')
       .eq('user_id', user.id)
-      .eq('target_language', targetLang)
       .order('created_at', { ascending: true })
     setWords(data || [])
   }
+
+  const LANG_NAME = { de: 'German', en: 'English' }
 
   async function handleStart() {
     await loadWords()
@@ -36,9 +37,8 @@ export default function Migrate() {
 
     const { data: allWords } = await supabase
       .from('words')
-      .select('id, word')
+      .select('id, word, target_language')
       .eq('user_id', user.id)
-      .eq('target_language', targetLang)
       .order('created_at', { ascending: true })
 
     if (!allWords?.length) { setPhase('done'); return }
@@ -52,7 +52,8 @@ export default function Migrate() {
       setCurrent(w.word)
       setIndex(i)
       try {
-        const result = await identifyWord(w.word, targetLanguageName, 'English')
+        const langName = LANG_NAME[w.target_language] ?? w.target_language
+        const result = await identifyWord(w.word, langName, 'English')
         if (!result.senses?.length) throw new Error('no senses returned')
 
         // Delete existing senses for this word (idempotent re-run)
@@ -63,7 +64,7 @@ export default function Migrate() {
           result.senses.map(s => ({
             word_id: w.id,
             user_id: user.id,
-            target_language: targetLang,
+            target_language: w.target_language,
             pos: s.pos,
             word_form: s.wordForm || result.word,
             translation: s.translation,
@@ -71,6 +72,8 @@ export default function Migrate() {
             grammar_note: s.grammarNote || null,
             explanation: s.explanation || null,
             is_exception: s.isException || false,
+            register: s.register || 'neutral',
+            cefr: s.cefr || null,
             conjugation: s.conjugation || null,
             examples: s.examples || [],
             learning_stage: 'new',
@@ -113,7 +116,7 @@ export default function Migrate() {
 
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Senses Migration</h1>
         <p className="text-sm text-gray-500 mb-6">
-          Re-identifies all your {targetLanguageName} words with Claude and creates a sense row for each distinct meaning.
+          Re-identifies all your words (all languages) with Claude and creates a sense row for each distinct meaning.
           Existing senses are replaced. Learning progress resets to <em>new</em> for all words.
         </p>
 

@@ -77,11 +77,16 @@ export async function deleteBook(id) {
   return txDone(t2)
 }
 
-export async function updateProgress(bookId, chapterIndex) {
+export async function updateProgress(bookId, chapterIndex, pageIndex = 0) {
   const db = await openDb()
   const t = db.transaction('books', 'readwrite')
   const store = t.objectStore('books')
   const book = await idbReq(store.get(bookId))
-  if (book) { book.lastChapterIndex = chapterIndex; book.lastReadAt = Date.now(); store.put(book) }
+  if (book) {
+    book.lastChapterIndex = chapterIndex
+    book.lastPageIndex = pageIndex
+    book.lastReadAt = Date.now()
+    store.put(book)
+  }
   return txDone(t)
 }

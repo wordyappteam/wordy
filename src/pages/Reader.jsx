@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Epub from 'epubjs'
 import { supabase } from '../lib/supabase'
@@ -10,6 +10,8 @@ import { saveBook, getBooks, getChapterList, getChapter, deleteBook, updateProgr
 import NavBar from '../components/NavBar'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 10  // blocks per page
 
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -24,6 +26,11 @@ function tokenize(text) {
   }))
 }
 
+// Strip leading article so "das Buch" → "buch" for text matching
+function normalizeWordForm(w) {
+  return w.toLowerCase().replace(/^(der|die|das|ein|eine)\s+/i, '').trim()
+}
+
 // Extract the sentence containing `word` from `blockText`
 function getSentence(blockText, word) {
   const sentences = blockText.match(/[^.!?…]+[.!?…]*/g) ?? [blockText]
@@ -36,15 +43,41 @@ function getSentence(blockText, word) {
 
 // Extract blocks from an epub section document
 function extractBlocks(doc) {
+  if (!doc?.body) return []
   const blocks = []
-  const els = doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, li')
-  for (const el of els) {
-    const text = el.textContent?.replace(/\s+/g, ' ').trim()
-    if (text && text.length > 1) {
-      blocks.push({ type: el.tagName.toLowerCase(), text })
+
+  const blockEls = doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, li')
+  if (blockEls.length > 0) {
+    for (const el of blockEls) {
+      const text = el.textContent?.replace(/\s+/g, ' ').trim()
+      if (text && text.length > 1) blocks.push({ type: el.tagName.toLowerCase(), text })
+    }
+  } else {
+    // Fallback for div-based epubs (Kindle, some older formats)
+    for (const el of doc.querySelectorAll('div')) {
+      if (el.querySelector('div, p, h1, h2, h3, h4, h5, h6')) continue // skip containers
+      const text = el.textContent?.replace(/\s+/g, ' ').trim()
+      if (text && text.length > 10) blocks.push({ type: 'p', text })
     }
   }
+
   return blocks
+}
+
+// Load an epub section document directly from the zip (handles path prefix differences)
+async function loadSectionDoc(item, book) {
+  const href = item.href
+  if (!href) return null
+
+  const zip = book.archive.zip
+  const entries = Object.keys(zip.files)
+
+  // The href may be relative (e.g. "ch1.html") while zip stores "OEBPS/ch1.html"
+  const entry = entries.find(e => e === href || e.endsWith('/' + href))
+  if (!entry) return null
+
+  const text = await zip.file(entry).async('text')
+  return new DOMParser().parseFromString(text, 'application/xhtml+xml')
 }
 
 // Parse epub ArrayBuffer → { title, author, chapters[] }
@@ -57,14 +90,13 @@ async function parseEpub(arrayBuffer, bookId) {
   const author = meta.creator?.trim() || ''
 
   const chapters = []
-  for (const section of book.spine.items) {
+  for (const item of book.spine.items) {
     try {
-      const doc = await section.load(book.load.bind(book))
-      if (!doc) { section.unload?.(); continue }
+      const doc = await loadSectionDoc(item, book)
+      if (!doc) continue
 
       const blocks = extractBlocks(doc)
-      section.unload?.()
-      if (blocks.length < 2) continue
+      if (blocks.length < 1) continue
 
       const headingEl = blocks.find(b => ['h1','h2','h3'].includes(b.type))
       const chTitle = headingEl?.text || `Chapter ${chapters.length + 1}`
@@ -76,7 +108,7 @@ async function parseEpub(arrayBuffer, bookId) {
         blocks,
       })
     } catch {
-      section.unload?.()
+      // skip unreadable sections
     }
   }
 
@@ -95,7 +127,7 @@ const BLOCK_CLASSES = {
   p: 'text-gray-700',
 }
 
-function Block({ type, text, onWordTap, highlighted }) {
+function Block({ type, text, onWordTap, highlighted, knownWords }) {
   const Tag = ['h1','h2','h3','h4','h5','h6'].includes(type) ? type : type === 'blockquote' ? 'blockquote' : type === 'li' ? 'li' : 'p'
   const tokens = tokenize(text)
   return (
@@ -108,6 +140,8 @@ function Block({ type, text, onWordTap, highlighted }) {
             className={`cursor-pointer rounded px-0.5 transition-colors select-none
               ${highlighted === token.text.toLowerCase()
                 ? 'bg-yellow-200 text-gray-900'
+                : knownWords?.has(normalizeWordForm(token.text))
+                ? 'bg-indigo-50 text-indigo-800 hover:bg-yellow-100'
                 : 'hover:bg-yellow-100'}`}
           >
             {token.text}
@@ -267,7 +301,7 @@ function AddBookModal({ onClose, onSaved }) {
       const buf = await file.arrayBuffer()
       const bookId = genId()
       const { title: epubTitle, author, chapters } = await parseEpub(buf, bookId)
-      if (chapters.length === 0) throw new Error('No readable chapters found in this epub.')
+      if (chapters.length === 0) throw new Error('No readable chapters found. The file may be DRM-protected or use an unsupported format.')
       setStatus('saving')
       const book = { id: bookId, title: epubTitle, author, format: 'epub', chapterCount: chapters.length, addedAt: Date.now(), lastReadAt: null, lastChapterIndex: 0 }
       await saveBook(book, chapters)
@@ -387,8 +421,13 @@ export default function Reader() {
   const [currentBook, setCurrentBook] = useState(null)
   const [chapterList, setChapterList] = useState([])
   const [chapterIndex, setChapterIndex] = useState(0)
+  const [pageIndex, setPageIndex] = useState(0)
   const [chapter, setChapter] = useState(null)
   const [loadingChapter, setLoadingChapter] = useState(false)
+  const pendingLastPage = useRef(false)
+
+  const [translationLang, setTranslationLang] = useState(interfaceLanguage)
+  const [knownWords, setKnownWords] = useState(new Set())
 
   const [popup, setPopup] = useState(null)     // { word, sentence }
   const [lookup, setLookup] = useState(null)   // { status, result, existing }
@@ -407,23 +446,57 @@ export default function Reader() {
 
   useEffect(() => { loadBooks() }, [])
 
-  // Load chapter when index or book changes
+  // Load known words for highlighting
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('word_senses')
+      .select('word_form')
+      .eq('user_id', user.id)
+      .eq('target_language', targetLang)
+      .then(({ data }) => {
+        if (data) setKnownWords(new Set(data.map(r => normalizeWordForm(r.word_form))))
+      })
+  }, [user, targetLang])
+
+  // Split chapter blocks into pages
+  const pages = useMemo(() => {
+    if (!chapter?.blocks?.length) return []
+    const result = []
+    for (let i = 0; i < chapter.blocks.length; i += PAGE_SIZE)
+      result.push(chapter.blocks.slice(i, i + PAGE_SIZE))
+    return result
+  }, [chapter])
+
+  const currentBlocks = pages[pageIndex] ?? []
+  const totalPages = pages.length
+
+  // Load chapter when index changes; if pendingLastPage, jump to last page after load
   useEffect(() => {
     if (!currentBook) return
     setLoadingChapter(true)
     getChapter(currentBook.id, chapterIndex).then(ch => {
       setChapter(ch ?? null)
       setLoadingChapter(false)
+      if (pendingLastPage.current && ch?.blocks?.length) {
+        setPageIndex(Math.max(0, Math.ceil(ch.blocks.length / PAGE_SIZE) - 1))
+        pendingLastPage.current = false
+      }
       contentRef.current?.scrollTo(0, 0)
     })
-    updateProgress(currentBook.id, chapterIndex)
   }, [currentBook, chapterIndex])
+
+  // Save progress whenever chapter or page changes
+  useEffect(() => {
+    if (currentBook) updateProgress(currentBook.id, chapterIndex, pageIndex)
+  }, [currentBook, chapterIndex, pageIndex])
 
   async function openBook(book) {
     const list = await getChapterList(book.id)
     setCurrentBook(book)
     setChapterList(list)
     setChapterIndex(book.lastChapterIndex ?? 0)
+    setPageIndex(book.lastPageIndex ?? 0)
     setView('reading')
   }
 
@@ -437,6 +510,40 @@ export default function Reader() {
     loadBooks()
   }
 
+  function nextPage() {
+    setPopup(null); setLookup(null)
+    if (pageIndex < totalPages - 1) {
+      setPageIndex(pi => pi + 1)
+      contentRef.current?.scrollTo(0, 0)
+    } else if (chapterIndex < chapterList.length - 1) {
+      setPageIndex(0)
+      setChapterIndex(ci => ci + 1)
+    }
+  }
+
+  function prevPage() {
+    setPopup(null); setLookup(null)
+    if (pageIndex > 0) {
+      setPageIndex(pi => pi - 1)
+      contentRef.current?.scrollTo(0, 0)
+    } else if (chapterIndex > 0) {
+      pendingLastPage.current = true
+      setChapterIndex(ci => ci - 1)
+    }
+  }
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (view !== 'reading') return
+    function onKey(e) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextPage()
+      if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   prevPage()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [view, pageIndex, totalPages, chapterIndex, chapterList.length])
+
   async function handleDeleteBook(bookId) {
     await deleteBook(bookId)
     setDeleteConfirm(null)
@@ -449,7 +556,7 @@ export default function Reader() {
     setLookup({ status: 'loading' })
 
     try {
-      const result = await identifyWord(word, targetLanguageName, interfaceLanguage, sentence)
+      const result = await identifyWord(word, targetLanguageName, translationLang, sentence)
       if (!result.senses?.length) throw new Error('No senses returned')
 
       // Check if base form already in dictionary
@@ -474,7 +581,7 @@ export default function Reader() {
     } catch {
       setLookup({ status: 'error' })
     }
-  }, [targetLanguageName, interfaceLanguage, targetLang, user])
+  }, [targetLanguageName, translationLang, targetLang, user])
 
   async function handleAddWord() {
     if (!lookup?.result || !popup) return
@@ -528,6 +635,11 @@ export default function Reader() {
       }
 
       setLookup(prev => ({ ...prev, status: 'added' }))
+      setKnownWords(prev => {
+        const next = new Set(prev)
+        result.senses.forEach(s => next.add(normalizeWordForm(s.wordForm || result.word)))
+        return next
+      })
     } catch (e) {
       console.error('Add word error:', e)
     }
@@ -630,19 +742,33 @@ export default function Reader() {
   return (
     <div className="min-h-screen bg-white flex flex-col">
       {/* Reading nav */}
-      <nav className="bg-white border-b border-gray-100 px-6 py-3 flex items-center justify-between sticky top-0 z-10 shadow-sm">
-        <button onClick={closeBook} className="text-sm text-gray-400 hover:text-gray-700 transition-colors">
+      <nav className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-0 z-10 shadow-sm gap-3">
+        <button onClick={closeBook} className="text-sm text-gray-400 hover:text-gray-700 transition-colors shrink-0">
           ← Library
         </button>
-        <div className="flex flex-col items-center">
-          <span className="text-sm font-semibold text-gray-800 max-w-[200px] truncate">{currentBook?.title}</span>
-          {chapterList.length > 1 && (
-            <span className="text-xs text-gray-400">
-              {chapterList[chapterIndex]?.title ?? `Chapter ${chapterIndex + 1}`}
-            </span>
-          )}
+
+        <div className="flex flex-col items-center min-w-0">
+          <span className="text-sm font-semibold text-gray-800 truncate max-w-[180px]">{currentBook?.title}</span>
+          <span className="text-xs text-gray-400 truncate max-w-[180px]">
+            {chapterList[chapterIndex]?.title ?? `Chapter ${chapterIndex + 1}`}
+            {totalPages > 1 && ` · p. ${pageIndex + 1}/${totalPages}`}
+          </span>
         </div>
-        <span className="text-xs text-gray-400">{chapterIndex + 1} / {chapterList.length}</span>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-gray-400 hidden sm:inline">Translate</span>
+          <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs font-semibold">
+            {[{ code: 'English', label: 'EN' }, { code: 'Ukrainian', label: 'UA' }].map(({ code, label }) => (
+              <button
+                key={code}
+                onClick={() => setTranslationLang(code)}
+                className={`px-3 py-1 transition-colors ${translationLang === code ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </nav>
 
       {/* Chapter content */}
@@ -660,13 +786,14 @@ export default function Reader() {
           </div>
         ) : chapter ? (
           <div className="max-w-2xl mx-auto px-6 py-10 flex flex-col gap-4 text-[1.0625rem] leading-[1.85]">
-            {chapter.blocks.map((block, i) => (
+            {currentBlocks.map((block, i) => (
               <Block
                 key={i}
                 type={block.type}
                 text={block.text}
                 onWordTap={handleWordTap}
                 highlighted={popup?.word?.toLowerCase()}
+                knownWords={knownWords}
               />
             ))}
           </div>
@@ -674,18 +801,27 @@ export default function Reader() {
           <div className="flex items-center justify-center py-32 text-gray-400 text-sm">Chapter not found.</div>
         )}
 
-        {/* Chapter navigation */}
-        <div className="max-w-2xl mx-auto px-6 py-8 flex items-center justify-between">
+        {/* Page navigation */}
+        <div className="max-w-2xl mx-auto px-6 pb-12 pt-4 flex items-center justify-between gap-4">
           <button
-            onClick={() => setChapterIndex(i => Math.max(0, i - 1))}
-            disabled={chapterIndex === 0}
+            onClick={prevPage}
+            disabled={chapterIndex === 0 && pageIndex === 0}
             className="px-5 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             ← Previous
           </button>
+
+          <span className="text-xs text-gray-400 text-center">
+            {totalPages > 1
+              ? `p. ${pageIndex + 1} / ${totalPages}`
+              : chapterList.length > 1
+              ? `Ch. ${chapterIndex + 1} / ${chapterList.length}`
+              : null}
+          </span>
+
           <button
-            onClick={() => setChapterIndex(i => Math.min(chapterList.length - 1, i + 1))}
-            disabled={chapterIndex >= chapterList.length - 1}
+            onClick={nextPage}
+            disabled={chapterIndex >= chapterList.length - 1 && pageIndex >= totalPages - 1}
             className="px-5 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             Next →

@@ -451,9 +451,6 @@ function renderCell(colId, w, t) {
   switch (colId) {
     case 'word': {
       const caseBadge = extractCaseBadge(w)
-      const CEFR_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
-      const cefrLevels = (w.senses || []).map(s => s.cefr).filter(Boolean)
-      const lowestCefr = cefrLevels.sort((a, b) => CEFR_ORDER.indexOf(a) - CEFR_ORDER.indexOf(b))[0] ?? null
       return (
         <span className="font-medium text-gray-900 flex items-center gap-1.5 flex-wrap">
           <span>{w.word}</span>
@@ -464,9 +461,6 @@ function renderCell(colId, w, t) {
             <span className={`text-xs font-semibold px-1.5 py-0.5 rounded border ${caseBadge.cls}`}>
               {caseBadge.label}
             </span>
-          )}
-          {lowestCefr && (
-            <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-indigo-600 text-white">{lowestCefr}</span>
           )}
         </span>
       )
@@ -510,6 +504,11 @@ function renderCell(colId, w, t) {
 }
 
 // ── Add Word Modal ────────────────────────────────────────────────────────
+const TRANSLATE_LANGS = [
+  { code: 'English',   label: 'EN' },
+  { code: 'Ukrainian', label: 'UA' },
+]
+
 function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 'German' }) {
   const { t } = useLanguage()
   const [input, setInput]           = useState('')
@@ -517,13 +516,14 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
   const [result, setResult]         = useState(null)
   const [checkedSenses, setCheckedSenses] = useState([])
   const [identifyError, setIdentifyError] = useState(null)
+  const [translationLang, setTranslationLang] = useState(interfaceLanguage)
 
   const handleIdentify = async () => {
     if (!input.trim()) return
     setStage('loading')
     setIdentifyError(null)
     try {
-      const data = await identifyWordAI(input, targetLanguageName, interfaceLanguage)
+      const data = await identifyWordAI(input, targetLanguageName, translationLang)
       setResult(data)
       setCheckedSenses((data.senses || []).map((_, i) => i)) // pre-check all
       setStage('result')
@@ -574,6 +574,20 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
             >
               {stage === 'loading' ? '…' : t('dict.identify')}
             </button>
+          </div>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xs text-gray-400">Translate to</span>
+            <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs font-semibold">
+              {TRANSLATE_LANGS.map(({ code, label }) => (
+                <button
+                  key={code}
+                  onClick={() => { setTranslationLang(code); setStage('idle'); setResult(null) }}
+                  className={`px-3 py-1 transition-colors ${translationLang === code ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <p className="text-xs text-gray-400 mb-5">{t('dict.typeHint')}</p>
           {identifyError && (
