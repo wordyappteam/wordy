@@ -5,9 +5,23 @@ import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { inSession, advanceSession, nextExerciseName } from '../lib/sessionFlow'
-import { identifyWord } from '../lib/claude'
+import { identifyWord, translateSentences } from '../lib/claude'
 
 const SESSION_SIZE = 10
+
+// Rough check: do two sentences look like they're in the same language?
+// Used to detect a degenerate prompt (e.g. an English example shown to an
+// English learner) so we can re-translate it into a language they know.
+function sameLanguage(a, b) {
+  const words = (s) => new Set(
+    s.toLowerCase().replace(/[.,!?;:"""„»«''()\-–—]/g, '').split(/\s+/).filter(Boolean)
+  )
+  const A = words(a), B = words(b)
+  if (!A.size || !B.size) return false
+  let common = 0
+  for (const w of A) if (B.has(w)) common++
+  return common / Math.min(A.size, B.size) >= 0.5
+}
 
 function shuffle(arr) {
   const a = [...arr]
@@ -124,6 +138,27 @@ export default function WordOrder() {
     if (!allCards.length) { setCards([]); setLoading(false); setPhase('session'); return }
 
     const selected = shuffle(allCards).slice(0, SESSION_SIZE)
+
+    // The prompt must be in a language the learner knows but isn't learning.
+    // Use the interface language; if that IS the target language, fall back to
+    // the other supported interface language.
+    let promptLang = interfaceLanguage
+    if (promptLang === targetLanguageName) {
+      promptLang = interfaceLanguage === 'English' ? 'Ukrainian' : 'English'
+    }
+
+    // Re-translate any card whose stored prompt is in the target language
+    // (degenerate: e.g. an English example shown to an English learner).
+    const degenerate = selected.filter((c) => sameLanguage(c.english, c.german))
+    if (degenerate.length) {
+      try {
+        const translated = await translateSentences(degenerate.map((c) => c.german), promptLang)
+        degenerate.forEach((c, i) => { if (translated[i]) c.english = translated[i] })
+      } catch (e) {
+        console.error('WordOrder prompt translation failed:', e)
+      }
+    }
+
     setCards(selected)
     setIndex(0)
     setResults([])

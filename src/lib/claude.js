@@ -117,6 +117,28 @@ ${conjugationRules}`
   return JSON.parse(match[0])
 }
 
+// ── Sentence translation ───────────────────────────────────────────────────
+// Batch-translate sentences into `toLanguage`. Returns an array of strings in
+// the same order. Used by Word Order when the stored prompt is in the wrong
+// language (e.g. English example for an English learner).
+export async function translateSentences(sentences, toLanguage = 'English') {
+  if (!sentences?.length) return []
+  const lang = langWithScript(toLanguage)
+  const system = `You are a translator. Translate each numbered sentence into ${lang}.
+Return ONLY a JSON array of the translated strings, in the same order, nothing else.`
+  const numbered = sentences.map((s, i) => `${i + 1}. ${s}`).join('\n')
+  const text = await callClaude({
+    system,
+    messages: [{ role: 'user', content: `Translate these into ${lang}:\n${numbered}` }],
+    model: 'claude-haiku-4-5',
+    maxTokens: 1024,
+  })
+  const clean = text.replace(/```json|```/g, '').trim()
+  const arrMatch = clean.match(/\[[\s\S]*\]/)
+  if (!arrMatch) throw new Error('No JSON array found in translation response')
+  return JSON.parse(arrMatch[0])
+}
+
 // ── Preposition exercises ──────────────────────────────────────────────────
 export async function generatePrepExercises(verbs, interfaceLanguage = 'English') {
   const verbList = verbs.map((v) => `- ${v.word} (${v.translation})`).join('\n')
