@@ -1,10 +1,15 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { identifyWord as identifyWordAI } from '../lib/claude'
+import { identifyWord as identifyWordAI, suggestCollectionWords } from '../lib/claude'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
+import {
+  collectionColor, nextColor, fetchCollectionsData, createCollection,
+  renameCollection, deleteCollection, addWordToCollection, removeWordFromCollection,
+  COLLECTION_COLOR_KEYS,
+} from '../lib/collections'
 import NavBar from '../components/NavBar'
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -665,13 +670,15 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
 }
 
 // ── Word Panel ────────────────────────────────────────────────────────────
-function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE' }) {
+function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection }) {
   const { t } = useLanguage()
   const [editing, setEditing]             = useState(false)
   const [draft, setDraft]                 = useState(word)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [identifying, setIdentifying]     = useState(false)
   const [identifyError, setIdentifyError] = useState(null)
+  const [creatingCollection, setCreatingCollection] = useState(false)
+  const [newCollectionName, setNewCollectionName]   = useState('')
 
   const pos        = POS_STYLES[word.pos] || POS_STYLES.preposition
   const entryBadge = ENTRY_TYPE_STYLES[word.entryType]
@@ -760,6 +767,53 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
               >
                 {t('dict.pronounce')}
               </button>
+            </div>
+
+            {/* Collections */}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Collections</p>
+              <div className="flex flex-wrap gap-2 items-center">
+                {collections.map((c) => {
+                  const isMember = wordCollectionIds?.has(c.id)
+                  const col = collectionColor(c.color)
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => onToggleCollection?.(word.id, c.id)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors flex items-center gap-1.5 ${isMember ? col.active : `${col.chip} opacity-70 hover:opacity-100`}`}
+                    >
+                      {!isMember && <span className={`w-2 h-2 rounded-full ${col.dot}`} />}
+                      {isMember && <span>✓</span>}
+                      {c.name}
+                    </button>
+                  )
+                })}
+
+                {creatingCollection ? (
+                  <input
+                    autoFocus
+                    value={newCollectionName}
+                    onChange={(e) => setNewCollectionName(e.target.value)}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter' && newCollectionName.trim()) {
+                        await onQuickCreateCollection?.(newCollectionName.trim(), word.id)
+                        setNewCollectionName(''); setCreatingCollection(false)
+                      }
+                      if (e.key === 'Escape') { setNewCollectionName(''); setCreatingCollection(false) }
+                    }}
+                    onBlur={() => { setNewCollectionName(''); setCreatingCollection(false) }}
+                    placeholder="Name…"
+                    className="px-3 py-1 rounded-full text-xs border border-indigo-300 focus:outline-none focus:border-indigo-500 w-24"
+                  />
+                ) : (
+                  <button
+                    onClick={() => setCreatingCollection(true)}
+                    className="px-3 py-1 rounded-full text-xs font-medium border border-dashed border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors"
+                  >
+                    + New
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* ── Sense-based display ── */}
@@ -1478,6 +1532,193 @@ function BulkImportModal({ onClose, onImport }) {
   )
 }
 
+// ── Collections modal (manage + create with AI pre-select) ─────────────────
+function CollectionsModal({ collections, words, membershipByWord, countByCollection, targetLanguageName, onCreate, onRename, onDelete, onClose }) {
+  const [mode, setMode]       = useState(collections.length ? 'list' : 'create') // list | create
+  const [name, setName]       = useState('')
+  const [color, setColor]     = useState(nextColor(collections))
+  const [checked, setChecked] = useState(() => new Set())
+  const [suggesting, setSuggesting] = useState(false)
+  const [creating, setCreating]     = useState(false)
+  const [renamingId, setRenamingId] = useState(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(null)
+
+  const toggle = (id) => setChecked(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  async function handleSuggest() {
+    if (!name.trim() || !words.length) return
+    setSuggesting(true)
+    try {
+      const ids = await suggestCollectionWords(name.trim(), words.map(w => ({ id: w.id, word: w.word, translation: w.translation })), targetLanguageName)
+      const valid = new Set(words.map(w => String(w.id)))
+      setChecked(new Set(ids.map(String).filter(id => valid.has(id))))
+    } catch (e) {
+      console.error('suggestCollectionWords failed:', e)
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  async function handleCreate() {
+    if (!name.trim()) return
+    setCreating(true)
+    try {
+      // `checked` holds stringified ids; map back to original word id types
+      const wordIds = words.filter(w => checked.has(String(w.id))).map(w => w.id)
+      await onCreate(name.trim(), color, wordIds)
+      setName(''); setColor(nextColor(collections)); setChecked(new Set())
+      setMode('list')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-gray-900">{mode === 'create' ? 'New collection' : 'Collections'}</h2>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        {/* ── List / manage ── */}
+        {mode === 'list' && (
+          <>
+            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-2">
+              {collections.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-8">No collections yet.</p>
+              )}
+              {collections.map((c) => {
+                const col = collectionColor(c.color)
+                return (
+                  <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:bg-gray-50">
+                    <span className={`w-3 h-3 rounded-full shrink-0 ${col.dot}`} />
+                    {renamingId === c.id ? (
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && renameValue.trim()) { onRename(c.id, renameValue.trim()); setRenamingId(null) }
+                          if (e.key === 'Escape') setRenamingId(null)
+                        }}
+                        onBlur={() => setRenamingId(null)}
+                        className="flex-1 border border-indigo-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-indigo-500"
+                      />
+                    ) : (
+                      <span className="flex-1 text-sm font-medium text-gray-800">{c.name}</span>
+                    )}
+                    <span className="text-xs text-gray-400">{countByCollection[c.id] || 0} words</span>
+                    <button onClick={() => { setRenamingId(c.id); setRenameValue(c.name) }} className="text-gray-300 hover:text-indigo-500 text-sm px-1" title="Rename">✎</button>
+                    {confirmDelete === c.id ? (
+                      <button onClick={() => { onDelete(c.id); setConfirmDelete(null) }} className="text-xs font-semibold text-red-500 hover:text-red-600">Delete?</button>
+                    ) : (
+                      <button onClick={() => setConfirmDelete(c.id)} className="text-gray-300 hover:text-red-400 text-sm px-1" title="Delete">🗑</button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={() => { setMode('create'); setName(''); setColor(nextColor(collections)); setChecked(new Set()) }}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-semibold transition-colors"
+              >
+                + New collection
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── Create ── */}
+        {mode === 'create' && (
+          <>
+            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-4">
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="Collection name (e.g. Colors, Body parts)"
+                  className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
+                />
+              </div>
+
+              {/* Color picker */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">Color</span>
+                {COLLECTION_COLOR_KEYS.map(k => (
+                  <button
+                    key={k}
+                    onClick={() => setColor(k)}
+                    className={`w-6 h-6 rounded-full ${collectionColor(k).dot} transition-transform ${color === k ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : 'hover:scale-110'}`}
+                  />
+                ))}
+              </div>
+
+              {/* AI suggest */}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-gray-400">
+                  {checked.size > 0 ? `${checked.size} word${checked.size !== 1 ? 's' : ''} selected` : 'Pick words below, or let AI find matches'}
+                </p>
+                <button
+                  onClick={handleSuggest}
+                  disabled={!name.trim() || suggesting || !words.length}
+                  className="px-3 py-1.5 rounded-full text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  {suggesting ? 'Finding…' : '✨ Suggest with AI'}
+                </button>
+              </div>
+
+              {/* Word checklist */}
+              <div className="border border-gray-100 rounded-2xl divide-y divide-gray-50 max-h-64 overflow-y-auto">
+                {words.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No words in your dictionary yet.</p>}
+                {words.map(w => {
+                  const isChecked = checked.has(String(w.id))
+                  return (
+                    <button
+                      key={w.id}
+                      onClick={() => toggle(String(w.id))}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isChecked ? 'bg-indigo-50/60' : 'hover:bg-gray-50'}`}
+                    >
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] shrink-0 ${isChecked ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}>
+                        {isChecked && '✓'}
+                      </span>
+                      <span className="text-sm font-medium text-gray-800">{w.word}</span>
+                      {w.translation && <span className="text-xs text-gray-400 truncate">{w.translation}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+              {collections.length > 0 && (
+                <button onClick={() => setMode('list')} className="px-4 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">
+                  Back
+                </button>
+              )}
+              <button
+                onClick={handleCreate}
+                disabled={!name.trim() || creating}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 disabled:cursor-not-allowed text-white rounded-2xl text-sm font-semibold transition-colors"
+              >
+                {creating ? 'Creating…' : checked.size > 0 ? `Create with ${checked.size} word${checked.size !== 1 ? 's' : ''}` : 'Create empty collection'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 export default function Dictionary() {
   const navigate = useNavigate()
@@ -1510,6 +1751,13 @@ export default function Dictionary() {
   const [showBulkModal, setShowBulkModal] = useState(false)
   const [showSortMode, setShowSortMode]   = useState(false)
   const [showBulkIdentify, setShowBulkIdentify] = useState(false)
+  const [collections, setCollections]   = useState([])
+  const [memberships, setMemberships]   = useState([]) // { collection_id, word_id }
+  const [filterCollection, setFilterCollection] = useState('all')
+  const [showCollectionsModal, setShowCollectionsModal] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds]     = useState(() => new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const dragCol = useRef(null)
 
   // Keep column labels in sync when language changes, but preserve current order
@@ -1557,13 +1805,72 @@ export default function Dictionary() {
     setLoadingWords(false)
   }
 
+  // ── Collections ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return
+    loadCollections()
+  }, [user, targetLang])
+
+  async function loadCollections() {
+    const { collections, memberships } = await fetchCollectionsData(user.id, targetLang)
+    setCollections(collections)
+    setMemberships(memberships)
+    setFilterCollection(prev => prev === 'all' || collections.some(c => c.id === prev) ? prev : 'all')
+  }
+
+  const membershipByWord = useMemo(() => {
+    const m = {}
+    for (const r of memberships) (m[r.word_id] ??= new Set()).add(r.collection_id)
+    return m
+  }, [memberships])
+
+  const countByCollection = useMemo(() => {
+    const c = {}
+    for (const r of memberships) c[r.collection_id] = (c[r.collection_id] || 0) + 1
+    return c
+  }, [memberships])
+
+  async function toggleWordCollection(wordId, collectionId) {
+    const isMember = membershipByWord[wordId]?.has(collectionId)
+    if (isMember) {
+      setMemberships(prev => prev.filter(r => !(String(r.word_id) === String(wordId) && r.collection_id === collectionId)))
+      await removeWordFromCollection(collectionId, wordId)
+    } else {
+      setMemberships(prev => [...prev, { collection_id: collectionId, word_id: wordId }])
+      await addWordToCollection(user.id, collectionId, wordId)
+    }
+  }
+
+  async function handleQuickCreateCollection(name, wordId) {
+    await createCollection(user.id, targetLang, name, nextColor(collections), wordId ? [wordId] : [])
+    await loadCollections()
+  }
+
+  async function handleCreateCollection(name, color, wordIds) {
+    await createCollection(user.id, targetLang, name, color, wordIds)
+    await loadCollections()
+  }
+
+  async function handleRenameCollection(id, name) {
+    setCollections(prev => prev.map(c => c.id === id ? { ...c, name } : c))
+    await renameCollection(id, name)
+  }
+
+  async function handleDeleteCollection(id) {
+    setCollections(prev => prev.filter(c => c.id !== id))
+    setMemberships(prev => prev.filter(r => r.collection_id !== id))
+    if (filterCollection === id) setFilterCollection('all')
+    await deleteCollection(id)
+  }
+
   const filtered = words
     .filter((w) => {
       const matchSearch  = w.word.toLowerCase().includes(search.toLowerCase()) ||
                            (w.translation || '').toLowerCase().includes(search.toLowerCase())
       const matchStatus  = filterStatus === 'all' || w.status === filterStatus
       const matchType    = filterType   === 'all' || w.entryType === filterType
-      return matchSearch && matchStatus && matchType
+      const matchCollection = filterCollection === 'all' || membershipByWord[w.id]?.has(filterCollection)
+      return matchSearch && matchStatus && matchType && matchCollection
     })
     .sort((a, b) => {
       if (sortBy === 'word')      return a.word.localeCompare(b.word)
@@ -1712,6 +2019,44 @@ export default function Dictionary() {
     setWords(prev => prev.map(w => w.id === wordId ? { ...w, status: newStatus } : w))
   }
 
+  // ── Bulk selection + delete ──────────────────────────────────────────────
+  function exitSelection() {
+    setSelectionMode(false)
+    setSelectedIds(new Set())
+    setConfirmBulkDelete(false)
+  }
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(w => selectedIds.has(w.id))
+
+  function toggleSelectAll() {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (filtered.every(w => next.has(w.id))) filtered.forEach(w => next.delete(w.id))
+      else filtered.forEach(w => next.add(w.id))
+      return next
+    })
+  }
+
+  async function handleBulkDelete() {
+    const ids = [...selectedIds]
+    if (!ids.length) return
+    const idStr = new Set(ids.map(String))
+    await supabase.from('examples').delete().in('word_id', ids)
+    await supabase.from('words').delete().in('id', ids).eq('user_id', user.id)
+    setWords(prev => prev.filter(w => !idStr.has(String(w.id))))
+    setMemberships(prev => prev.filter(r => !idStr.has(String(r.word_id))))
+    if (selectedWord && idStr.has(String(selectedWord.id))) setSelectedWord(null)
+    exitSelection()
+  }
+
   async function handleBulkImport(entries) {
     if (!user) return
     const rows = entries.map(e => ({
@@ -1764,6 +2109,13 @@ export default function Dictionary() {
               🗂 Sort words
             </button>
             <button
+              onClick={() => selectionMode ? exitSelection() : setSelectionMode(true)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors border ${selectionMode ? 'border-indigo-300 bg-indigo-50 text-indigo-600' : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600'}`}
+              title="Select multiple words to delete"
+            >
+              {selectionMode ? 'Cancel' : '☑ Select'}
+            </button>
+            <button
               onClick={() => setShowAddModal(true)}
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
             >
@@ -1806,6 +2158,56 @@ export default function Dictionary() {
           </select>
         </div>
 
+        {/* Collections filter */}
+        <div className="flex flex-wrap gap-2 items-center mb-3">
+          <button
+            onClick={() => setFilterCollection('all')}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${filterCollection === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}
+          >
+            All words
+          </button>
+          {collections.map((c) => {
+            const col = collectionColor(c.color)
+            const active = filterCollection === c.id
+            return (
+              <button
+                key={c.id}
+                onClick={() => setFilterCollection(active ? 'all' : c.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors flex items-center gap-1.5 ${active ? col.active : `${col.chip} hover:opacity-80`}`}
+              >
+                <span className={`w-2 h-2 rounded-full ${active ? 'bg-white/80' : col.dot}`} />
+                {c.name}
+                <span className={active ? 'opacity-80' : 'opacity-50'}>{countByCollection[c.id] || 0}</span>
+              </button>
+            )
+          })}
+          <button
+            onClick={() => setShowCollectionsModal(true)}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold border border-dashed border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors"
+          >
+            {collections.length ? '⚙ Manage' : '+ New collection'}
+          </button>
+        </div>
+
+        {/* Bulk selection bar */}
+        {selectionMode && (
+          <div className="flex items-center justify-between gap-3 mb-3 px-4 py-2.5 bg-indigo-50 border border-indigo-100 rounded-2xl">
+            <div className="flex items-center gap-3">
+              <button onClick={toggleSelectAll} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                {allFilteredSelected ? 'Clear all' : 'Select all'}
+              </button>
+              <span className="text-sm text-indigo-700 font-medium">{selectedIds.size} selected</span>
+            </div>
+            <button
+              onClick={() => setConfirmBulkDelete(true)}
+              disabled={selectedIds.size === 0}
+              className="px-4 py-1.5 rounded-xl text-sm font-semibold bg-red-500 hover:bg-red-600 disabled:bg-red-200 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              🗑 Delete {selectedIds.size > 0 ? selectedIds.size : ''}
+            </button>
+          </div>
+        )}
+
         <p className="text-xs text-gray-400 mb-4 flex items-center gap-1">
           <span>⠿</span> {t('dict.dragHint')}
         </p>
@@ -1815,6 +2217,16 @@ export default function Dictionary() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-xs text-gray-400 uppercase tracking-wide">
+                {selectionMode && (
+                  <th className="pl-5 pr-1 py-3 w-8">
+                    <button
+                      onClick={toggleSelectAll}
+                      className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${allFilteredSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300 hover:border-indigo-400'}`}
+                    >
+                      {allFilteredSelected && '✓'}
+                    </button>
+                  </th>
+                )}
                 {columns.map((col) => (
                   <th key={col.id} draggable
                     onDragStart={() => onDragStart(col.id)}
@@ -1834,19 +2246,28 @@ export default function Dictionary() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((w, i) => (
-                <tr key={w.id} onClick={() => setSelectedWord(w)}
-                  className={`hover:bg-indigo-50/40 cursor-pointer transition-colors ${
+              {filtered.map((w, i) => {
+                const isSelected = selectedIds.has(w.id)
+                return (
+                <tr key={w.id} onClick={() => selectionMode ? toggleSelect(w.id) : setSelectedWord(w)}
+                  className={`cursor-pointer transition-colors ${
                     i !== filtered.length - 1 ? 'border-b border-gray-50' : ''
-                  } ${selectedWord?.id === w.id ? 'bg-indigo-50/60' : ''}`}
+                  } ${isSelected ? 'bg-indigo-50' : selectedWord?.id === w.id ? 'bg-indigo-50/60' : 'hover:bg-indigo-50/40'}`}
                 >
+                  {selectionMode && (
+                    <td className="pl-5 pr-1 py-3.5" onClick={(e) => { e.stopPropagation(); toggleSelect(w.id) }}>
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}>
+                        {isSelected && '✓'}
+                      </span>
+                    </td>
+                  )}
                   {columns.map((col) => (
                     <td key={col.id} className="px-5 py-3.5 whitespace-nowrap">
                       {renderCell(col.id, w, t)}
                     </td>
                   ))}
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
           {loadingWords && (
@@ -1864,7 +2285,34 @@ export default function Dictionary() {
         </div>
       </main>
 
-      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale} />}
+      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale}
+        collections={collections} wordCollectionIds={membershipByWord[selectedWord.id]} onToggleCollection={toggleWordCollection} onQuickCreateCollection={handleQuickCreateCollection} />}
+      {confirmBulkDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={() => setConfirmBulkDelete(false)}>
+          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
+            <div className="text-3xl mb-2">🗑</div>
+            <p className="font-semibold text-gray-900 mb-1">Delete {selectedIds.size} word{selectedIds.size !== 1 ? 's' : ''}?</p>
+            <p className="text-sm text-gray-400 mb-6">This permanently removes them and all their senses, examples, and collection memberships. This can't be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmBulkDelete(false)} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">Cancel</button>
+              <button onClick={handleBulkDelete} className="flex-1 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showCollectionsModal && (
+        <CollectionsModal
+          collections={collections}
+          words={words}
+          membershipByWord={membershipByWord}
+          countByCollection={countByCollection}
+          targetLanguageName={targetLanguageName}
+          onCreate={handleCreateCollection}
+          onRename={handleRenameCollection}
+          onDelete={handleDeleteCollection}
+          onClose={() => setShowCollectionsModal(false)}
+        />
+      )}
       {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} />}
       {showBulkModal && <BulkImportModal onClose={() => setShowBulkModal(false)} onImport={handleBulkImport} />}
       {showSortMode && (

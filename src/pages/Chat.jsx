@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { chatWithTutor, generateSessionMemory } from '../lib/claude'
+import { chatWithTutor, generateSessionMemory, identifyWord, extractVocabFromChat } from '../lib/claude'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../lib/supabase'
+import { fetchCollectionsData, createCollection, addWordToCollection, nextColor } from '../lib/collections'
 import NavBar from '../components/NavBar'
 
 function buildGreeting(lang, targetLanguageName) {
@@ -530,7 +531,7 @@ function InlineExercise({ msg, onAnswer, onSubmit }) {
 
 // ─── Message bubble ───────────────────────────────────────────────────────────
 
-function MessageBubble({ msg, onAddWord, onAcceptPractice, onDeclinePractice }) {
+function MessageBubble({ msg, onAddWord, onAcceptPractice, onDeclinePractice, onStartAdd }) {
   const { t } = useLanguage()
   if (msg.role === 'user') {
     return (
@@ -550,6 +551,18 @@ function MessageBubble({ msg, onAddWord, onAcceptPractice, onDeclinePractice }) 
       <div className="flex-1 min-w-0">
         <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-gray-800 shadow-sm">
           <div className="space-y-1">{renderContent(msg.text)}</div>
+
+          {/* Add to dictionary */}
+          {!msg.greeting && (
+            <div className="mt-3 pt-2.5 border-t border-gray-100">
+              <button
+                onClick={() => onStartAdd(msg)}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1"
+              >
+                📥 {t('chat.addToDict')}
+              </button>
+            </div>
+          )}
 
           {/* Words to add */}
           {msg.words && msg.words.length > 0 && (
@@ -643,6 +656,7 @@ export default function Chat() {
         id: 0,
         role: 'assistant',
         text: buildGreeting(lang, targetLanguageName),
+        greeting: true,
         words: [],
         topicKey: null,
         practiceState: null,
@@ -656,6 +670,7 @@ export default function Chat() {
   })
   const [loading, setLoading]       = useState(false)
   const [toast, setToast]           = useState(null)
+  const [addPanel, setAddPanel]     = useState(null) // add-to-dictionary flow state
   const [memory, setMemory]         = useState(null)   // { profile, last_session, updated_at }
   const [exerciseReturn, setExerciseReturn] = useState(() => {
     try {
@@ -703,6 +718,7 @@ export default function Chat() {
       id: Date.now(),
       role: 'assistant',
       text: buildGreeting(lang, targetLanguageName),
+      greeting: true,
       words: [],
       topicKey: null,
       practiceState: null,
@@ -719,6 +735,7 @@ export default function Chat() {
         id: Date.now(),
         role: 'assistant',
         text: buildGreeting(lang, targetLanguageName),
+        greeting: true,
         words: [],
         topicKey: null,
         practiceState: null,
@@ -807,6 +824,137 @@ export default function Chat() {
 
   function handleAddWord(word) {
     setToast(word)
+  }
+
+  // ── Add-to-dictionary flow ───────────────────────────────────────────────
+  async function handleStartAdd(msg) {
+    setAddPanel({ stage: 'extracting', messageId: msg.id })
+    try {
+      const { theme, words } = await extractVocabFromChat(msg.text, targetLanguageName, interfaceLanguage)
+      if (!words.length) { setAddPanel({ stage: 'empty' }); return }
+      setAddPanel({
+        stage: 'review',
+        theme,
+        translationLang: interfaceLanguage, // EN/UA — what new words get translated to
+        singleSense: true, // themed sets: one relevant sense per word, not all
+        items: words.map((w, i) => ({ ...w, id: i, checked: true })),
+      })
+    } catch (e) {
+      console.error('extractVocabFromChat failed:', e)
+      setAddPanel({ stage: 'error' })
+    }
+  }
+
+  function setAddLang(translationLang) {
+    setAddPanel(p => ({ ...p, translationLang }))
+  }
+
+  function toggleAddAllSenses() {
+    setAddPanel(p => ({ ...p, singleSense: !p.singleSense }))
+  }
+
+  function toggleAddItem(id) {
+    setAddPanel(p => ({ ...p, items: p.items.map(it => it.id === id ? { ...it, checked: !it.checked } : it) }))
+  }
+
+  function setAddTheme(theme) {
+    setAddPanel(p => ({ ...p, theme }))
+  }
+
+  async function handleConfirmAdd() {
+    const panel = addPanel
+    const chosen = panel.items.filter(it => it.checked)
+    if (!chosen.length) return
+    setAddPanel(p => ({ ...p, stage: 'adding', progress: { done: 0, total: chosen.length, current: '' } }))
+
+    // Resolve/create the collection (optional).
+    let collectionId = null
+    const themeName = (panel.theme || '').trim()
+    if (themeName) {
+      try {
+        const { collections } = await fetchCollectionsData(user.id, targetLang)
+        const existing = collections.find(c => c.name.toLowerCase() === themeName.toLowerCase())
+        collectionId = existing ? existing.id : await createCollection(user.id, targetLang, themeName, nextColor(collections), [])
+      } catch (e) { console.error('collection resolve failed:', e) }
+    }
+
+    let added = 0, existed = 0, failed = 0
+    for (let i = 0; i < chosen.length; i++) {
+      const item = chosen[i]
+      setAddPanel(p => ({ ...p, progress: { done: i, total: chosen.length, current: item.word } }))
+      try {
+        const result = await identifyWord(
+          item.word, targetLanguageName, panel.translationLang || interfaceLanguage, null,
+          { singleSense: panel.singleSense !== false, themeHint: themeName || null }
+        )
+        const wordId = await addIdentifiedWord(result)
+        if (wordId) {
+          if (collectionId) {
+            try { await addWordToCollection(user.id, collectionId, wordId.id) } catch { /* already in collection */ }
+          }
+          wordId.existed ? existed++ : added++
+        } else failed++
+      } catch (e) {
+        console.error('add word failed:', item.word, e)
+        failed++
+      }
+    }
+
+    setAddPanel({ stage: 'done', summary: { added, existed, failed, theme: themeName } })
+  }
+
+  // Insert an identified word (+ senses); dedupe by base form. Returns { id, existed } or null.
+  async function addIdentifiedWord(result) {
+    const primary = result.senses?.[0]
+    const { data: existing } = await supabase
+      .from('words').select('id')
+      .eq('user_id', user.id).eq('target_language', targetLang)
+      .ilike('word', result.word).maybeSingle()
+    if (existing) return { id: existing.id, existed: true }
+
+    const { data: newWord, error } = await supabase
+      .from('words')
+      .insert({
+        user_id: user.id,
+        word: result.word,
+        translation: primary?.translation ?? '',
+        pos: primary?.pos ?? 'noun',
+        form: primary?.form || null,
+        grammar_note: primary?.grammarNote || null,
+        explanation: primary?.explanation || null,
+        is_exception: primary?.isException || false,
+        conjugation: primary?.conjugation || null,
+        entry_type: result.entryType || 'word',
+        status: 'new',
+        date_added: new Date().toISOString().split('T')[0],
+        target_language: targetLang,
+      })
+      .select('id').single()
+    if (error || !newWord) return null
+
+    if (result.senses?.length) {
+      await supabase.from('word_senses').insert(
+        result.senses.map(s => ({
+          word_id: newWord.id,
+          user_id: user.id,
+          target_language: targetLang,
+          pos: s.pos,
+          word_form: s.wordForm || result.word,
+          translation: s.translation,
+          form: s.form || null,
+          grammar_note: s.grammarNote || null,
+          explanation: s.explanation || null,
+          is_exception: s.isException || false,
+          register: s.register || 'neutral',
+          cefr: s.cefr || null,
+          conjugation: s.conjugation || null,
+          examples: s.examples || [],
+          learning_stage: 'new',
+          correct_recall_count: 0,
+        }))
+      )
+    }
+    return { id: newWord.id, existed: false }
   }
 
   function handleAcceptPractice(msgId, topicKey) {
@@ -961,6 +1109,7 @@ export default function Chat() {
                   onAddWord={handleAddWord}
                   onAcceptPractice={handleAcceptPractice}
                   onDeclinePractice={handleDeclinePractice}
+                  onStartAdd={handleStartAdd}
                 />
               )
             )}
@@ -1037,6 +1186,185 @@ export default function Chat() {
       </div>
 
       {toast && <AddedWordToast word={toast} onDismiss={() => setToast(null)} />}
+
+      {addPanel && (
+        <AddToDictModal
+          panel={addPanel}
+          targetLanguageName={targetLanguageName}
+          onToggle={toggleAddItem}
+          onThemeChange={setAddTheme}
+          onLangChange={setAddLang}
+          onToggleAllSenses={toggleAddAllSenses}
+          onConfirm={handleConfirmAdd}
+          onClose={() => setAddPanel(null)}
+          onGoToDictionary={() => navigate('/dictionary')}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Add-to-dictionary modal ──────────────────────────────────────────────────
+
+function AddToDictModal({ panel, targetLanguageName, onToggle, onThemeChange, onLangChange, onToggleAllSenses, onConfirm, onClose, onGoToDictionary }) {
+  const { lang } = useLanguage()
+  const uk = lang === 'uk'
+  const checkedCount = panel.items?.filter(it => it.checked).length ?? 0
+  const dismissable = panel.stage !== 'adding'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={dismissable ? onClose : undefined}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-gray-900">{uk ? 'Додати до словника' : 'Add to dictionary'}</h2>
+          {dismissable && <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none">×</button>}
+        </div>
+
+        {/* Extracting */}
+        {panel.stage === 'extracting' && (
+          <div className="px-6 py-12 flex flex-col items-center gap-3">
+            <div className="flex gap-1">
+              <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:0ms]" />
+              <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:150ms]" />
+              <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:300ms]" />
+            </div>
+            <p className="text-sm text-gray-400">{uk ? 'Шукаю слова…' : 'Finding words…'}</p>
+          </div>
+        )}
+
+        {(panel.stage === 'empty' || panel.stage === 'error') && (
+          <div className="px-6 py-10 text-center">
+            <p className="text-sm text-gray-500">
+              {panel.stage === 'error'
+                ? (uk ? 'Не вдалося опрацювати повідомлення.' : 'Could not process this message.')
+                : (uk ? 'У цьому повідомленні немає слів для додавання.' : 'No addable words found in this message.')}
+            </p>
+            <button onClick={onClose} className="mt-5 px-5 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">
+              {uk ? 'Закрити' : 'Close'}
+            </button>
+          </div>
+        )}
+
+        {/* Review */}
+        {panel.stage === 'review' && (
+          <>
+            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{uk ? 'Колекція (необов\'язково)' : 'Collection (optional)'}</label>
+                <input
+                  value={panel.theme}
+                  onChange={e => onThemeChange(e.target.value)}
+                  placeholder={uk ? 'напр. Відтінки кольорів' : 'e.g. Color shades'}
+                  className="mt-1.5 w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
+                />
+                <p className="text-xs text-gray-400 mt-1.5">{uk ? 'Залиште порожнім, щоб просто додати слова.' : 'Leave empty to just add the words.'}</p>
+              </div>
+
+              {/* Translate-to picker — controls the stored translation language */}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-gray-400">{uk ? 'Перекласти на' : 'Translate to'}</span>
+                <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs font-semibold">
+                  {[{ code: 'English', label: 'EN' }, { code: 'Ukrainian', label: 'UA' }].map(({ code, label }) => (
+                    <button
+                      key={code}
+                      onClick={() => onLangChange(code)}
+                      className={`px-3 py-1 transition-colors ${panel.translationLang === code ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sense scope */}
+              <button onClick={onToggleAllSenses} className="flex items-start gap-2 text-left">
+                <span className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center text-[10px] shrink-0 ${!panel.singleSense ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}>
+                  {!panel.singleSense && '✓'}
+                </span>
+                <span className="text-xs text-gray-500 leading-snug">
+                  {uk ? 'Додати всі значення кожного слова' : 'Add every meaning of each word'}
+                  <span className="block text-gray-400">{uk ? 'За замовчуванням — лише значення, що відповідає темі.' : 'Default: just the sense that fits the theme.'}</span>
+                </span>
+              </button>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-400">{checkedCount} / {panel.items.length} {uk ? 'вибрано' : 'selected'}</span>
+              </div>
+
+              <div className="border border-gray-100 rounded-2xl divide-y divide-gray-50 max-h-72 overflow-y-auto">
+                {panel.items.map(it => (
+                  <button
+                    key={it.id}
+                    onClick={() => onToggle(it.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${it.checked ? 'bg-indigo-50/60' : 'hover:bg-gray-50'}`}
+                  >
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] shrink-0 ${it.checked ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}>
+                      {it.checked && '✓'}
+                    </span>
+                    <span className="text-sm font-medium text-gray-800">{it.word}</span>
+                    {it.translation && <span className="text-xs text-gray-400 truncate">— {it.translation}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+              <button onClick={onClose} className="px-4 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">
+                {uk ? 'Скасувати' : 'Cancel'}
+              </button>
+              <button
+                onClick={onConfirm}
+                disabled={checkedCount === 0}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 disabled:cursor-not-allowed text-white rounded-2xl text-sm font-semibold transition-colors"
+              >
+                {uk ? `Додати ${checkedCount} слів` : `Add ${checkedCount} word${checkedCount !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Adding */}
+        {panel.stage === 'adding' && (
+          <div className="px-6 py-10 flex flex-col items-center gap-4">
+            <p className="text-sm text-gray-600">
+              {uk ? 'Додаю' : 'Adding'} <strong>{panel.progress.current}</strong>…
+            </p>
+            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${Math.round((panel.progress.done / panel.progress.total) * 100)}%` }} />
+            </div>
+            <p className="text-xs text-gray-400">{panel.progress.done} / {panel.progress.total}</p>
+          </div>
+        )}
+
+        {/* Done */}
+        {panel.stage === 'done' && (
+          <div className="px-6 py-10 text-center flex flex-col items-center gap-4">
+            <div className="text-4xl">✓</div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                {uk ? `Додано ${panel.summary.added} слів` : `Added ${panel.summary.added} word${panel.summary.added !== 1 ? 's' : ''}`}
+                {panel.summary.theme ? (uk ? ` до «${panel.summary.theme}»` : ` to "${panel.summary.theme}"`) : ''}
+              </p>
+              {(panel.summary.existed > 0 || panel.summary.failed > 0) && (
+                <p className="text-xs text-gray-400 mt-1">
+                  {panel.summary.existed > 0 && (uk ? `${panel.summary.existed} вже були у словнику` : `${panel.summary.existed} already in your dictionary`)}
+                  {panel.summary.existed > 0 && panel.summary.failed > 0 && ' · '}
+                  {panel.summary.failed > 0 && (uk ? `${panel.summary.failed} не вдалося` : `${panel.summary.failed} failed`)}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3 w-full">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">
+                {uk ? 'Готово' : 'Done'}
+              </button>
+              <button onClick={onGoToDictionary} className="flex-1 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
+                {uk ? 'Відкрити словник' : 'Open dictionary'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

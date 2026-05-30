@@ -31,8 +31,9 @@ function langWithScript(lang) {
   return lang
 }
 
-export async function identifyWord(input, targetLanguage = 'German', interfaceLanguage = 'English', context = null) {
+export async function identifyWord(input, targetLanguage = 'German', interfaceLanguage = 'English', context = null, opts = {}) {
   const ifaceLang = langWithScript(interfaceLanguage)
+  const { singleSense = false, themeHint = null } = opts
 
   const system = `You are a language expert specialising in ${targetLanguage}.
 Return ONLY valid JSON — no markdown, no code blocks, no explanation outside the JSON.
@@ -60,6 +61,10 @@ Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.
 
   const contextInstruction = context
     ? `\nThe word appears in this sentence: "${context}"\nReturn ONLY the one sense that matches this context. The senses array must contain exactly one entry.`
+    : singleSense
+    ? (themeHint
+        ? `\nThe word is being added to a themed collection: "${themeHint}". Return ONLY the single sense most relevant to this theme. The senses array must contain exactly one entry.`
+        : `\nReturn ONLY the single most common, everyday sense. The senses array must contain exactly one entry.`)
     : `\nReturn ALL commonly used senses (separate POS or clearly distinct meaning groups). Most words have exactly one sense — only return multiple when there are genuinely distinct usages worth learning separately.`
 
   const prompt = `The user is learning ${targetLanguage} and typed: "${input}"${contextInstruction}
@@ -137,6 +142,80 @@ Return ONLY a JSON array of the translated strings, in the same order, nothing e
   const arrMatch = clean.match(/\[[\s\S]*\]/)
   if (!arrMatch) throw new Error('No JSON array found in translation response')
   return JSON.parse(arrMatch[0])
+}
+
+// ── Collection suggestions ──────────────────────────────────────────────────
+// Given a theme name and the user's dictionary, return the ids of words that
+// fit the theme. User-chosen grouping assisted by AI — not auto clustering.
+// `words` is [{ id, word, translation }]. Returns an array of ids.
+export async function suggestCollectionWords(theme, words, targetLanguage = 'German') {
+  if (!words?.length || !theme?.trim()) return []
+  const list = words
+    .map(w => `${w.id}: ${w.word}${w.translation ? ` (${w.translation})` : ''}`)
+    .join('\n')
+  const system = `You help a learner organise their ${targetLanguage} vocabulary into a themed collection.
+Return ONLY a JSON array of the matching word ids (numbers) — nothing else.`
+  const prompt = `Collection theme: "${theme.trim()}"
+
+From this ${targetLanguage} word list, return the ids of words that clearly belong to this theme.
+Include clear matches generously, but do not force in unrelated words. If none fit, return [].
+
+Words:
+${list}`
+  const text = await callClaude({
+    system,
+    messages: [{ role: 'user', content: prompt }],
+    model: 'claude-haiku-4-5',
+    maxTokens: 1024,
+  })
+  const clean = text.replace(/```json|```/g, '').trim()
+  const match = clean.match(/\[[\s\S]*\]/)
+  if (!match) return []
+  try {
+    const ids = JSON.parse(match[0])
+    return Array.isArray(ids) ? ids : []
+  } catch {
+    return []
+  }
+}
+
+// ── Extract vocabulary from a chat message ──────────────────────────────────
+// Pulls the target-language words a chat reply is offering the learner, plus a
+// suggested collection name. Used by "Add to dictionary" in the chat.
+// Returns { theme, words: [{ word, translation }] }.
+export async function extractVocabFromChat(text, targetLanguage = 'German', interfaceLanguage = 'English') {
+  if (!text?.trim()) return { theme: '', words: [] }
+  const ifaceLang = langWithScript(interfaceLanguage)
+  const system = `You extract vocabulary a learner wants to add to their ${targetLanguage} dictionary.
+Return ONLY JSON: { "theme": "...", "words": [{ "word": "...", "translation": "..." }] }
+- "word": the ${targetLanguage} word or phrase being offered${targetLanguage === 'German' ? ' (include the article for nouns, e.g. "das Rot")' : ''}.
+- "translation": a short ${ifaceLang} gloss.
+- "theme": a short collection name for the set (e.g. "Color shades"), or "" if the message is not presenting a themed group of words.
+Only include genuine ${targetLanguage} vocabulary being suggested for learning. If there is none, return an empty words array.`
+  const prompt = `Message:
+"""
+${text}
+"""
+
+Extract the ${targetLanguage} vocabulary words being offered to the learner.`
+  const out = await callClaude({
+    system,
+    messages: [{ role: 'user', content: prompt }],
+    model: 'claude-haiku-4-5',
+    maxTokens: 1024,
+  })
+  const clean = out.replace(/```json|```/g, '').trim()
+  const match = clean.match(/\{[\s\S]*\}/)
+  if (!match) return { theme: '', words: [] }
+  try {
+    const parsed = JSON.parse(match[0])
+    return {
+      theme: parsed.theme || '',
+      words: Array.isArray(parsed.words) ? parsed.words.filter(w => w?.word) : [],
+    }
+  } catch {
+    return { theme: '', words: [] }
+  }
 }
 
 // ── Preposition exercises ──────────────────────────────────────────────────
@@ -293,6 +372,7 @@ export async function chatWithTutor(messages, targetLanguage = 'German', interfa
   const system = `You are a friendly, knowledgeable ${targetLanguage} language tutor.
 Always respond in ${interfaceLanguage}.
 When explaining grammar, use examples in ${targetLanguage} with ${interfaceLanguage} translations.
+You are multilingual: if the learner asks you to translate words or phrases into another language (for example their native language such as Ukrainian), just do it directly and helpfully. Never refuse or redirect them to external tools — give your best translation, noting any nuance briefly if a word is hard to translate precisely.
 Format responses clearly: use **bold** for key terms, *italics* for ${targetLanguage} words and examples.
 Use tables (markdown pipe format) when comparing forms or cases.
 Keep responses thorough but focused — no unnecessary padding.
