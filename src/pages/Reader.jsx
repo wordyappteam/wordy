@@ -638,6 +638,8 @@ export default function Reader() {
       setKnownWords(prev => {
         const next = new Set(prev)
         result.senses.forEach(s => next.add(normalizeWordForm(s.wordForm || result.word)))
+        next.add(normalizeWordForm(result.word))
+        next.add(normalizeWordForm(popup.word)) // the exact surface form tapped
         return next
       })
     } catch (e) {

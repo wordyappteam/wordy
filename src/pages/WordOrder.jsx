@@ -76,7 +76,7 @@ export default function WordOrder() {
 
     let query = supabase
       .from('word_senses')
-      .select('word_id, word_form')
+      .select('word_id, word_form, examples')
       .eq('user_id', user.id)
       .eq('target_language', targetLang)
 
@@ -85,40 +85,44 @@ export default function WordOrder() {
     else if (mode === 'review')   query = query.in('learning_stage', ['known', 'mastered'])
 
     const { data: senseData } = await query
-    // Deduplicate word_ids (multiple senses per word → one set of examples)
-    const senseWordMap = {}
-    ;(senseData ?? []).forEach((s) => { if (!senseWordMap[s.word_id]) senseWordMap[s.word_id] = s.word_form })
-    const wordData = Object.entries(senseWordMap).map(([id, word]) => ({ id: Number(id), word }))
-    if (!wordData?.length) { setCards([]); setLoading(false); setPhase('session'); return }
+    if (!senseData?.length) { setCards([]); setLoading(false); setPhase('session'); return }
 
-    const wordIds = wordData.map((w) => w.id)
-    const { data: examples } = await supabase
-      .from('examples')
-      .select('word_id, sentence_target, sentence_translation')
-      .in('word_id', wordIds)
+    // Primary source: inline examples on each sense (JSONB { target, translation }).
+    const allCards = []
+    const headwordById = {}
+    const wordsNeedingLegacy = []
 
-    if (!examples?.length) { setCards([]); setLoading(false); setPhase('session'); return }
+    for (const s of senseData) {
+      if (!headwordById[s.word_id]) headwordById[s.word_id] = s.word_form
+      const exs = Array.isArray(s.examples) ? s.examples : []
+      if (exs.length === 0) { wordsNeedingLegacy.push(s.word_id); continue }
+      for (const ex of exs) {
+        const target = (ex.target ?? ex.sentence_target ?? '').trim()
+        const translation = ex.translation ?? ex.sentence_translation ?? ''
+        if (!target || !translation) continue
+        const words = target.split(/\s+/)
+        if (words.length < 3) continue
+        allCards.push({ id: s.word_id, headword: s.word_form, german: target, english: translation, words })
+      }
+    }
 
-    const wordMap = Object.fromEntries(wordData.map((w) => [w.id, w.word]))
-
-    const allCards = examples
-      .map((ex) => {
-        if (!ex.sentence_target || !ex.sentence_translation) return null
-        const words = ex.sentence_target.trim().split(/\s+/)
-        if (words.length < 3) return null
-        return {
-          id: ex.word_id,
-          headword: wordMap[ex.word_id],
-          german: ex.sentence_target.trim(),
-          english: ex.sentence_translation,
-          words,
-        }
-      })
-      .filter(Boolean)
+    // Fallback: legacy `examples` table for words whose senses carry no inline examples.
+    if (wordsNeedingLegacy.length) {
+      const { data: legacy } = await supabase
+        .from('examples')
+        .select('word_id, sentence_target, sentence_translation')
+        .in('word_id', wordsNeedingLegacy)
+      for (const ex of legacy ?? []) {
+        const target = (ex.sentence_target ?? '').trim()
+        if (!target || !ex.sentence_translation) continue
+        const words = target.split(/\s+/)
+        if (words.length < 3) continue
+        allCards.push({ id: ex.word_id, headword: headwordById[ex.word_id], german: target, english: ex.sentence_translation, words })
+      }
+    }
 
     if (!allCards.length) { setCards([]); setLoading(false); setPhase('session'); return }
 
-    console.log(`WordOrder: ${examples.length} examples fetched, ${allCards.length} valid cards, selecting ${Math.min(allCards.length, SESSION_SIZE)}`)
     const selected = shuffle(allCards).slice(0, SESSION_SIZE)
     setCards(selected)
     setIndex(0)
