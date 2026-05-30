@@ -225,7 +225,7 @@ export default function Dashboard() {
         </div>
       } />
 
-      <main className="max-w-5xl mx-auto px-6 py-10">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
 
         {/* Greeting */}
         <div className="mb-8">
@@ -250,10 +250,10 @@ export default function Dashboard() {
         </div>
 
         {/* Three-column layout */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
           {/* Left (2 cols) — breakdown + exercises */}
-          <div className="col-span-2 h-full">
+          <div className="lg:col-span-2 h-full">
             <div id="exercises" className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm h-full">
 
               {/* Word breakdown */}
@@ -305,7 +305,7 @@ export default function Dashboard() {
           </div>
 
           {/* Right (1 col) — stat cards + recent words */}
-          <div className="flex flex-col gap-4 h-full">
+          <div className="flex flex-col gap-4 h-full order-first lg:order-none">
 
             {/* Session plans */}
             {sessionPlans.length > 0 && (

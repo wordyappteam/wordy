@@ -8,9 +8,9 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col">
       {/* Nav */}
-      <nav className="flex items-center justify-between px-8 py-5 max-w-6xl mx-auto w-full">
+      <nav className="flex items-center justify-between px-5 sm:px-8 py-5 max-w-6xl mx-auto w-full gap-2">
         <div className="text-2xl font-bold text-indigo-600 tracking-tight">wordy</div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Language switcher */}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
             <button
@@ -42,19 +42,19 @@ export default function Landing() {
       </nav>
 
       {/* Hero */}
-      <main className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-4xl mx-auto w-full py-20">
-        <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-full px-4 py-1.5 text-sm text-indigo-700 font-medium mb-8">
+      <main className="flex-1 flex flex-col items-center justify-center px-6 text-center max-w-4xl mx-auto w-full py-12 sm:py-20">
+        <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-full px-4 py-1.5 text-xs sm:text-sm text-indigo-700 font-medium mb-8">
           <span className="w-2 h-2 bg-indigo-500 rounded-full" />
           {t('landing.badge')}
         </div>
 
-        <h1 className="text-6xl font-bold text-gray-900 leading-tight tracking-tight mb-6">
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-gray-900 leading-tight tracking-tight mb-6">
           {t('landing.headline1')}<br />
           <span className="text-indigo-600">{t('landing.headlineAccent')}</span>{' '}
           {t('landing.headline2')}
         </h1>
 
-        <p className="text-xl text-gray-500 max-w-2xl leading-relaxed mb-10">
+        <p className="text-lg sm:text-xl text-gray-500 max-w-2xl leading-relaxed mb-10">
           {t('landing.sub')}
         </p>
 

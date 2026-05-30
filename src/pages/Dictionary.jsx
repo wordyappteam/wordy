@@ -2158,8 +2158,8 @@ export default function Dictionary() {
     <div className="min-h-screen bg-gray-50">
       <NavBar />
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{t('dict.title')}</h1>
             <p className="text-sm text-gray-500 mt-0.5">{loadingWords ? '…' : `${words.length} ${t('dict.entries')}`} · {targetLanguageName}</p>
@@ -2285,12 +2285,12 @@ export default function Dictionary() {
           </div>
         )}
 
-        <p className="text-xs text-gray-400 mb-4 flex items-center gap-1">
+        <p className="hidden md:flex text-xs text-gray-400 mb-4 items-center gap-1">
           <span>⠿</span> {t('dict.dragHint')}
         </p>
 
-        {/* Table */}
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+        {/* Table (desktop) */}
+        <div className="hidden md:block bg-white rounded-2xl border border-gray-100 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-xs text-gray-400 uppercase tracking-wide">
@@ -2347,19 +2347,52 @@ export default function Dictionary() {
               )})}
             </tbody>
           </table>
-          {loadingWords && (
-            <div className="text-center py-12 text-gray-400 text-sm flex items-center justify-center gap-2">
-              <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:0ms]" />
-              <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:150ms]" />
-              <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:300ms]" />
-            </div>
-          )}
-          {!loadingWords && filtered.length === 0 && (
-            <div className="text-center py-12 text-gray-400 text-sm">
-              {words.length === 0 ? t('dict.empty') : t('dict.noResults')}
-            </div>
-          )}
         </div>
+
+        {/* Cards (mobile) */}
+        <div className="md:hidden flex flex-col gap-2">
+          {filtered.map((w) => {
+            const isSelected = selectedIds.has(w.id)
+            const memberColors = collections.filter(c => membershipByWord[w.id]?.has(c.id))
+            const statusLabel = { new: t('dict.statusNew'), learning: t('dict.statusLearning'), known: t('dict.statusKnown'), mastered: t('dict.statusMastered') }[w.status] ?? w.status
+            return (
+              <div
+                key={w.id}
+                onClick={() => selectionMode ? toggleSelect(w.id) : setSelectedWord(w)}
+                className={`bg-white rounded-2xl border p-4 flex items-start gap-3 transition-colors ${isSelected ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100'}`}
+              >
+                {selectionMode && (
+                  <span className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center text-[11px] shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}>{isSelected && '✓'}</span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-semibold text-gray-900 truncate">{w.word}</span>
+                    <span className={`ml-auto shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[w.status] || 'bg-gray-100 text-gray-500'}`}>{statusLabel}</span>
+                  </div>
+                  {w.translation && <p className="text-sm text-gray-500 truncate">{w.translation}</p>}
+                  {memberColors.length > 0 && (
+                    <div className="flex items-center gap-1 mt-1.5">
+                      {memberColors.map(c => <span key={c.id} className={`w-2 h-2 rounded-full ${collectionColor(c.color).dot}`} />)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {loadingWords && (
+          <div className="text-center py-12 text-gray-400 text-sm flex items-center justify-center gap-2">
+            <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:0ms]" />
+            <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:150ms]" />
+            <span className="w-2 h-2 bg-indigo-300 rounded-full animate-bounce [animation-delay:300ms]" />
+          </div>
+        )}
+        {!loadingWords && filtered.length === 0 && (
+          <div className="text-center py-12 text-gray-400 text-sm">
+            {words.length === 0 ? t('dict.empty') : t('dict.noResults')}
+          </div>
+        )}
       </main>
 
       {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale}

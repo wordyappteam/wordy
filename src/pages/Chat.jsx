@@ -1034,9 +1034,9 @@ export default function Chat() {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden max-w-5xl mx-auto w-full px-6 py-6 gap-6">
+      <div className="flex flex-1 overflow-hidden max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 gap-6">
         {/* Sidebar */}
-        <aside className="w-64 flex-shrink-0 flex flex-col gap-4">
+        <aside className="hidden lg:flex w-64 flex-shrink-0 flex-col gap-4">
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">{t('chat.currentFocus')}</div>
             <div className="flex items-center gap-2 mb-3">
