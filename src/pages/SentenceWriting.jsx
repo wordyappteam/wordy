@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { useLanguage } from '../lib/i18n'
+import { useLanguage, targetAdverbUk } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { reviewSentence } from '../lib/claude'
 
@@ -352,7 +352,7 @@ export default function SentenceWriting() {
         {/* Text input */}
         <div className="w-full max-w-lg">
           <p className="text-xs text-gray-400 text-center mb-2">
-            {lang === 'uk' ? `Напиши речення з цим словом ${targetLanguageName === 'German' ? 'по-німецьки' : 'по-англійськи'}` : `Write a ${targetLanguageName} sentence using this word`}
+            {lang === 'uk' ? `Напиши речення з цим словом ${targetAdverbUk(targetLanguageName)}` : `Write a ${targetLanguageName} sentence using this word`}
           </p>
           <textarea
             ref={textareaRef}

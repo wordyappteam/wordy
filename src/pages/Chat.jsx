@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { chatWithTutor, generateSessionMemory, identifyWord, extractVocabFromChat } from '../lib/claude'
-import { useLanguage } from '../lib/i18n'
+import { useLanguage, targetGenitiveUk } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -9,7 +9,7 @@ import { fetchCollectionsData, createCollection, addWordToCollection, nextColor 
 import NavBar from '../components/NavBar'
 
 function buildGreeting(lang, targetLanguageName) {
-  if (lang === 'uk') return `Привіт! Я ваш репетитор з ${targetLanguageName === 'German' ? 'німецької' : 'англійської'} граматики. Запитуйте будь-що — граматичні правила, складні речення, вживання слів або все, що зустріли під час навчання.\n\nЯ також можу допомогти додати нові слова або фрази до вашого словника прямо з нашої розмови.`
+  if (lang === 'uk') return `Привіт! Я ваш репетитор з ${targetGenitiveUk(targetLanguageName)} граматики. Запитуйте будь-що — граматичні правила, складні речення, вживання слів або все, що зустріли під час навчання.\n\nЯ також можу допомогти додати нові слова або фрази до вашого словника прямо з нашої розмови.`
   return `Hi! I'm your ${targetLanguageName} tutor. Ask me anything — grammar rules, tricky sentences, word usage, or anything you've encountered while learning.\n\nI can also help you add new words or phrases directly to your dictionary from our conversation.`
 }
 
@@ -940,6 +940,8 @@ export default function Chat() {
           target_language: targetLang,
           pos: s.pos,
           word_form: s.wordForm || result.word,
+          aspect: s.aspect ?? null,
+          gender: s.gender ?? null,
           translation: s.translation,
           form: s.form || null,
           grammar_note: s.grammarNote || null,
@@ -1040,7 +1042,7 @@ export default function Chat() {
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">{t('chat.currentFocus')}</div>
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-lg">{targetLanguageName === 'German' ? '🇩🇪' : '🇬🇧'}</span>
+              <span className="text-lg">{targetLanguageName === 'German' ? '🇩🇪' : targetLanguageName === 'Ukrainian' ? '🇺🇦' : '🇬🇧'}</span>
               <div>
                 <div className="text-sm font-semibold text-gray-900">{targetLanguageName}</div>
                 <div className="text-xs text-gray-400">B1 · 47 {t('chat.wordsLearned')}</div>

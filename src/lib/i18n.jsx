@@ -266,3 +266,13 @@ export function LanguageProvider({ children }) {
 export function useLanguage() {
   return useContext(LanguageContext)
 }
+
+// Ukrainian-interface helpers: render the target language name in the right
+// grammatical form (e.g. "по-українськи", "української") for any target.
+export function targetAdverbUk(name) {
+  return name === 'German' ? 'по-німецьки' : name === 'Ukrainian' ? 'по-українськи' : 'по-англійськи'
+}
+
+export function targetGenitiveUk(name) {
+  return name === 'German' ? 'німецької' : name === 'Ukrainian' ? 'української' : 'англійської'
+}

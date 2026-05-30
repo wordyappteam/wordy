@@ -82,6 +82,8 @@ function dbSenseToFrontend(s) {
     correctRecallCount: s.correct_recall_count,
     nextReviewDate: s.next_review_date,
     imageUrl: s.image_url ?? null,
+    aspect: s.aspect ?? null,
+    gender: s.gender ?? null,
   }
 }
 
@@ -636,6 +638,12 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posBadge.label}</span>
+                        {sense.aspect && (
+                          <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">{sense.aspect === 'imperfective' ? 'impf.' : 'pf.'}</span>
+                        )}
+                        {sense.gender && (
+                          <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-100">{{ m: 'ч', f: 'ж', n: 'с' }[sense.gender] || sense.gender}</span>
+                        )}
                         <span className="text-sm font-medium text-gray-900">{sense.wordForm}</span>
                         <span className={`ml-auto w-4 h-4 rounded border flex items-center justify-center text-xs shrink-0 ${
                           checked ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'
@@ -750,6 +758,13 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
   const pos        = POS_STYLES[word.pos] || POS_STYLES.preposition
   const entryBadge = ENTRY_TYPE_STYLES[word.entryType]
 
+  // Ukrainian verbs are stored as two aspect senses — show the pair in the header.
+  const aspectSenses = (word.senses || []).filter(s => s.aspect)
+  const aspectRank = (s) => (s.aspect === 'imperfective' ? 0 : 1)
+  const aspectPairTitle = aspectSenses.length >= 2
+    ? [...aspectSenses].sort((a, b) => aspectRank(a) - aspectRank(b)).map(s => s.wordForm).join(' / ')
+    : null
+
   async function handleIdentify() {
     setIdentifying(true)
     setIdentifyError(null)
@@ -817,8 +832,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                 <span className="text-xs text-indigo-500 font-medium">{t('dict.editingLabel')}</span>
               )}
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">{word.word}</h2>
-            {word.form && <p className="text-sm text-gray-400 italic mt-0.5">{cleanForm(word.form, word.word)}</p>}
+            <h2 className="text-2xl font-bold text-gray-900">{aspectPairTitle || word.word}</h2>
+            {!aspectPairTitle && word.form && <p className="text-sm text-gray-400 italic mt-0.5">{cleanForm(word.form, word.word)}</p>}
           </div>
           <button onClick={editing ? cancelEdit : onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none mt-1">×</button>
         </div>
@@ -895,6 +910,16 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                       {/* Sense header */}
                       <div className="bg-gray-50 px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
                         <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posBadge.label}</span>
+                        {sense.aspect && (
+                          <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">
+                            {sense.aspect === 'imperfective' ? 'impf.' : 'pf.'}
+                          </span>
+                        )}
+                        {sense.gender && (
+                          <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-100" title={{ m: 'masculine', f: 'feminine', n: 'neuter' }[sense.gender]}>
+                            {{ m: 'ч', f: 'ж', n: 'с' }[sense.gender] || sense.gender}
+                          </span>
+                        )}
                         <span className="text-sm font-semibold text-gray-800">{sense.wordForm}</span>
                         {sense.form && <span className="text-xs text-gray-400 italic">({sense.form})</span>}
                         {sense.cefr && (
@@ -938,7 +963,47 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                           </div>
                         )}
                         {/* Conjugation table */}
-                        {sense.conjugation && (
+                        {sense.conjugation && targetLanguageName === 'Ukrainian' ? (
+                          <div className="rounded-2xl overflow-hidden border border-violet-100">
+                            {(() => {
+                              const tense = sense.conjugation.present
+                                ? { label: 'Теперішній', data: sense.conjugation.present }
+                                : sense.conjugation.future
+                                ? { label: 'Майбутній', data: sense.conjugation.future }
+                                : null
+                              return (
+                                <>
+                                  {tense && (
+                                    <table className="w-full text-sm">
+                                      <thead>
+                                        <tr className="bg-violet-50 text-xs text-violet-700 uppercase tracking-wide">
+                                          <th className="px-3 py-2 text-left font-medium w-1/2">займенник</th>
+                                          <th className="px-3 py-2 text-left font-medium">{tense.label}</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {['я','ти','він/вона','ми','ви','вони'].map((p, i) => (
+                                          <tr key={p} className={i % 2 === 0 ? 'bg-white' : 'bg-violet-50/30'}>
+                                            <td className="px-3 py-1.5 text-gray-400 font-medium text-xs">{p}</td>
+                                            <td className="px-3 py-1.5 text-gray-800 italic">{tense.data?.[p] || '—'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                  {sense.conjugation.past && (
+                                    <div className="bg-violet-50/50 px-3 py-2 border-t border-violet-100 text-xs text-violet-800 flex flex-wrap gap-x-4 gap-y-1 items-center">
+                                      <span className="font-semibold uppercase tracking-wide">Минулий:</span>
+                                      {['ч','ж','с','мн'].map((k) => sense.conjugation.past[k] && (
+                                        <span key={k}><span className="text-violet-500">{k}:</span> <span className="italic">{sense.conjugation.past[k]}</span></span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              )
+                            })()}
+                          </div>
+                        ) : sense.conjugation && (
                           <div className="rounded-2xl overflow-hidden border border-amber-100">
                             <table className="w-full text-sm">
                               <thead>
@@ -1998,6 +2063,8 @@ export default function Dictionary() {
           target_language: targetLang,
           pos: s.pos,
           word_form: s.wordForm || entry.word,
+          aspect: s.aspect ?? null,
+          gender: s.gender ?? null,
           translation: s.translation,
           form: s.form || null,
           grammar_note: s.grammarNote || null,
@@ -2054,6 +2121,8 @@ export default function Dictionary() {
           target_language: targetLang,
           pos: s.pos,
           word_form: s.wordForm || updated.word,
+          aspect: s.aspect ?? null,
+          gender: s.gender ?? null,
           translation: s.translation,
           form: s.form || null,
           grammar_note: s.grammarNote || null,

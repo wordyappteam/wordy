@@ -35,31 +35,59 @@ export async function identifyWord(input, targetLanguage = 'German', interfaceLa
   const ifaceLang = langWithScript(interfaceLanguage)
   const { singleSense = false, themeHint = null } = opts
 
+  const isGerman = targetLanguage === 'German'
+  const isUkrainian = targetLanguage === 'Ukrainian'
+
   const system = `You are a language expert specialising in ${targetLanguage}.
 Return ONLY valid JSON — no markdown, no code blocks, no explanation outside the JSON.
-Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.`
-
-  const isGerman = targetLanguage === 'German'
+Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.${isUkrainian ? '\nAll Ukrainian words, word forms, and example sentences must be written in Ukrainian Cyrillic script.' : ''}`
 
   const formNote = isGerman
     ? "for nouns: plural WITHOUT article e.g. 'Häuser'; if no plural write '–'; for verbs: 'macht / machte / gemacht'"
+    : isUkrainian
+    ? "for nouns: genitive singular WITH stress (e.g. 'рі́шення'); for verbs: leave empty ('')"
     : "for nouns: plural e.g. 'cats', 'children'; for verbs: 'goes / went / gone'"
 
   const wordFormNote = isGerman
     ? 'canonical form for this sense — with definite article for nouns (e.g. das Buch), plain infinitive for verbs (e.g. buchen), verb+prep for phrasal verbs (e.g. achten auf)'
+    : isUkrainian
+    ? 'canonical form WITH stress marked using acute accents (е́ а́ и́ о́ у́ і́): nominative singular for nouns, infinitive for verbs; Cyrillic, no article'
     : 'canonical form for this sense — plain form, no article'
+
+  const wordNote = isUkrainian
+    ? 'primary display form, stress-marked; for verbs use the imperfective infinitive'
+    : isGerman
+    ? 'primary display form — with article for German nouns (e.g. die Entscheidung), plain for verbs'
+    : 'primary display form — plain for nouns and verbs'
 
   const conjugationRules = isGerman ? `
 - If isException is true AND pos is "verb", replace "conjugation": null with:
   { "präsens": {"ich":"...","du":"...","er/sie/es":"...","wir":"...","ihr":"...","sie/Sie":"..."}, "präteritum": {"ich":"...","du":"...","er/sie/es":"...","wir":"...","ihr":"...","sie/Sie":"..."}, "partizip_ii": "...", "auxiliary": "haben or sein" }
-- Otherwise leave "conjugation" as null` : `
+- Otherwise leave "conjugation" as null` : isUkrainian ? `
+- For every verb sense include "conjugation" with all forms stress-marked:
+  - imperfective sense: { "present": {"я":"...","ти":"...","він/вона":"...","ми":"...","ви":"...","вони":"..."}, "past": {"ч":"...","ж":"...","с":"...","мн":"..."} }
+  - perfective sense:   { "future":  {"я":"...","ти":"...","він/вона":"...","ми":"...","ви":"...","вони":"..."}, "past": {"ч":"...","ж":"...","с":"...","мн":"..."} }
+- For non-verbs leave "conjugation" as null` : `
 - Always leave "conjugation" as null`
 
   const nounArticleRule = isGerman
     ? '- In "wordForm": include the definite article for nouns (e.g. die Entscheidung). For verb+prep phrases always order verb then preposition (e.g. "sich erinnern an"), never the reverse.'
+    : isUkrainian
+    ? '- In "wordForm": no article. For nouns set "gender" to m/f/n and put the genitive singular (stress-marked) in "form". For verbs set "aspect" and leave "gender" null.'
     : '- In "wordForm": no article for nouns.'
 
-  const contextInstruction = context
+  // What to return for NON-verb words (verbs handled separately for Ukrainian).
+  const nonVerbInstruction = context
+    ? `return ONLY the sense matching the sentence: "${context}"`
+    : singleSense
+    ? (themeHint
+        ? `return ONLY the single sense that makes the word belong to the collection "${themeHint}", even if that is not its most common meaning (e.g. if the theme is colours, the colour/shade it names, not the object it is named after)`
+        : `return ONLY the single most common, everyday sense`)
+    : `return all clearly distinct meanings (most words have just one)`
+
+  const contextInstruction = isUkrainian
+    ? `\nIf the word is a VERB: return EXACTLY TWO senses forming the aspect pair — one imperfective and one perfective. Both have pos:"verb"; set "aspect" accordingly; each gets its own wordForm, translation, examples and conjugation. Do this even if a sentence or single sense is requested — the aspect pair is one lexical unit.\nIf the word is NOT a verb: ${nonVerbInstruction}.`
+    : context
     ? `\nThe word appears in this sentence: "${context}"\nReturn ONLY the one sense that matches this context. The senses array must contain exactly one entry.`
     : singleSense
     ? (themeHint
@@ -75,11 +103,13 @@ Always return the ${targetLanguage} base form.
 
 Return ONLY this JSON:
 {
-  "word": "primary display form — with article for ${isGerman ? 'German nouns (e.g. die Entscheidung)' : 'nouns'}, plain for verbs",
+  "word": "${wordNote}",
   "entryType": "word|phrase|idiom|phrasal-verb",
   "senses": [
     {
-      "pos": "verb|noun|adjective|adverb|conjunction|preposition",
+      "pos": "verb|noun|adjective|adverb|conjunction|preposition",${isUkrainian ? `
+      "aspect": "imperfective or perfective for verbs, otherwise null",
+      "gender": "m, f or n for nouns, otherwise null",` : ''}
       "wordForm": "${wordFormNote}",
       "translation": "concise ${ifaceLang} translation for THIS sense only",
       "form": "${formNote}",
@@ -106,7 +136,7 @@ ${nounArticleRule}
 - For verbs: present, past, one varied — set "tense" accordingly. For nouns/adj/other: "tense": null
 - register: language register for this specific sense. Use "neutral" for everyday vocabulary with no special register
 - cefr: CEFR level for this specific sense based on standard vocabulary lists. When between two levels, pick the more common/lower one
-${conjugationRules}`
+${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і́) on every multi-syllable Ukrainian word form, example sentence head word, and conjugation form\n' : ''}${conjugationRules}`
 
   const text = await callClaude({
     system,

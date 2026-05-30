@@ -619,6 +619,8 @@ export default function Reader() {
             target_language: targetLang,
             pos: s.pos,
             word_form: s.wordForm || result.word,
+            aspect: s.aspect ?? null,
+            gender: s.gender ?? null,
             translation: s.translation,
             form: s.form || null,
             grammar_note: s.grammarNote || null,

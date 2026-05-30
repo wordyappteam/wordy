@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { useLanguage } from '../lib/i18n'
+import { useLanguage, targetAdverbUk } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 
 const SESSION_SIZE = 15
@@ -161,7 +161,7 @@ export default function ActiveRecall() {
             <div className="text-center mb-8">
               <div className="text-4xl mb-3">🧠</div>
               <h2 className="text-2xl font-bold text-gray-900 mb-1">{lang === 'uk' ? 'Активне згадування' : 'Active Recall'}</h2>
-              <p className="text-sm text-gray-400">{lang === 'uk' ? `Побачиш переклад — напиши слово ${targetLanguageName === 'German' ? 'по-німецьки' : 'по-англійськи'}` : `See the translation — type the ${targetLanguageName} word from memory`}</p>
+              <p className="text-sm text-gray-400">{lang === 'uk' ? `Побачиш переклад — напиши слово ${targetAdverbUk(targetLanguageName)}` : `See the translation — type the ${targetLanguageName} word from memory`}</p>
             </div>
             <div className="flex flex-col gap-3">
               {modes.map((m) => (
@@ -336,7 +336,7 @@ export default function ActiveRecall() {
         {/* Translation prompt */}
         <div className="w-full max-w-lg bg-white rounded-3xl border border-gray-100 shadow-sm px-8 py-10 text-center">
           <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">
-            {lang === 'uk' ? `Як це ${targetLanguageName === 'German' ? 'по-німецьки' : 'по-англійськи'}?` : `How do you say this in ${targetLanguageName}?`}
+            {lang === 'uk' ? `Як це ${targetAdverbUk(targetLanguageName)}?` : `How do you say this in ${targetLanguageName}?`}
           </p>
           <p className="text-2xl font-bold text-gray-900 mb-2">{card.translation}</p>
           {card.pos === 'noun' && card.form && (
@@ -356,7 +356,7 @@ export default function ActiveRecall() {
               value={input}
               onChange={(e) => !submitted && setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={lang === 'uk' ? `Напишіть ${targetLanguageName === 'German' ? 'по-німецьки' : 'по-англійськи'}…` : `Type in ${targetLanguageName}…`}
+              placeholder={lang === 'uk' ? `Напишіть ${targetAdverbUk(targetLanguageName)}…` : `Type in ${targetLanguageName}…`}
               disabled={submitted}
               className="flex-1 text-base font-medium text-gray-800 placeholder-gray-300 outline-none bg-transparent"
               autoComplete="off"
