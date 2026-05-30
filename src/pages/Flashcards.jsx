@@ -60,7 +60,8 @@ export default function Flashcards() {
 
   const [phase, setPhase]       = useState('picker')   // 'picker' | 'session' | 'done'
   const [cards, setCards]       = useState([])
-  const [counts, setCounts]     = useState({ new: 0, learning: 0, known: 0, mastered: 0, due: 0 })
+  const [counts, setCounts]     = useState({ new: 0, learning: 0, known: 0, mastered: 0, due: 0, withImages: 0 })
+  const [sessionMode, setSessionMode] = useState(null)  // tracks chosen mode; 'visual' switches card layout
   const [loading, setLoading]   = useState(false)
   const [index, setIndex]       = useState(0)
   const [flipped, setFlipped]   = useState(false)
@@ -76,7 +77,9 @@ export default function Flashcards() {
       supabase.from('word_senses').select('learning_stage').eq('user_id', user.id).eq('target_language', targetLang),
       supabase.from('word_senses').select('id').eq('user_id', user.id).eq('target_language', targetLang)
         .lte('next_review_date', today).neq('learning_stage', 'new'),
-    ]).then(([{ data: stageData }, { data: dueData }]) => {
+      supabase.from('word_senses').select('id').eq('user_id', user.id).eq('target_language', targetLang)
+        .not('image_url', 'is', null),
+    ]).then(([{ data: stageData }, { data: dueData }, { data: imageData }]) => {
       if (!stageData) return
       const c = { new: 0, learning: 0, known: 0, mastered: 0 }
       stageData.forEach(({ learning_stage: s }) => {
@@ -85,17 +88,26 @@ export default function Flashcards() {
         else if (s === 'known') c.known++
         else if (s === 'mastered') c.mastered++
       })
-      setCounts({ ...c, due: dueData?.length ?? 0 })
+      setCounts({ ...c, due: dueData?.length ?? 0, withImages: imageData?.length ?? 0 })
     })
   }, [user, targetLang])
 
   const loadCards = async (mode) => {
     setLoading(true)
+    setSessionMode(mode)
     const today = new Date().toISOString().split('T')[0]
 
     let senseData = []
 
-    if (mode === 'today') {
+    if (mode === 'visual') {
+      const { data } = await supabase
+        .from('word_senses')
+        .select('id, word_form, form, pos, translation, grammar_note, is_exception, examples, learning_stage, image_url')
+        .eq('user_id', user.id).eq('target_language', targetLang)
+        .not('image_url', 'is', null)
+        .order('created_at', { ascending: false })
+      senseData = data ?? []
+    } else if (mode === 'today') {
       const [{ data: dueSenses }, { data: newSenses }] = await Promise.all([
         supabase
           .from('word_senses')
@@ -149,6 +161,7 @@ export default function Flashcards() {
         stage:              s.learning_stage ?? 'new',
         example:            s.examples?.[0]?.target ?? null,
         exampleTranslation: s.examples?.[0]?.translation ?? null,
+        imageUrl:           s.image_url ?? null,
       }))
 
     setCards(shuffle(mapped))
@@ -210,6 +223,15 @@ export default function Flashcards() {
           ? `${dueToday} до повторення · ${newToday} нових`
           : `${dueToday} due for review · ${newToday} new`,
         highlight: true,
+      }] : []),
+      ...(counts.withImages > 0 ? [{
+        id: 'visual',
+        label:   lang === 'uk' ? 'Візуальні картки' : 'Visual cards',
+        count:   counts.withImages,
+        color:   'bg-rose-50 border-rose-200',
+        dot:     'bg-rose-400',
+        desc:    lang === 'uk' ? 'Вгадай слово за зображенням' : 'See the image, recall the word',
+        visual:  true,
       }] : []),
       {
         id: 'new',
@@ -451,52 +473,75 @@ export default function Flashcards() {
             }}
           >
             {/* Front */}
-            <div
-              className="absolute inset-0 bg-indigo-600 rounded-3xl shadow-xl flex flex-col items-center justify-center p-8"
-              style={{ backfaceVisibility: 'hidden' }}
-            >
-              <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold mb-6 bg-white/20 text-white border border-white/30">
-                {POS_LABELS[card.pos] || card.pos}
-              </span>
-              <div className="text-4xl font-bold text-white text-center mb-3">{card.word}</div>
-              {card.form && card.pos !== 'noun' && (
-                <div className="text-sm text-indigo-200 italic mb-4">{card.form}</div>
-              )}
-              <button
-                onClick={(e) => handleSpeak(card.word.replace(/\(.*?\)/g, '').trim(), e)}
-                className={`mt-2 flex items-center gap-2 px-4 py-2 rounded-full border text-sm transition-all ${
-                  speaking
-                    ? 'border-white bg-white/20 text-white'
-                    : 'border-white/30 text-indigo-200 hover:border-white hover:text-white'
-                }`}
+            {sessionMode === 'visual' ? (
+              <div
+                className="absolute inset-0 bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden flex items-center justify-center"
+                style={{ backfaceVisibility: 'hidden' }}
               >
-                <span>{speaking ? '🔊' : '🔈'}</span>
-                {speaking
-                  ? (lang === 'uk' ? 'Грає…' : 'Playing…')
-                  : (lang === 'uk' ? 'Вимова' : 'Pronounce')}
-              </button>
-            </div>
+                <img src={card.imageUrl} alt="" className="w-full h-full object-cover" />
+                <span className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-gray-500 bg-white/85 backdrop-blur px-3 py-1.5 rounded-full shadow-sm">
+                  {lang === 'uk' ? 'Яке це слово?' : "What's the word?"}
+                </span>
+              </div>
+            ) : (
+              <div
+                className="absolute inset-0 bg-indigo-600 rounded-3xl shadow-xl flex flex-col items-center justify-center p-8"
+                style={{ backfaceVisibility: 'hidden' }}
+              >
+                <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold mb-6 bg-white/20 text-white border border-white/30">
+                  {POS_LABELS[card.pos] || card.pos}
+                </span>
+                <div className="text-4xl font-bold text-white text-center mb-3">{card.word}</div>
+                {card.form && card.pos !== 'noun' && (
+                  <div className="text-sm text-indigo-200 italic mb-4">{card.form}</div>
+                )}
+                <button
+                  onClick={(e) => handleSpeak(card.word.replace(/\(.*?\)/g, '').trim(), e)}
+                  className={`mt-2 flex items-center gap-2 px-4 py-2 rounded-full border text-sm transition-all ${
+                    speaking
+                      ? 'border-white bg-white/20 text-white'
+                      : 'border-white/30 text-indigo-200 hover:border-white hover:text-white'
+                  }`}
+                >
+                  <span>{speaking ? '🔊' : '🔈'}</span>
+                  {speaking
+                    ? (lang === 'uk' ? 'Грає…' : 'Playing…')
+                    : (lang === 'uk' ? 'Вимова' : 'Pronounce')}
+                </button>
+              </div>
+            )}
 
             {/* Back */}
             <div
               className="absolute inset-0 bg-white rounded-3xl shadow-xl border border-gray-100 flex flex-col p-8 overflow-y-auto"
               style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
             >
+              {/* Word (shown in visual mode — it's the answer) */}
+              {sessionMode === 'visual' && (
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-indigo-50 text-indigo-600 border border-indigo-100">{POS_LABELS[card.pos] || card.pos}</span>
+                  <span className="text-2xl font-bold text-gray-900">{card.word}</span>
+                  <button onClick={(e) => handleSpeak(card.word.replace(/\(.*?\)/g, '').trim(), e)} className="text-gray-300 hover:text-indigo-500 transition-colors text-lg" title="Pronounce">🔈</button>
+                </div>
+              )}
+
               {/* Translation */}
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">
                     {lang === 'uk' ? 'Переклад' : 'Translation'}
                   </div>
-                  <div className="text-2xl font-bold text-gray-900">{card.translation}</div>
+                  <div className={`font-bold text-gray-900 ${sessionMode === 'visual' ? 'text-lg' : 'text-2xl'}`}>{card.translation}</div>
                 </div>
-                <button
-                  onClick={(e) => handleSpeak(card.word.replace(/\(.*?\)/g, '').trim(), e)}
-                  className="text-gray-300 hover:text-indigo-500 transition-colors text-xl ml-4 mt-1"
-                  title="Pronounce"
-                >
-                  🔈
-                </button>
+                {sessionMode !== 'visual' && (
+                  <button
+                    onClick={(e) => handleSpeak(card.word.replace(/\(.*?\)/g, '').trim(), e)}
+                    className="text-gray-300 hover:text-indigo-500 transition-colors text-xl ml-4 mt-1"
+                    title="Pronounce"
+                  >
+                    🔈
+                  </button>
+                )}
               </div>
 
               {/* Example */}

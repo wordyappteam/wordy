@@ -63,7 +63,7 @@ Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.
     ? `\nThe word appears in this sentence: "${context}"\nReturn ONLY the one sense that matches this context. The senses array must contain exactly one entry.`
     : singleSense
     ? (themeHint
-        ? `\nThe word is being added to a themed collection: "${themeHint}". Return ONLY the single sense most relevant to this theme. The senses array must contain exactly one entry.`
+        ? `\nThe learner is adding this word as a member of the collection "${themeHint}". Define the word specifically as it functions within that theme — pick the meaning that makes it BELONG to "${themeHint}", even if that is not the word's most common meaning. For example, if the theme is colours, treat the word as the colour/shade it names (e.g. "canary" → the bright yellow colour), not the object or animal it is named after. Return ONLY that one sense; the senses array must contain exactly one entry.`
         : `\nReturn ONLY the single most common, everyday sense. The senses array must contain exactly one entry.`)
     : `\nReturn ALL commonly used senses (separate POS or clearly distinct meaning groups). Most words have exactly one sense — only return multiple when there are genuinely distinct usages worth learning separately.`
 

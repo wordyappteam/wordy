@@ -10,6 +10,7 @@ import {
   renameCollection, deleteCollection, addWordToCollection, removeWordFromCollection,
   COLLECTION_COLOR_KEYS,
 } from '../lib/collections'
+import { uploadSenseImage, deleteSenseImageByUrl, setSenseImageUrl } from '../lib/senseImages'
 import NavBar from '../components/NavBar'
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -80,6 +81,7 @@ function dbSenseToFrontend(s) {
     learningStage: s.learning_stage,
     correctRecallCount: s.correct_recall_count,
     nextReviewDate: s.next_review_date,
+    imageUrl: s.image_url ?? null,
   }
 }
 
@@ -669,8 +671,73 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
   )
 }
 
+// ── Per-sense image slot ──────────────────────────────────────────────────
+function SenseImage({ sense, userId, onChange }) {
+  const fileRef = useRef(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file
+    if (!file || !userId) return
+    if (!file.type.startsWith('image/')) { setError('Not an image'); return }
+    setBusy(true); setError(null)
+    try {
+      const prev = sense.imageUrl
+      const url = await uploadSenseImage(userId, sense.id, file)
+      await setSenseImageUrl(sense.id, userId, url)
+      onChange(sense.id, url)
+      if (prev) deleteSenseImageByUrl(prev) // clean up the replaced image
+    } catch (err) {
+      console.error('image upload failed:', err)
+      setError('Upload failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRemove() {
+    if (!userId) return
+    const prev = sense.imageUrl
+    setBusy(true)
+    try {
+      await setSenseImageUrl(sense.id, userId, null)
+      onChange(sense.id, null)
+      if (prev) deleteSenseImageByUrl(prev)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div>
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      {sense.imageUrl ? (
+        <div className="relative group rounded-xl overflow-hidden border border-gray-100">
+          <img src={sense.imageUrl} alt="" className="w-full max-h-52 object-cover" />
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+            <button onClick={() => fileRef.current?.click()} disabled={busy} className="text-xs font-semibold bg-white/90 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-white">Replace</button>
+            <button onClick={handleRemove} disabled={busy} className="text-xs font-semibold bg-red-500/90 text-white px-3 py-1.5 rounded-lg hover:bg-red-600">Remove</button>
+          </div>
+          {busy && <div className="absolute inset-0 bg-white/60 flex items-center justify-center text-xs text-gray-500">Working…</div>}
+        </div>
+      ) : (
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          className="w-full py-3 border-2 border-dashed border-gray-200 hover:border-indigo-300 rounded-xl text-xs text-gray-400 hover:text-indigo-500 transition-colors flex items-center justify-center gap-1.5"
+        >
+          {busy ? 'Uploading…' : '🖼 Add image'}
+        </button>
+      )}
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  )
+}
+
 // ── Word Panel ────────────────────────────────────────────────────────────
-function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection }) {
+function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange }) {
   const { t } = useLanguage()
   const [editing, setEditing]             = useState(false)
   const [draft, setDraft]                 = useState(word)
@@ -839,6 +906,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                         <span className={`ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}>{sense.learningStage || 'new'}</span>
                       </div>
                       <div className="px-4 py-3 flex flex-col gap-3">
+                        <SenseImage sense={sense} userId={userId} onChange={onSenseImageChange} />
                         <p className="text-base font-medium text-gray-800">{sense.translation}</p>
                         {sense.grammarNote && !/^(countable|uncountable) noun/i.test(sense.grammarNote) && (
                           <div className={`rounded-xl px-3 py-2 text-xs font-medium flex items-start gap-2 ${
@@ -1950,6 +2018,8 @@ export default function Dictionary() {
 
   async function handleDelete(wordId) {
     if (!user) return
+    const doomed = words.find(w => w.id === wordId)
+    ;(doomed?.senses || []).forEach(s => s.imageUrl && deleteSenseImageByUrl(s.imageUrl))
     await supabase.from('examples').delete().eq('word_id', wordId)
     await supabase.from('words').delete().eq('id', wordId).eq('user_id', user.id)
     setWords((prev) => prev.filter((w) => w.id !== wordId))
@@ -2013,6 +2083,12 @@ export default function Dictionary() {
     fetchWords()
   }
 
+  function handleSenseImageChange(senseId, imageUrl) {
+    const patchSenses = (w) => ({ ...w, senses: w.senses?.map(s => s.id === senseId ? { ...s, imageUrl } : s) })
+    setWords(prev => prev.map(w => w.senses?.some(s => s.id === senseId) ? patchSenses(w) : w))
+    setSelectedWord(prev => prev && prev.senses?.some(s => s.id === senseId) ? patchSenses(prev) : prev)
+  }
+
   async function handleQuickStatusChange(wordId, newStatus) {
     if (!user) return
     await supabase.from('words').update({ status: newStatus }).eq('id', wordId).eq('user_id', user.id)
@@ -2049,6 +2125,7 @@ export default function Dictionary() {
     const ids = [...selectedIds]
     if (!ids.length) return
     const idStr = new Set(ids.map(String))
+    words.forEach(w => idStr.has(String(w.id)) && (w.senses || []).forEach(s => s.imageUrl && deleteSenseImageByUrl(s.imageUrl)))
     await supabase.from('examples').delete().in('word_id', ids)
     await supabase.from('words').delete().in('id', ids).eq('user_id', user.id)
     setWords(prev => prev.filter(w => !idStr.has(String(w.id))))
@@ -2286,7 +2363,8 @@ export default function Dictionary() {
       </main>
 
       {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale}
-        collections={collections} wordCollectionIds={membershipByWord[selectedWord.id]} onToggleCollection={toggleWordCollection} onQuickCreateCollection={handleQuickCreateCollection} />}
+        collections={collections} wordCollectionIds={membershipByWord[selectedWord.id]} onToggleCollection={toggleWordCollection} onQuickCreateCollection={handleQuickCreateCollection}
+        userId={user.id} onSenseImageChange={handleSenseImageChange} />}
       {confirmBulkDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={() => setConfirmBulkDelete(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
