@@ -40,7 +40,7 @@ export async function identifyWord(input, targetLanguage = 'German', interfaceLa
 
   const system = `You are a language expert specialising in ${targetLanguage}.
 Return ONLY valid JSON — no markdown, no code blocks, no explanation outside the JSON.
-Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.${isUkrainian ? '\nAll Ukrainian words, word forms, and example sentences must be written in Ukrainian Cyrillic script.' : ''}`
+Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.${isUkrainian ? `\nAll Ukrainian words, word forms, and example sentences must be written in Ukrainian Cyrillic script.\nCRITICAL: Ukrainian past-tense predicate forms ending in -ло, -ла, -ли (e.g. остогидло, набридло, минуло, болить) are VERBS — their pos MUST be "verb". Return the infinitive as the base form (остогидло → остогидіти, набридло → набридіти, минуло → минути). Never classify these as adverb or adjective.\nCRITICAL: Stress marking — place the acute accent (´) directly ON the stressed vowel. The character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я). Never place the accent after a consonant.` : ''}`
 
   const formNote = isGerman
     ? "for nouns: plural WITHOUT article e.g. 'Häuser'; if no plural write '–'; for verbs: 'macht / machte / gemacht'"
@@ -51,7 +51,7 @@ Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.
   const wordFormNote = isGerman
     ? 'canonical form for this sense — with definite article for nouns (e.g. das Buch), plain infinitive for verbs (e.g. buchen), verb+prep for phrasal verbs (e.g. achten auf)'
     : isUkrainian
-    ? 'canonical form WITH stress marked using acute accents (е́ а́ и́ о́ у́ і́): nominative singular for nouns, infinitive for verbs; Cyrillic, no article'
+    ? 'canonical form WITH stress marked using acute accents (е́ а́ и́ о́ у́ і́): nominative singular for nouns, infinitive for verbs; Cyrillic, no article; accent must fall directly on the vowel (а е є и і ї о у ю я), never on a consonant'
     : 'canonical form for this sense — plain form, no article'
 
   const wordNote = isUkrainian
@@ -64,10 +64,10 @@ Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.
 - If isException is true AND pos is "verb", replace "conjugation": null with:
   { "präsens": {"ich":"...","du":"...","er/sie/es":"...","wir":"...","ihr":"...","sie/Sie":"..."}, "präteritum": {"ich":"...","du":"...","er/sie/es":"...","wir":"...","ihr":"...","sie/Sie":"..."}, "partizip_ii": "...", "auxiliary": "haben or sein" }
 - Otherwise leave "conjugation" as null` : isUkrainian ? `
-- For every verb sense include "conjugation" with all forms stress-marked:
+- For verb senses where isException is true, include "conjugation" with all forms stress-marked:
   - imperfective sense: { "present": {"я":"...","ти":"...","він/вона":"...","ми":"...","ви":"...","вони":"..."}, "past": {"ч":"...","ж":"...","с":"...","мн":"..."} }
   - perfective sense:   { "future":  {"я":"...","ти":"...","він/вона":"...","ми":"...","ви":"...","вони":"..."}, "past": {"ч":"...","ж":"...","с":"...","мн":"..."} }
-- For non-verbs leave "conjugation" as null` : `
+- For regular verb senses (isException false) and all non-verbs, leave "conjugation" as null` : `
 - Always leave "conjugation" as null`
 
   const nounArticleRule = isGerman
@@ -133,10 +133,11 @@ Rules:
 ${nounArticleRule}
 - isException: true only for irregular verbs, exceptional grammar, or fixed collocations
 - Always include exactly 3 example sentences per sense
+- Keep example sentences positive and everyday — avoid war, death, violence, illness, accidents, or tragedy unless the word itself specifically relates to such topics
 - For verbs: present, past, one varied — set "tense" accordingly. For nouns/adj/other: "tense": null
 - register: language register for this specific sense. Use "neutral" for everyday vocabulary with no special register
 - cefr: CEFR level for this specific sense based on standard vocabulary lists. When between two levels, pick the more common/lower one
-${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і́) on every multi-syllable Ukrainian word form, example sentence head word, and conjugation form\n' : ''}${conjugationRules}`
+${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і́) on every multi-syllable Ukrainian word form, example sentence word, and conjugation form. The accent must sit on the stressed vowel itself — the character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я); never place the accent after a consonant\n- Ukrainian past-tense forms (ending in -в, -ла, -ло, -ли) that function as predicates are VERBS — classify them as pos:"verb" and return the infinitive as the base form (e.g. остогидло → остогидіти, минуло → минути, набридло → набридіти)\n' : ''}${conjugationRules}`
 
   const text = await callClaude({
     system,

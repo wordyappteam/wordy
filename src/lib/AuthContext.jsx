@@ -70,8 +70,22 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut()
   }
 
+  async function deleteAccount() {
+    if (!user) return
+    // Delete all user data. Order matters: join tables before parent tables.
+    await supabase.from('word_collections').delete().eq('user_id', user.id)
+    await supabase.from('word_senses').delete().eq('user_id', user.id)
+    await supabase.from('words').delete().eq('user_id', user.id)
+    await supabase.from('collections').delete().eq('user_id', user.id)
+    await supabase.from('learner_memory').delete().eq('user_id', user.id)
+    await supabase.from('profiles').delete().eq('id', user.id)
+    // Auth account is kept — signing back in with the same credentials
+    // will land on onboarding (no profile row).
+    await supabase.auth.signOut()
+  }
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, updateProfile, signOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, updateProfile, signOut, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   )

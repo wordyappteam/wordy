@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { LanguageProvider } from './lib/i18n'
 import { TargetLangProvider } from './lib/TargetLangContext'
@@ -24,7 +24,8 @@ import Reader from './pages/Reader'
 
 // Wraps pages that require login
 function Protected({ children }) {
-  const { user, loading } = useAuth()
+  const { user, profile, loading } = useAuth()
+  const location = useLocation()
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="flex gap-1">
@@ -35,6 +36,10 @@ function Protected({ children }) {
     </div>
   )
   if (!user) return <Navigate to="/auth" replace />
+  // No profile row (new user) or onboarding not yet complete → send to onboarding
+  if (!profile?.onboarding_complete && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />
+  }
   return children
 }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
@@ -57,8 +57,12 @@ export default function Flashcards() {
   const { user } = useAuth()
   const { lang } = useLanguage()
   const { targetLang, speechLocale } = useTargetLang()
+  const [searchParams] = useSearchParams()
 
-  const [phase, setPhase]       = useState('picker')   // 'picker' | 'session' | 'done'
+  const collectionId   = searchParams.get('collectionId')
+  const collectionName = searchParams.get('collectionName') ?? ''
+
+  const [phase, setPhase]       = useState(collectionId ? 'loading' : 'picker')   // 'picker' | 'loading' | 'session' | 'done'
   const [cards, setCards]       = useState([])
   const [counts, setCounts]     = useState({ new: 0, learning: 0, known: 0, mastered: 0, due: 0, withImages: 0 })
   const [sessionMode, setSessionMode] = useState(null)  // tracks chosen mode; 'visual' switches card layout
@@ -91,6 +95,60 @@ export default function Flashcards() {
       setCounts({ ...c, due: dueData?.length ?? 0, withImages: imageData?.length ?? 0 })
     })
   }, [user, targetLang])
+
+  // Auto-load when arriving via collection practice link
+  useEffect(() => {
+    if (!user || !collectionId) return
+    loadCollectionCards()
+  }, [user, collectionId, targetLang])
+
+  const loadCollectionCards = async () => {
+    setLoading(true)
+    const { data: memberships } = await supabase
+      .from('word_collections')
+      .select('word_id')
+      .eq('collection_id', collectionId)
+      .eq('user_id', user.id)
+
+    const wordIds = (memberships ?? []).map(m => m.word_id)
+
+    if (!wordIds.length) {
+      setCards([])
+      setLoading(false)
+      setPhase('session')
+      return
+    }
+
+    const { data: senseData } = await supabase
+      .from('word_senses')
+      .select('id, word_form, form, pos, translation, grammar_note, is_exception, examples, learning_stage, image_url')
+      .eq('user_id', user.id)
+      .eq('target_language', targetLang)
+      .in('word_id', wordIds)
+
+    const mapped = (senseData ?? [])
+      .filter(s => s.translation?.trim())
+      .map(s => ({
+        id:                 s.id,
+        word:               s.word_form,
+        form:               s.form,
+        pos:                s.pos || 'noun',
+        translation:        s.translation,
+        grammarNote:        s.grammar_note,
+        isException:        s.is_exception,
+        stage:              s.learning_stage ?? 'new',
+        example:            s.examples?.[0]?.target ?? null,
+        exampleTranslation: s.examples?.[0]?.translation ?? null,
+        imageUrl:           s.image_url ?? null,
+      }))
+
+    setCards(shuffle(mapped))
+    setIndex(0)
+    setResults([])
+    setFlipped(false)
+    setLoading(false)
+    setPhase('session')
+  }
 
   const loadCards = async (mode) => {
     setLoading(true)
@@ -198,11 +256,22 @@ export default function Flashcards() {
   }
 
   const restart = () => {
-    setPhase('picker')
-    setCards([])
+    if (collectionId) {
+      loadCollectionCards()
+    } else {
+      setPhase('picker')
+      setCards([])
+      setIndex(0)
+      setResults([])
+      setFlipped(false)
+    }
+  }
+
+  const practiceAgain = () => {
     setIndex(0)
     setResults([])
     setFlipped(false)
+    setPhase('session')
   }
 
   // ── Session picker ─────────────────────────────────────────────────────────
@@ -271,7 +340,7 @@ export default function Flashcards() {
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col">
         <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <div className="text-xl font-bold text-indigo-600">wordy</div>
-          <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">← Dashboard</button>
+          <button onClick={() => navigate(backDest)} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">{backLabel}</button>
         </nav>
         <div className="flex-1 flex flex-col items-center justify-center px-4">
           <div className="w-full max-w-md">
@@ -319,8 +388,13 @@ export default function Flashcards() {
     )
   }
 
+  const backDest  = collectionId ? '/dictionary' : '/dashboard'
+  const backLabel = collectionId
+    ? (lang === 'uk' ? '← Словник' : '← Dictionary')
+    : (lang === 'uk' ? '← Головна' : '← Dashboard')
+
   // ── Loading ────────────────────────────────────────────────────────────────
-  if (loading) {
+  if (loading || phase === 'loading') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center">
         <div className="flex gap-1">
@@ -338,7 +412,7 @@ export default function Flashcards() {
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col">
         <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <div className="text-xl font-bold text-indigo-600">wordy</div>
-          <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-900">← Dashboard</button>
+          <button onClick={() => navigate(backDest)} className="text-sm text-gray-500 hover:text-gray-900">{backLabel}</button>
         </nav>
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -368,7 +442,7 @@ export default function Flashcards() {
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col">
         <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <div className="text-xl font-bold text-indigo-600">wordy</div>
-          <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">← Dashboard</button>
+          <button onClick={() => navigate(backDest)} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">{backLabel}</button>
         </nav>
         <div className="flex-1 flex flex-col items-center justify-center px-4">
           <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-10 w-full max-w-md text-center">
@@ -376,6 +450,9 @@ export default function Flashcards() {
             <h2 className="text-2xl font-bold text-gray-900 mb-1">
               {lang === 'uk' ? 'Сесію завершено!' : 'Session complete!'}
             </h2>
+            {collectionName && (
+              <p className="text-xs font-semibold text-indigo-500 uppercase tracking-wide mb-1">{collectionName}</p>
+            )}
             <p className="text-gray-500 text-sm mb-8">
               {cards.length} {lang === 'uk' ? 'карток переглянуто' : 'cards reviewed'}
             </p>
@@ -412,17 +489,19 @@ export default function Flashcards() {
                 </button>
               ) : (
                 <button
-                  onClick={restart}
+                  onClick={practiceAgain}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-2xl font-semibold text-sm transition-colors"
                 >
-                  {lang === 'uk' ? 'Практикувати знову' : 'Practice again'}
+                  {lang === 'uk' ? 'Продовжуй практику' : 'Continue your practice'}
                 </button>
               )}
               <button
-                onClick={() => navigate('/dashboard')}
+                onClick={() => navigate(backDest)}
                 className="w-full text-gray-500 hover:text-gray-900 py-2 text-sm transition-colors"
               >
-                {lang === 'uk' ? 'На головну' : 'Back to dashboard'}
+                {collectionId
+                  ? (lang === 'uk' ? 'До словника' : 'Back to dictionary')
+                  : (lang === 'uk' ? 'На головну' : 'Back to dashboard')}
               </button>
             </div>
           </div>
@@ -441,7 +520,7 @@ export default function Flashcards() {
       <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
         <div className="text-xl font-bold text-indigo-600">wordy</div>
         <div className="text-sm text-gray-500">{index + 1} / {cards.length}</div>
-        <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-400 hover:text-gray-700 transition-colors">
+        <button onClick={() => navigate(backDest)} className="text-sm text-gray-400 hover:text-gray-700 transition-colors">
           ✕ {lang === 'uk' ? 'Завершити' : 'End session'}
         </button>
       </nav>

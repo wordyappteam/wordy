@@ -834,7 +834,7 @@ export default function Chat() {
       if (!words.length) { setAddPanel({ stage: 'empty' }); return }
       setAddPanel({
         stage: 'review',
-        theme,
+        theme: '',
         translationLang: interfaceLanguage, // EN/UA — what new words get translated to
         singleSense: true, // themed sets: one relevant sense per word, not all
         items: words.map((w, i) => ({ ...w, id: i, checked: true })),

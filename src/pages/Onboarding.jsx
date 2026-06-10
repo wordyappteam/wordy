@@ -132,30 +132,73 @@ export default function Onboarding() {
     // Step 5 → save word choices to Supabase before advancing
     if (step === 5 && wordChoices.length > 0 && user) {
       setSaving(true)
-      const today = new Date().toISOString().slice(0, 10)
+      const today       = new Date().toISOString().slice(0, 10)
+      const targetLangCode = answers.language
+      const stageMap    = { known: 'known', learning: 'early', new: 'new' }
+
       const rows = wordChoices.map((w) => ({
-        user_id:     user.id,
-        word:        w.word,
-        form:        w.form || null,
-        pos:         w.pos,
-        entry_type:  w.entryType,
-        translation: w.translation,
-        grammar_note: w.grammarNote || null,
-        explanation: null,
-        is_exception: false,
-        conjugation: null,
-        status:      w.status,
-        source:      'word-pack',
-        date_added:  today,
-        last_reviewed: '—',
+        user_id:         user.id,
+        word:            w.word,
+        form:            w.form || null,
+        pos:             w.pos,
+        entry_type:      w.entryType,
+        translation:     w.translation,
+        grammar_note:    w.grammarNote || null,
+        explanation:     null,
+        is_exception:    false,
+        conjugation:     null,
+        status:          w.status,
+        source:          'word-pack',
+        date_added:      today,
+        last_reviewed:   '—',
+        target_language: targetLangCode,
       }))
-      // Insert in chunks to avoid request size limit
+
+      // Insert in chunks; capture IDs to build word_senses
       for (let i = 0; i < rows.length; i += 25) {
-        await supabase.from('words').insert(rows.slice(i, i + 25))
+        const chunk    = rows.slice(i, i + 25)
+        const srcChunk = wordChoices.slice(i, i + 25)
+        const { data: inserted } = await supabase
+          .from('words')
+          .insert(chunk)
+          .select('id')
+
+        if (inserted?.length) {
+          const senses = inserted.map((w, j) => ({
+            word_id:              w.id,
+            user_id:              user.id,
+            target_language:      targetLangCode,
+            pos:                  srcChunk[j].pos,
+            word_form:            srcChunk[j].word,
+            translation:          srcChunk[j].translation,
+            form:                 srcChunk[j].form || null,
+            grammar_note:         srcChunk[j].grammarNote || null,
+            is_exception:         false,
+            register:             'neutral',
+            learning_stage:       stageMap[srcChunk[j].status] ?? 'new',
+            correct_recall_count: 0,
+            aspect:               null,
+            gender:               null,
+            image_url:            null,
+            examples:             [],
+          }))
+          await supabase.from('word_senses').insert(senses)
+        }
       }
       setSaving(false)
     }
     setStep((s) => s + 1)
+  }
+
+  async function handleFinish() {
+    setSaving(true)
+    await supabase.from('profiles').upsert({
+      id:                     user.id,
+      active_target_language: answers.language,
+      onboarding_complete:    true,
+    })
+    setSaving(false)
+    navigate('/dashboard')
   }
 
   // ── Word pack card actions ───────────────────────────────────────────────
@@ -507,10 +550,11 @@ export default function Onboarding() {
               )}
               {wordChoices.length === 0 && <div className="mb-6" />}
               <button
-                onClick={() => navigate('/dashboard')}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-2xl font-semibold transition-colors"
+                onClick={handleFinish}
+                disabled={saving}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white py-3.5 rounded-2xl font-semibold transition-colors"
               >
-                Go to my dashboard →
+                {saving ? 'Setting up…' : 'Go to my dashboard →'}
               </button>
             </div>
           )}
