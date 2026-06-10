@@ -10,6 +10,17 @@ import {
   FlashcardsIcon, PrepositionsIcon, FillBlankIcon,
   WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
 } from '../components/ExerciseIcons'
+import { collectionColor } from '../lib/collections'
+
+function CollectionIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="16" height="11" rx="2" />
+      <path d="M5 5V4a1 1 0 011-1h8a1 1 0 011 1v1" />
+      <path d="M6 10h8M6 13h5" />
+    </svg>
+  )
+}
 
 const STATUS_COLORS = {
   new:      'bg-gray-100 text-gray-500',
@@ -27,7 +38,7 @@ const STATUS_BAR_COLORS = {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { user, profile, updateProfile, signOut } = useAuth()
+  const { user, profile, updateProfile, signOut, deleteAccount } = useAuth()
   const { t, lang } = useLanguage()
   const { targetLang, targetLanguageName, features } = useTargetLang()
 
@@ -38,6 +49,8 @@ export default function Dashboard() {
   const [profileOpen,  setProfileOpen]  = useState(false)
   const [profileName,  setProfileName]  = useState('')
   const [savingName,   setSavingName]   = useState(false)
+  const [collections,  setCollections]  = useState([])
+  const [showCollectionPicker, setShowCollectionPicker] = useState(false)
   const nameRef    = useRef(null)
   const profileRef = useRef(null)
 
@@ -53,6 +66,17 @@ export default function Dashboard() {
         setWords(data ?? [])
         setLoading(false)
       })
+  }, [user, targetLang])
+
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('collections')
+      .select('id, name, color')
+      .eq('user_id', user.id)
+      .eq('target_language', targetLang)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => setCollections(data ?? []))
   }, [user, targetLang])
 
   // ── Derived stats ──────────────────────────────────────────────────────────
@@ -165,6 +189,7 @@ export default function Dashboard() {
   const exercises = [
     { type: lang === 'uk' ? 'Граматичний чат'         : 'Grammar chat',        Icon: GrammarChatIcon,     path: '/chat',             count: null },
     { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          Icon: FlashcardsIcon,      path: '/flashcards',       count: total },
+    collections.length > 0 && { type: lang === 'uk' ? 'Практика колекції' : 'Practice collection', Icon: CollectionIcon, onClick: () => setShowCollectionPicker(p => !p), count: collections.length },
     features.prepositionDrills && { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', Icon: PrepositionsIcon,    path: '/prepositions',     count: prepVerbCount },
     features.fillBlank        && { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   Icon: FillBlankIcon,       path: '/fill-blank',       count: total },
     { type: lang === 'uk' ? 'Порядок слів'           : 'Word order',          Icon: WordOrderIcon,       path: '/word-order',       count: total },
@@ -212,12 +237,18 @@ export default function Dashboard() {
                   {lang === 'uk' ? 'Скасувати' : 'Cancel'}
                 </button>
               </div>
-              <div className="border-t border-gray-100 mt-4 pt-3">
+              <div className="border-t border-gray-100 mt-4 pt-3 flex flex-col gap-2">
                 <button
                   onClick={() => signOut()}
                   className="w-full text-xs text-red-500 hover:text-red-700 font-medium text-left transition-colors"
                 >
                   {lang === 'uk' ? 'Вийти →' : 'Sign out →'}
+                </button>
+                <button
+                  onClick={async () => { if (window.confirm(lang === 'uk' ? 'Видалити акаунт? Усі дані буде втрачено.' : 'Delete account? All your data will be lost.')) { await deleteAccount(); navigate('/auth') } }}
+                  className="w-full text-xs text-gray-400 hover:text-red-500 font-medium text-left transition-colors"
+                >
+                  {lang === 'uk' ? 'Видалити акаунт' : 'Delete account'}
                 </button>
               </div>
             </div>
@@ -283,8 +314,10 @@ export default function Dashboard() {
                 {exercises.map((ex, i) => (
                   <button
                     key={ex.type}
-                    onClick={() => navigate(ex.path)}
-                    className={`bg-white border border-gray-100 rounded-2xl p-4 text-left md:hover:bg-gradient-to-br md:hover:from-brand-yellow/40 md:hover:to-indigo-200 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group ${exercises.length % 2 !== 0 && i === 0 ? 'col-span-2' : ''}`}
+                    onClick={() => ex.onClick ? ex.onClick() : navigate(ex.path)}
+                    className={`bg-white border rounded-2xl p-4 text-left md:hover:bg-gradient-to-br md:hover:from-brand-yellow/40 md:hover:to-indigo-200 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group ${
+                      exercises.length % 2 !== 0 && i === 0 ? 'col-span-2' : ''
+                    } ${showCollectionPicker && ex.onClick ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100'}`}
                   >
                     <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 text-indigo-600 group-hover:bg-indigo-100">
                       <ex.Icon size={20} />
@@ -293,14 +326,46 @@ export default function Dashboard() {
                     <div className="text-xs text-gray-400 group-hover:text-indigo-600 mt-0.5">
                       {ex.count === null
                         ? (lang === 'uk' ? 'Запитайте будь-що' : 'Ask anything')
-                        : ex.count > 0
-                          ? (lang === 'uk' ? `${ex.count} слів` : `${ex.count} words`)
-                          : (lang === 'uk' ? 'Додайте слова' : 'Add words first')
+                        : ex.onClick
+                          ? (lang === 'uk' ? `${ex.count} колекцій` : `${ex.count} collection${ex.count !== 1 ? 's' : ''}`)
+                          : ex.count > 0
+                            ? (lang === 'uk' ? `${ex.count} слів` : `${ex.count} words`)
+                            : (lang === 'uk' ? 'Додайте слова' : 'Add words first')
                       }
                     </div>
                   </button>
                 ))}
               </div>
+
+              {/* Collection picker — expands below the grid */}
+              {showCollectionPicker && (
+                <div className="mt-3 border border-indigo-100 rounded-2xl overflow-hidden">
+                  <div className="bg-indigo-50 px-4 py-2.5 flex items-center justify-between border-b border-indigo-100">
+                    <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+                      {lang === 'uk' ? 'Оберіть колекцію' : 'Choose a collection'}
+                    </span>
+                    <button onClick={() => setShowCollectionPicker(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {collections.map(c => {
+                      const col = collectionColor(c.color)
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => navigate(`/flashcards?collectionId=${c.id}&collectionName=${encodeURIComponent(c.name)}`)}
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors text-left"
+                        >
+                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.dot}`} />
+                          <span className="text-sm font-medium text-gray-800">{c.name}</span>
+                          <span className="ml-auto text-xs text-indigo-600 font-semibold">
+                            {lang === 'uk' ? 'Практикувати →' : 'Practice →'}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

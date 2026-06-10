@@ -95,7 +95,7 @@ export default function NavBar({ slot, className = '' }) {
 
           {/* Right slot (page actions) or account avatar */}
           {slot}
-          <div className="relative" ref={accountRef}>
+          {!slot && <div className="relative" ref={accountRef}>
             <button
               onClick={() => { setAccountOpen(o => !o); setConfirmDelete(false) }}
               className="w-8 h-8 rounded-full bg-indigo-100 hover:bg-indigo-200 flex items-center justify-center text-indigo-600 text-sm font-bold transition-colors"
@@ -140,7 +140,7 @@ export default function NavBar({ slot, className = '' }) {
                 )}
               </div>
             )}
-          </div>
+          }
 
           {/* Hamburger (mobile only) */}
           <button
