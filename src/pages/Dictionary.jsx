@@ -754,6 +754,15 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
   const [identifyError, setIdentifyError] = useState(null)
   const [creatingCollection, setCreatingCollection] = useState(false)
   const [newCollectionName, setNewCollectionName]   = useState('')
+  const [expandedConjugation, setExpandedConjugation] = useState(new Set())
+
+  function toggleConjugation(key) {
+    setExpandedConjugation(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   const pos        = POS_STYLES[word.pos] || POS_STYLES.preposition
   const entryBadge = ENTRY_TYPE_STYLES[word.entryType]
@@ -963,47 +972,58 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                           </div>
                         )}
                         {/* Conjugation table */}
-                        {sense.conjugation && targetLanguageName === 'Ukrainian' ? (
-                          <div className="rounded-2xl overflow-hidden border border-violet-100">
-                            {(() => {
-                              const tense = sense.conjugation.present
-                                ? { label: 'Теперішній', data: sense.conjugation.present }
-                                : sense.conjugation.future
-                                ? { label: 'Майбутній', data: sense.conjugation.future }
-                                : null
-                              return (
-                                <>
-                                  {tense && (
-                                    <table className="w-full text-sm">
-                                      <thead>
-                                        <tr className="bg-violet-50 text-xs text-violet-700 uppercase tracking-wide">
-                                          <th className="px-3 py-2 text-left font-medium w-1/2">займенник</th>
-                                          <th className="px-3 py-2 text-left font-medium">{tense.label}</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {['я','ти','він/вона','ми','ви','вони'].map((p, i) => (
-                                          <tr key={p} className={i % 2 === 0 ? 'bg-white' : 'bg-violet-50/30'}>
-                                            <td className="px-3 py-1.5 text-gray-400 font-medium text-xs">{p}</td>
-                                            <td className="px-3 py-1.5 text-gray-800 italic">{tense.data?.[p] || '—'}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  )}
-                                  {sense.conjugation.past && (
-                                    <div className="bg-violet-50/50 px-3 py-2 border-t border-violet-100 text-xs text-violet-800 flex flex-wrap gap-x-4 gap-y-1 items-center">
-                                      <span className="font-semibold uppercase tracking-wide">Минулий:</span>
-                                      {['ч','ж','с','мн'].map((k) => sense.conjugation.past[k] && (
-                                        <span key={k}><span className="text-violet-500">{k}:</span> <span className="italic">{sense.conjugation.past[k]}</span></span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </>
-                              )
-                            })()}
+                        {sense.conjugation && targetLanguageName === 'Ukrainian' && sense.isException ? (
+                          <div>
+                            <button
+                              onClick={() => toggleConjugation(sense.id || si)}
+                              className="text-xs text-violet-600 font-medium flex items-center gap-1.5 hover:text-violet-800 transition-colors"
+                            >
+                              <span>{expandedConjugation.has(sense.id || si) ? '▾' : '▸'}</span>
+                              {expandedConjugation.has(sense.id || si) ? 'Сховати відмінювання' : 'Відмінювання'}
+                            </button>
+                            {expandedConjugation.has(sense.id || si) && (
+                              <div className="rounded-2xl overflow-hidden border border-violet-100 mt-2">
+                                {(() => {
+                                  const tense = sense.conjugation.present
+                                    ? { label: 'Теперішній', data: sense.conjugation.present }
+                                    : sense.conjugation.future
+                                    ? { label: 'Майбутній', data: sense.conjugation.future }
+                                    : null
+                                  return (
+                                    <>
+                                      {tense && (
+                                        <table className="w-full text-sm">
+                                          <thead>
+                                            <tr className="bg-violet-50 text-xs text-violet-700 uppercase tracking-wide">
+                                              <th className="px-3 py-2 text-left font-medium w-1/2">займенник</th>
+                                              <th className="px-3 py-2 text-left font-medium">{tense.label}</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {['я','ти','він/вона','ми','ви','вони'].map((p, i) => (
+                                              <tr key={p} className={i % 2 === 0 ? 'bg-white' : 'bg-violet-50/30'}>
+                                                <td className="px-3 py-1.5 text-gray-400 font-medium text-xs">{p}</td>
+                                                <td className="px-3 py-1.5 text-gray-800 italic">{tense.data?.[p] || '—'}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      )}
+                                      {sense.conjugation.past && (
+                                        <div className="bg-violet-50/50 px-3 py-2 border-t border-violet-100 text-xs text-violet-800 flex flex-wrap gap-x-4 gap-y-1 items-center">
+                                          <span className="font-semibold uppercase tracking-wide">Минулий:</span>
+                                          {['ч','ж','с','мн'].map((k) => sense.conjugation.past[k] && (
+                                            <span key={k}><span className="text-violet-500">{k}:</span> <span className="italic">{sense.conjugation.past[k]}</span></span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </>
+                                  )
+                                })()}
+                              </div>
+                            )}
                           </div>
-                        ) : sense.conjugation && (
+                        ) : sense.conjugation && targetLanguageName !== 'Ukrainian' && (
                           <div className="rounded-2xl overflow-hidden border border-amber-100">
                             <table className="w-full text-sm">
                               <thead>
@@ -2305,7 +2325,7 @@ export default function Dictionary() {
         </div>
 
         {/* Collections filter */}
-        <div className="flex flex-wrap gap-2 items-center mb-3">
+        <div className="flex flex-wrap gap-2 items-center mb-2">
           <button
             onClick={() => setFilterCollection('all')}
             className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${filterCollection === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}
@@ -2334,6 +2354,26 @@ export default function Dictionary() {
             {collections.length ? '⚙ Manage' : '+ New collection'}
           </button>
         </div>
+
+        {/* Practice banner — visible when a collection chip is active */}
+        {filterCollection !== 'all' && (() => {
+          const activeCol = collections.find(c => c.id === filterCollection)
+          if (!activeCol) return null
+          const wordCount = countByCollection[activeCol.id] || 0
+          return (
+            <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl border border-indigo-100 bg-indigo-50 mb-3">
+              <span className="text-xs text-indigo-600 font-medium">
+                {wordCount} {wordCount === 1 ? 'word' : 'words'} in <span className="font-semibold">{activeCol.name}</span>
+              </span>
+              <button
+                onClick={() => navigate(`/flashcards?collectionId=${activeCol.id}&collectionName=${encodeURIComponent(activeCol.name)}`)}
+                className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl transition-colors"
+              >
+                ▶ Practice
+              </button>
+            </div>
+          )
+        })()}
 
         {/* Bulk selection bar */}
         {selectionMode && (

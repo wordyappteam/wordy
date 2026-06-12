@@ -31,6 +31,22 @@ function langWithScript(lang) {
   return lang
 }
 
+// Haiku sometimes places the combining acute accent (U+0301) after a consonant.
+// Deterministic cleanup: keep the accent only when it follows a Ukrainian vowel.
+const UK_VOWELS = 'аеєиіїоуюяАЕЄИІЇОУЮЯ'
+function fixUkrainianStress(str) {
+  return str.replace(/^́/, '').replace(/(.)́/g, (m, ch) => (UK_VOWELS.includes(ch) ? m : ch))
+}
+
+function deepFixStress(value) {
+  if (typeof value === 'string') return fixUkrainianStress(value)
+  if (Array.isArray(value)) return value.map(deepFixStress)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, deepFixStress(v)]))
+  }
+  return value
+}
+
 export async function identifyWord(input, targetLanguage = 'German', interfaceLanguage = 'English', context = null, opts = {}) {
   const ifaceLang = langWithScript(interfaceLanguage)
   const { singleSense = false, themeHint = null } = opts
@@ -150,7 +166,8 @@ ${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і
   const clean = text.replace(/```json|```/g, '').trim()
   const match = clean.match(/\{[\s\S]*\}/)
   if (!match) throw new Error('No JSON object found in response')
-  return JSON.parse(match[0])
+  const parsed = JSON.parse(match[0])
+  return isUkrainian ? deepFixStress(parsed) : parsed
 }
 
 // ── Sentence translation ───────────────────────────────────────────────────
