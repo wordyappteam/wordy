@@ -167,7 +167,10 @@ ${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і
     system,
     messages: [{ role: 'user', content: prompt }],
     model: 'claude-haiku-4-5',
-    maxTokens: 1500,
+    // Polysemous irregular verbs return several senses, each with its own
+    // conjugation table + 3 examples — 1500 truncated the JSON mid-table and
+    // broke JSON.parse. Give enough headroom to finish multi-sense entries.
+    maxTokens: 2500,
   })
 
   console.log('identifyWord raw response:', text)
