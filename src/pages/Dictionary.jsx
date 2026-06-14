@@ -537,7 +537,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
       setCheckedSenses((data.senses || []).map((_, i) => i)) // pre-check all
       setStage('result')
     } catch (e) {
-      setIdentifyError(t('dict.identifyError'))
+      setIdentifyError(t(e?.overloaded ? 'dict.busyError' : 'dict.identifyError'))
       setStage('idle')
     }
   }

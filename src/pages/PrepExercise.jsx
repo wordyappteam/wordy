@@ -250,9 +250,10 @@ export default function PrepExercise() {
       setExercises(enriched)
     } catch (e) {
       console.error(e)
+      const busy = e?.overloaded
       setError(lang === 'uk'
-        ? 'Не вдалося згенерувати вправи. Спробуйте ще раз.'
-        : 'Could not generate exercises. Please try again.')
+        ? (busy ? 'AI зараз зайнятий. Будь ласка, спробуйте ще раз за хвилинку.' : 'Не вдалося згенерувати вправи. Спробуйте ще раз.')
+        : (busy ? 'The AI is busy right now. Please try again in a moment.' : 'Could not generate exercises. Please try again.'))
     } finally {
       setLoading(false)
     }

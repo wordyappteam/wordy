@@ -14,7 +14,12 @@ async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTok
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     console.error('Claude proxy error:', err)
-    throw new Error(err?.error?.message ?? `HTTP ${res.status}`)
+    const e = new Error(err?.error?.message ?? `HTTP ${res.status}`)
+    e.status = res.status
+    // Overload / rate-limit / transient gateway errors → caller can show a
+    // friendlier "AI is busy, try again" message and let the user retry.
+    e.overloaded = [429, 500, 502, 503, 504, 529].includes(res.status)
+    throw e
   }
 
   const data = await res.json()
@@ -374,7 +379,7 @@ Rules:
     system,
     messages: [{ role: 'user', content: prompt }],
     model: 'claude-haiku-4-5',
-    maxTokens: 2048,
+    maxTokens: 3072,
   })
 
   console.log('generatePrepExercises raw response:', text)
@@ -422,7 +427,7 @@ Rules:
     system,
     messages: [{ role: 'user', content: prompt }],
     model: 'claude-haiku-4-5',
-    maxTokens: 2048,
+    maxTokens: 3072,
   })
 
   console.log('generateWordBankExercises raw response:', text)
