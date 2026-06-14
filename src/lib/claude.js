@@ -47,16 +47,24 @@ function deepFixStress(value) {
   return value
 }
 
+// Optional learner-interest steering, shared by identifyWord and chatWithTutor.
+// `topics` is a string array; returns '' when there are none.
+function topicsPromptSection(topics) {
+  if (!Array.isArray(topics) || topics.length === 0) return ''
+  return `\nThe learner is interested in: ${topics.join(', ')}. When it feels natural, set roughly half of your example sentences in these contexts — but keep the other half general and everyday. Never force a topic where it doesn't fit. If any listed topic is violent, sexual, hateful, or otherwise inappropriate for learning material, ignore it and use general everyday contexts.`
+}
+
 export async function identifyWord(input, targetLanguage = 'German', interfaceLanguage = 'English', context = null, opts = {}) {
   const ifaceLang = langWithScript(interfaceLanguage)
-  const { singleSense = false, themeHint = null } = opts
+  const { singleSense = false, themeHint = null, topics = [] } = opts
+  const topicsSection = topicsPromptSection(topics)
 
   const isGerman = targetLanguage === 'German'
   const isUkrainian = targetLanguage === 'Ukrainian'
 
   const system = `You are a language expert specialising in ${targetLanguage}.
 Return ONLY valid JSON — no markdown, no code blocks, no explanation outside the JSON.
-Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.${isUkrainian ? `\nAll Ukrainian words, word forms, and example sentences must be written in Ukrainian Cyrillic script.\nCRITICAL: Ukrainian past-tense predicate forms ending in -ло, -ла, -ли (e.g. остогидло, набридло, минуло, болить) are VERBS — their pos MUST be "verb". Return the infinitive as the base form (остогидло → остогидіти, набридло → набридіти, минуло → минути). Never classify these as adverb or adjective.\nCRITICAL: Stress marking — place the acute accent (´) directly ON the stressed vowel. The character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я). Never place the accent after a consonant.` : ''}`
+Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.${isUkrainian ? `\nAll Ukrainian words, word forms, and example sentences must be written in Ukrainian Cyrillic script.\nCRITICAL: Ukrainian past-tense predicate forms ending in -ло, -ла, -ли (e.g. остогидло, набридло, минуло, болить) are VERBS — their pos MUST be "verb". Return the infinitive as the base form (остогидло → остогидіти, набридло → набридіти, минуло → минути). Never classify these as adverb or adjective.\nCRITICAL: Stress marking — place the acute accent (´) directly ON the stressed vowel. The character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я). Never place the accent after a consonant.` : ''}${topicsSection}`
 
   const formNote = isGerman
     ? "for nouns: plural WITHOUT article e.g. 'Häuser'; if no plural write '–'; for verbs: 'macht / machte / gemacht'"
@@ -168,6 +176,60 @@ ${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і
   if (!match) throw new Error('No JSON object found in response')
   const parsed = JSON.parse(match[0])
   return isUkrainian ? deepFixStress(parsed) : parsed
+}
+
+// ── Goal parsing ────────────────────────────────────────────────────────────
+// Turns a learner's free-text onboarding goal into structured tags + metadata.
+// `tags` use the same ids as the Onboarding GOALS list.
+// Returns { tags, summary, exam, deadline }; empty/gibberish → all null/[].
+export async function parseGoal(goalText, interfaceLanguage = 'English') {
+  const empty = { tags: [], summary: null, exam: null, deadline: null }
+  if (!goalText?.trim()) return empty
+  const ifaceLang = langWithScript(interfaceLanguage)
+
+  const system = `You categorise a language learner's free-text goal into structured tags.
+Return ONLY valid JSON — no markdown, no code blocks.`
+
+  const prompt = `The learner wrote this about why they are learning the language:
+"""
+${goalText.trim()}
+"""
+
+Return exactly this JSON:
+{
+  "tags": ["1 to 3 of: travel, fluency, work, study, culture, curiosity"],
+  "summary": "one sentence describing the goal, max 15 words, third person",
+  "exam": "the exam name if one is mentioned, otherwise null",
+  "deadline": "YYYY-MM if a month or deadline is mentioned, otherwise null"
+}
+
+Rules:
+- "tags": pick the 1-3 ids from [travel, fluency, work, study, culture, curiosity] that best fit. Use only these ids.
+- "summary": write in ${ifaceLang}, third person (e.g. "Wants to read German literature"), max 15 words
+- If the text is empty, gibberish, or not a real learning goal, return { "tags": [], "summary": null, "exam": null, "deadline": null }`
+
+  const text = await callClaude({
+    system,
+    messages: [{ role: 'user', content: prompt }],
+    model: 'claude-haiku-4-5',
+    maxTokens: 256,
+  })
+
+  const clean = text.replace(/```json|```/g, '').trim()
+  const match = clean.match(/\{[\s\S]*\}/)
+  if (!match) return empty
+  try {
+    const parsed = JSON.parse(match[0])
+    const VALID = ['travel', 'fluency', 'work', 'study', 'culture', 'curiosity']
+    return {
+      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((t) => VALID.includes(t)).slice(0, 3) : [],
+      summary: parsed.summary || null,
+      exam: parsed.exam || null,
+      deadline: parsed.deadline || null,
+    }
+  } catch {
+    return empty
+  }
 }
 
 // ── Sentence translation ───────────────────────────────────────────────────
@@ -412,10 +474,11 @@ Other rules:
 }
 
 // ── Chat tutor ─────────────────────────────────────────────────────────────
-export async function chatWithTutor(messages, targetLanguage = 'German', interfaceLanguage = 'English', memory = null) {
+export async function chatWithTutor(messages, targetLanguage = 'German', interfaceLanguage = 'English', memory = null, topics = []) {
   const memorySection = memory
     ? `\n\nLEARNER MEMORY (from previous sessions):\n${memory}\n\nUse this context to personalise your responses — reference their known struggles, build on topics they've already studied, adjust your explanations to their level.`
     : ''
+  const topicsSection = topicsPromptSection(topics)
 
   const system = `You are a friendly, knowledgeable ${targetLanguage} language tutor.
 Always respond in ${interfaceLanguage}.
@@ -424,7 +487,7 @@ You are multilingual: if the learner asks you to translate words or phrases into
 Format responses clearly: use **bold** for key terms, *italics* for ${targetLanguage} words and examples.
 Use tables (markdown pipe format) when comparing forms or cases.
 Keep responses thorough but focused — no unnecessary padding.
-After explaining a grammar topic, end with a brief note that the user can practice this topic if they want.${memorySection}`
+After explaining a grammar topic, end with a brief note that the user can practice this topic if they want.${memorySection}${topicsSection}`
 
   const apiMessages = messages
     .filter((m) => m.role === 'user' || m.role === 'assistant')

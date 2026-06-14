@@ -140,7 +140,7 @@ export default function NavBar({ slot, className = '' }) {
                 )}
               </div>
             )}
-          }
+          </div>}
 
           {/* Hamburger (mobile only) */}
           <button

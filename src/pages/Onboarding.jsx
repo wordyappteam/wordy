@@ -2,20 +2,14 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { useLanguage } from '../lib/i18n'
+import { SUPPORTED_LANGUAGES } from '../lib/TargetLangContext'
+import { parseGoal } from '../lib/claude'
 import { getWordPack } from '../data/wordPacks'
 
-const LANGUAGES = [
-  { code: 'en', name: 'English',    flag: '🇬🇧' },
-  { code: 'fr', name: 'French',     flag: '🇫🇷' },
-  { code: 'es', name: 'Spanish',    flag: '🇪🇸' },
-  { code: 'de', name: 'German',     flag: '🇩🇪' },
-  { code: 'it', name: 'Italian',    flag: '🇮🇹' },
-  { code: 'pt', name: 'Portuguese', flag: '🇵🇹' },
-  { code: 'uk', name: 'Ukrainian',  flag: '🇺🇦' },
-  { code: 'ja', name: 'Japanese',   flag: '🇯🇵' },
-  { code: 'zh', name: 'Chinese',    flag: '🇨🇳' },
-  { code: 'ko', name: 'Korean',     flag: '🇰🇷' },
-]
+// Only languages the app actually supports — mirror TargetLangContext, keep flags.
+const FLAGS = { de: '🇩🇪', en: '🇬🇧', uk: '🇺🇦' }
+const LANGUAGES = SUPPORTED_LANGUAGES.map((l) => ({ code: l.code, name: l.name, flag: FLAGS[l.code] }))
 
 const LEVELS = ['Beginner', 'Elementary', 'Intermediate', 'Upper-Intermediate', 'Advanced']
 
@@ -38,7 +32,6 @@ const TIME_OPTIONS = [
   { id: '10-15', label: '10–15 min / day', desc: 'A focused daily habit' },
   { id: '15-30', label: '15–30 min / day', desc: 'Steady progress' },
   { id: '30-45', label: '30–45 min / day', desc: 'Serious learning' },
-  { id: '45-60', label: '45–60 min / day', desc: 'Full commitment' },
 ]
 
 const STUDY_SITUATIONS = [
@@ -63,6 +56,7 @@ const POS_COLORS = {
 export default function Onboarding() {
   const navigate   = useNavigate()
   const { user }   = useAuth()
+  const { lang }   = useLanguage()
   const [step, setStep]   = useState(0)
   const [saving, setSaving] = useState(false)
 
@@ -73,29 +67,41 @@ export default function Onboarding() {
     goalCustom: '',
     situations: [],
     situationCustom: '',
+    examName: '',
+    examDate: '',
     topics: [],
     topicCustom: '',
     time: null,
     timeCustom: '',
-    hasMaterials: null,
   })
 
   // ── Word pack state ──────────────────────────────────────────────────────
   const [packIndex,   setPackIndex]   = useState(0)
   const [wordChoices, setWordChoices] = useState([]) // [{...wordData, status}]
 
-  // Shuffle once when language/level are set
+  // Build a balanced starter pack once when language/level are set:
+  // group by POS, shuffle within each group, take up to 6 per POS, cap at 25, shuffle.
   const packWords = useMemo(() => {
     if (!answers.language || !answers.level) return []
     const pack = getWordPack(answers.language, answers.level)
     if (!pack) return []
-    // Fisher-Yates shuffle
-    const arr = [...pack]
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]]
+
+    const shuffle = (list) => {
+      const a = [...list]
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]]
+      }
+      return a
     }
-    return arr
+
+    // Group by part of speech, shuffle within each group, take up to 6 per POS
+    const byPos = {}
+    for (const w of pack) (byPos[w.pos] ??= []).push(w)
+    const balanced = Object.values(byPos).flatMap((group) => shuffle(group).slice(0, 6))
+
+    // Cap the combined result at 25, then shuffle the final list
+    return shuffle(balanced.slice(0, 25))
   }, [answers.language, answers.level])
 
   const hasPack = packWords.length > 0
@@ -108,10 +114,13 @@ export default function Onboarding() {
     ...a,
     topics: a.topics.includes(topic) ? a.topics.filter((t) => t !== topic) : [...a.topics, topic],
   }))
-  const toggleSituation = (id) => setAnswers((a) => ({
-    ...a,
-    situations: a.situations.includes(id) ? a.situations.filter((s) => s !== id) : [...a.situations, id],
-  }))
+  const toggleSituation = (id) => setAnswers((a) => {
+    const has = a.situations.includes(id)
+    const situations = has ? a.situations.filter((s) => s !== id) : [...a.situations, id]
+    // Clear the exam fields when the exam situation is deselected
+    const examReset = id === 'exam' && has ? { examName: '', examDate: '' } : {}
+    return { ...a, situations, ...examReset }
+  })
   const toggleGoal = (id) => setAnswers((a) => {
     const selected = a.goals.includes(id)
       ? a.goals.filter((g) => g !== id)
@@ -192,10 +201,37 @@ export default function Onboarding() {
 
   async function handleFinish() {
     setSaving(true)
+    const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
+
+    // ── Goals: predefined selection + custom free-text + AI-parsed tags ──
+    let goals
+    if (answers.goalCustom?.trim()) {
+      let parsed = null
+      try {
+        parsed = await parseGoal(answers.goalCustom, interfaceLanguage)
+      } catch (e) {
+        // Parsing must never block onboarding completion.
+        console.error('parseGoal failed:', e)
+      }
+      goals = { selected: answers.goals, custom: answers.goalCustom, parsed }
+    } else {
+      goals = { selected: answers.goals, custom: null, parsed: null }
+    }
+    // Exam details — only when the exam situation was selected
+    if (answers.situations.includes('exam')) {
+      goals.exam = { name: answers.examName || null, date: answers.examDate || null }
+    }
+
+    // ── Topics of interest: selected chips + custom topic as one string array ──
+    const topics = [...answers.topics]
+    if (answers.topicCustom?.trim()) topics.push(answers.topicCustom.trim())
+
     await supabase.from('profiles').upsert({
       id:                     user.id,
       active_target_language: answers.language,
       onboarding_complete:    true,
+      goals,
+      topics,
     })
     setSaving(false)
     navigate('/dashboard')
@@ -205,10 +241,6 @@ export default function Onboarding() {
   function handleWordChoice(status) {
     const word = packWords[packIndex]
     setWordChoices((prev) => [...prev, { ...word, status }])
-    advancePack()
-  }
-
-  function handleSkipWord() {
     advancePack()
   }
 
@@ -243,6 +275,12 @@ export default function Onboarding() {
       {/* ── Step 5: Word pack (fullscreen card mode) ── */}
       {step === 5 && hasPack && currentPackWord && (
         <div className="w-full max-w-lg">
+          <button
+            onClick={() => setStep(4)}
+            className="text-sm text-gray-400 hover:text-gray-600 transition-colors mb-4"
+          >
+            ← Back
+          </button>
           {/* Header */}
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-1">Build your starter vocabulary</h2>
@@ -303,10 +341,11 @@ export default function Onboarding() {
           </div>
           <div className="flex justify-between items-center">
             <button
-              onClick={handleSkipWord}
-              className="text-sm text-gray-400 hover:text-gray-600 transition-colors px-2 py-1"
+              onClick={handleContinue}
+              disabled={saving}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors px-2 py-1 disabled:opacity-50"
             >
-              Skip →
+              Skip this step →
             </button>
             {wordChoices.length >= 10 && (
               <button
@@ -324,6 +363,14 @@ export default function Onboarding() {
       {/* ── Step 5: No pack available for this language ── */}
       {step === 5 && !hasPack && (
         <div className="bg-white rounded-3xl shadow-xl shadow-gray-100 border border-gray-100 p-8 w-full max-w-lg text-center">
+          <div className="text-left">
+            <button
+              onClick={() => setStep(4)}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors mb-2"
+            >
+              ← Back
+            </button>
+          </div>
           <div className="text-4xl mb-4">📦</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Word packs coming soon</h2>
           <p className="text-gray-500 text-sm mb-8">We're building starter vocabulary packs for this language. For now, you can add words manually from your dashboard.</p>
@@ -431,20 +478,46 @@ export default function Onboarding() {
               <p className="text-gray-400 text-xs mb-6">Select all that apply.</p>
               <div className="space-y-3 mb-4">
                 {STUDY_SITUATIONS.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => toggleSituation(s.id)}
-                    className={`w-full text-left px-4 py-3.5 rounded-xl border text-sm transition-all flex items-center gap-4 ${
-                      answers.situations.includes(s.id) ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <span className="text-xl">{s.label.split(' ')[0]}</span>
-                    <div>
-                      <div className="font-medium text-gray-900">{s.label.split(' ').slice(1).join(' ')}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{s.desc}</div>
-                    </div>
-                    {answers.situations.includes(s.id) && <span className="ml-auto text-indigo-500 text-base">✓</span>}
-                  </button>
+                  <div key={s.id}>
+                    <button
+                      onClick={() => toggleSituation(s.id)}
+                      className={`w-full text-left px-4 py-3.5 rounded-xl border text-sm transition-all flex items-center gap-4 ${
+                        answers.situations.includes(s.id) ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="text-xl">{s.label.split(' ')[0]}</span>
+                      <div>
+                        <div className="font-medium text-gray-900">{s.label.split(' ').slice(1).join(' ')}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{s.desc}</div>
+                      </div>
+                      {answers.situations.includes(s.id) && <span className="ml-auto text-indigo-500 text-base">✓</span>}
+                    </button>
+
+                    {/* Optional exam details — only while the exam situation is selected */}
+                    {s.id === 'exam' && answers.situations.includes('exam') && (
+                      <div className="mt-2 mx-1 space-y-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Which exam?</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. IELTS, Goethe B2, ЗНО"
+                            value={answers.examName}
+                            onChange={(e) => update('examName', e.target.value)}
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-indigo-400 transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">When is it?</label>
+                          <input
+                            type="month"
+                            value={answers.examDate}
+                            onChange={(e) => update('examDate', e.target.value)}
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-indigo-400 transition-colors"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
               <input
@@ -506,25 +579,6 @@ export default function Onboarding() {
                   </button>
                 ))}
               </div>
-              <div className="border border-gray-200 rounded-2xl p-4 bg-indigo-50/50">
-                <p className="text-sm font-medium text-gray-800 mb-1">📎 Do you have study materials?</p>
-                <p className="text-xs text-gray-500 mb-3">You can upload textbooks, PDFs, notes, articles. The more you share, the better the app adapts to your level.</p>
-                <div className="flex gap-2">
-                  {['Yes, I have materials', 'Not yet'].map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => update('hasMaterials', opt)}
-                      className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-all ${
-                        answers.hasMaterials === opt
-                          ? 'border-indigo-500 bg-white text-indigo-700'
-                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <input
                 type="text"
                 placeholder="Or describe your schedule in your own words..."
@@ -538,6 +592,14 @@ export default function Onboarding() {
           {/* Step 6 — Done */}
           {step === 6 && (
             <div className="text-center py-4">
+              <div className="text-left">
+                <button
+                  onClick={() => setStep(5)}
+                  className="text-sm text-gray-400 hover:text-gray-600 transition-colors mb-2"
+                >
+                  ← Back
+                </button>
+              </div>
               <div className="text-5xl mb-4">🎉</div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">You're all set!</h2>
               <p className="text-gray-500 text-sm mb-2">

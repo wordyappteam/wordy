@@ -411,7 +411,7 @@ function AddBookModal({ onClose, onSaved }) {
 
 export default function Reader() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const { lang } = useLanguage()
   const { targetLang, targetLanguageName } = useTargetLang()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
@@ -556,7 +556,7 @@ export default function Reader() {
     setLookup({ status: 'loading' })
 
     try {
-      const result = await identifyWord(word, targetLanguageName, translationLang, sentence)
+      const result = await identifyWord(word, targetLanguageName, translationLang, sentence, { topics: profile?.topics ?? [] })
       if (!result.senses?.length) throw new Error('No senses returned')
 
       // Check if base form already in dictionary
@@ -581,7 +581,7 @@ export default function Reader() {
     } catch {
       setLookup({ status: 'error' })
     }
-  }, [targetLanguageName, translationLang, targetLang, user])
+  }, [targetLanguageName, translationLang, targetLang, user, profile])
 
   async function handleAddWord() {
     if (!lookup?.result || !popup) return

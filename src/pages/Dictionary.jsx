@@ -518,7 +518,7 @@ const TRANSLATE_LANGS = [
   { code: 'Ukrainian', label: 'UA' },
 ]
 
-function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 'German' }) {
+function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 'German', topics = [] }) {
   const { t } = useLanguage()
   const [input, setInput]           = useState('')
   const [stage, setStage]           = useState('idle') // idle | loading | result
@@ -532,7 +532,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
     setStage('loading')
     setIdentifyError(null)
     try {
-      const data = await identifyWordAI(input, targetLanguageName, translationLang)
+      const data = await identifyWordAI(input, targetLanguageName, translationLang, null, { topics })
       setResult(data)
       setCheckedSenses((data.senses || []).map((_, i) => i)) // pre-check all
       setStage('result')
@@ -745,7 +745,7 @@ function SenseImage({ sense, userId, onChange }) {
 }
 
 // ── Word Panel ────────────────────────────────────────────────────────────
-function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange }) {
+function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange, topics = [] }) {
   const { t } = useLanguage()
   const [editing, setEditing]             = useState(false)
   const [draft, setDraft]                 = useState(word)
@@ -778,7 +778,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
     setIdentifying(true)
     setIdentifyError(null)
     try {
-      const result = await identifyWordAI(word.word, targetLanguageName, interfaceLanguage || 'English')
+      const result = await identifyWordAI(word.word, targetLanguageName, interfaceLanguage || 'English', null, { topics })
       const primary = result.senses?.[0]
       const updated = {
         ...word,
@@ -1388,7 +1388,7 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
 }
 
 // ── Bulk Identify modal ───────────────────────────────────────────────────
-function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage, targetLanguageName = 'German' }) {
+function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage, targetLanguageName = 'German', topics = [] }) {
   const unidentified = words.filter(w => !w.translation || !w.explanation)
   const [running, setRunning]     = useState(false)
   const [index, setIndex]         = useState(0)
@@ -1403,7 +1403,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
       setIndex(i)
       const w = unidentified[i]
       try {
-        const result = await identifyWordAI(w.word, targetLanguageName, interfaceLanguage)
+        const result = await identifyWordAI(w.word, targetLanguageName, interfaceLanguage, null, { topics })
         const updated = {
           ...w,
           translation: result.translation  || w.translation,
@@ -1875,10 +1875,11 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
 // ── Main component ────────────────────────────────────────────────────────
 export default function Dictionary() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const { t, lang } = useLanguage()
   const { targetLang, targetLanguageName, speechLocale } = useTargetLang()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
+  const topics = profile?.topics ?? []
 
   const [words, setWords]               = useState([])
   const [loadingWords, setLoadingWords] = useState(true)
@@ -2504,7 +2505,7 @@ export default function Dictionary() {
         )}
       </main>
 
-      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale}
+      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale} topics={topics}
         collections={collections} wordCollectionIds={membershipByWord[selectedWord.id]} onToggleCollection={toggleWordCollection} onQuickCreateCollection={handleQuickCreateCollection}
         userId={user.id} onSenseImageChange={handleSenseImageChange} />}
       {confirmBulkDelete && (
@@ -2533,7 +2534,7 @@ export default function Dictionary() {
           onClose={() => setShowCollectionsModal(false)}
         />
       )}
-      {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} />}
+      {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} topics={topics} />}
       {showBulkModal && <BulkImportModal onClose={() => setShowBulkModal(false)} onImport={handleBulkImport} />}
       {showSortMode && (
         <QuickSortMode
@@ -2549,6 +2550,7 @@ export default function Dictionary() {
           onWordIdentified={handleUpdate}
           interfaceLanguage={interfaceLanguage}
           targetLanguageName={targetLanguageName}
+          topics={topics}
         />
       )}
     </div>

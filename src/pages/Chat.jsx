@@ -642,7 +642,7 @@ function AddedWordToast({ word, onDismiss }) {
 export default function Chat() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const { targetLang, targetLanguageName } = useTargetLang()
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
 
@@ -785,7 +785,7 @@ export default function Chat() {
       ? `LEARNER PROFILE:\n${memory.profile || ''}\n\nLAST SESSION:\n${memory.last_session || ''}`
       : null
 
-    chatWithTutor([...messages, { role: 'user', text: trimmed }], targetLanguageName, interfaceLanguage, memoryText)
+    chatWithTutor([...messages, { role: 'user', text: trimmed }], targetLanguageName, interfaceLanguage, memoryText, profile?.topics ?? [])
       .then((responseText) => {
         setMessages((prev) => [
           ...prev,
@@ -885,7 +885,7 @@ export default function Chat() {
       try {
         const result = await identifyWord(
           item.word, targetLanguageName, panel.translationLang || interfaceLanguage, null,
-          { singleSense: panel.singleSense !== false, themeHint: themeName || null }
+          { singleSense: panel.singleSense !== false, themeHint: themeName || null, topics: profile?.topics ?? [] }
         )
         const wordId = await addIdentifiedWord(result)
         if (wordId) {
