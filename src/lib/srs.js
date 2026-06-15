@@ -110,6 +110,82 @@ export function applyVerdict(state, verdict, todayISO) {
   }
 }
 
+// ── Session assembly (v2) ────────────────────────────────────────────────────
+// Pure planner. Given the learner's senses, produce an ordered list of steps.
+// Each step is one exercise on one sense; exactly ONE step per selected sense is
+// graded, and its outcome is what feeds completeSessionV2.
+//
+// A sense row needs: { id, word_id, interval_step, last_reviewed,
+//   next_review_date, is_leech, word_form|word, translation }
+//
+// opts: { today, timeBudget, gradedCap, newCap, leechCap, antiClusterWindow }
+export function planSessionV2(senses, opts = {}) {
+  const {
+    today = new Date().toISOString().split('T')[0],
+    timeBudget = 15,
+    gradedCap = capForBudget(timeBudget),
+    newCap = 5,
+    leechCap = 2,
+    antiClusterWindow = 2,
+  } = opts
+
+  const isNew = (s) => !s.last_reviewed && (s.interval_step ?? 0) === 0
+  const isDue = (s) => !isNew(s) && (!s.next_review_date || s.next_review_date <= today)
+
+  const news    = senses.filter(isNew)
+  const dueAll  = senses.filter(isDue)
+  const leeches = dueAll.filter((s) => s.is_leech)
+  const reviews = dueAll.filter((s) => !s.is_leech)
+
+  // Oldest due first
+  const byDate = (a, b) => String(a.next_review_date ?? '').localeCompare(String(b.next_review_date ?? ''))
+  reviews.sort(byDate)
+  leeches.sort(byDate)
+
+  // Select within caps. Priority: due reviews -> a few leeches -> some new.
+  const selected = []
+  const take = (s) => { if (selected.length < gradedCap) selected.push(s) }
+  reviews.forEach(take)
+  leeches.slice(0, leechCap).forEach((s) => take({ ...s, _remedial: true }))
+  news.slice(0, newCap).forEach(take)
+  if (selected.length === 0) return []
+
+  // Build steps: a scaffold (encode) phase, then a graded (test) phase. Two
+  // phases give every word maximum in-session spacing before its graded test.
+  const display = (s) => ({ word: s.word_form ?? s.word ?? '', translation: s.translation ?? '' })
+  const scaffoldSteps = []
+  const gradedSteps = []
+  for (const s of selected) {
+    const step = s.interval_step ?? 0
+    const remedial = !!s._remedial
+    const base = { senseId: s.id, wordId: s.word_id, remedial, direction: directionFor(step), stage: stageName(step), ...display(s) }
+    for (const ex of (remedial ? ['flashcard'] : scaffoldFor(step))) {
+      scaffoldSteps.push({ ...base, exercise: ex, graded: false })
+    }
+    gradedSteps.push({ ...base, exercise: remedial ? 'word_choice' : gradedExerciseFor(step), graded: true })
+  }
+
+  // No two senses of the same lemma back-to-back (semantic-interference guard).
+  return [
+    ...antiCluster(scaffoldSteps, (x) => x.wordId, antiClusterWindow),
+    ...antiCluster(gradedSteps, (x) => x.wordId, antiClusterWindow),
+  ]
+}
+
+function capForBudget(min) { return min >= 45 ? 28 : min >= 30 ? 18 : 10 }
+
+// Greedy reorder so no two items sharing keyOf sit within `window` positions.
+function antiCluster(items, keyOf, window) {
+  const remaining = [...items]
+  const out = []
+  while (remaining.length) {
+    let idx = remaining.findIndex((it) => !out.slice(-window).some((o) => keyOf(o) === keyOf(it)))
+    if (idx === -1) idx = 0 // unavoidable collision — accept it
+    out.push(remaining.splice(idx, 1)[0])
+  }
+  return out
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 function clampStep(s) { return Math.max(0, Math.min(MAX_STEP, (s | 0))) }
 function addDays(iso, n) {
