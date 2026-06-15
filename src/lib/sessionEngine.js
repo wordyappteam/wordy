@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { applyVerdict, gradeRetrieval } from './srs'
 
 // ── Stage constants ────────────────────────────────────────────────────────
 export const STAGE = {
@@ -249,5 +250,45 @@ export async function completeSession(sessionId, userId, wordResults) {
         status:               newStatus,
       })
       .eq('id', wordId)
+  }
+}
+
+// ── SRS v2 ───────────────────────────────────────────────────────────────────
+// New scheduling model (see src/lib/srs.js + features/scoring-system-v2.md).
+// One graded retrieval per sense per session -> one verdict -> one write.
+// NOT yet wired into the session pages — flip to this deliberately at cutover.
+//
+// `senseResults`: [{ senseId, outcome }] where outcome is 'correct' | 'almost'
+//   | 'wrong' (the result of that sense's single graded exercise this session).
+export async function completeSessionV2(sessionId, userId, senseResults, todayISO = new Date().toISOString().split('T')[0]) {
+  // Idempotency guard: if the session was already completed, don't re-apply.
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('completed_at')
+    .eq('id', sessionId)
+    .single()
+  if (session?.completed_at) return
+
+  await supabase
+    .from('sessions')
+    .update({ completed_at: new Date().toISOString() })
+    .eq('id', sessionId)
+
+  for (const { senseId, outcome } of senseResults) {
+    const { data: sense } = await supabase
+      .from('word_senses')
+      .select('interval_step, lapses, slipped')
+      .eq('id', senseId)
+      .eq('user_id', userId)
+      .single()
+    if (!sense) continue
+
+    const next = applyVerdict(sense, gradeRetrieval(outcome), todayISO)
+
+    await supabase
+      .from('word_senses')
+      .update(next)
+      .eq('id', senseId)
+      .eq('user_id', userId)
   }
 }
