@@ -43,6 +43,7 @@ export default function Dashboard() {
   const { targetLang, targetLanguageName, features } = useTargetLang()
 
   const [words,        setWords]        = useState([])
+  const [senseCount,   setSenseCount]   = useState(null)
   const [loading,      setLoading]      = useState(true)
   const [editingName,  setEditingName]  = useState(false)
   const [nameInput,    setNameInput]    = useState('')
@@ -66,6 +67,16 @@ export default function Dashboard() {
         setWords(data ?? [])
         setLoading(false)
       })
+  }, [user, targetLang])
+
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('word_senses')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('target_language', targetLang)
+      .then(({ count }) => setSenseCount(count ?? 0))
   }, [user, targetLang])
 
   useEffect(() => {
@@ -167,6 +178,8 @@ export default function Dashboard() {
   // ── Labels ─────────────────────────────────────────────────────────────────
   const lbl = {
     totalWords:    lang === 'uk' ? 'Слів у словнику' : 'Words in dictionary',
+    senses:        lang === 'uk' ? 'Значень' : 'Senses',
+    perWord:       lang === 'uk' ? 'на слово' : 'per word',
     learning:      lang === 'uk' ? 'Вивчаю' : 'Learning',
     known:         lang === 'uk' ? 'Знаю / Засвоїв' : 'Known / Mastered',
     thisWeek:      lang === 'uk' ? 'Додано цього тижня' : 'Added this week',
@@ -412,6 +425,7 @@ export default function Dashboard() {
             {/* Stat cards */}
             {[
               { label: lbl.totalWords, value: loading ? '…' : total,         sub: targetLanguageName,            path: '/dictionary' },
+              { label: lbl.senses,     value: senseCount === null ? '…' : senseCount, sub: total > 0 && senseCount !== null ? `${(senseCount / total).toFixed(1)} ${lbl.perWord}` : targetLanguageName, path: '/dictionary' },
               { label: lbl.thisWeek,   value: loading ? '…' : addedThisWeek, sub: lang === 'uk' ? 'за останні 7 днів' : 'last 7 days', path: null },
             ].map((stat) => (
               <div

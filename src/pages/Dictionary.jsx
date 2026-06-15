@@ -756,6 +756,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
   const [creatingCollection, setCreatingCollection] = useState(false)
   const [newCollectionName, setNewCollectionName]   = useState('')
   const [expandedConjugation, setExpandedConjugation] = useState(new Set())
+  const [activeSenseIdx, setActiveSenseIdx] = useState(0)
+  useEffect(() => { setActiveSenseIdx(0) }, [word.id]) // reset pager when a different word opens
 
   function toggleConjugation(key) {
     setExpandedConjugation(prev => {
@@ -775,11 +777,12 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
     ? [...aspectSenses].sort((a, b) => aspectRank(a) - aspectRank(b)).map(s => s.wordForm).join(' / ')
     : null
 
-  async function handleIdentify() {
+  async function handleIdentify(reidentLang) {
     setIdentifying(true)
     setIdentifyError(null)
     try {
-      const result = await identifyWordAI(word.word, targetLanguageName, interfaceLanguage || 'English', null, { topics })
+      const lang = reidentLang || interfaceLanguage || 'English'
+      const result = await identifyWordAI(word.word, targetLanguageName, lang, null, { topics })
       const primary = result.senses?.[0]
       const updated = {
         ...word,
@@ -796,7 +799,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
       }
       onUpdate(updated)
     } catch (e) {
-      setIdentifyError('AI identification failed. Try again.')
+      setIdentifyError(t(e?.overloaded ? 'dict.busyError' : 'dict.identifyError'))
     } finally {
       setIdentifying(false)
     }
@@ -911,7 +914,39 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
             {/* ── Sense-based display ── */}
             {word.hasSenses ? (
               <div className="flex flex-col gap-4">
-                {word.senses.map((sense, si) => {
+                {/* ── Senses carousel bar (only when >1 sense) ── */}
+                {word.senses.length > 1 && (
+                  <div className="flex items-center justify-center gap-4">
+                    <button
+                      onClick={() => setActiveSenseIdx(i => Math.max(0, i - 1))}
+                      disabled={activeSenseIdx === 0}
+                      aria-label="Previous sense"
+                      className="w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:border-indigo-300 disabled:opacity-30 flex items-center justify-center text-lg leading-none"
+                    >‹</button>
+                    <div className="flex flex-col items-center gap-1.5">
+                      <span className="text-xs font-medium text-gray-500">{activeSenseIdx + 1} / {word.senses.length}</span>
+                      <div className="flex gap-1.5">
+                        {word.senses.map((_, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setActiveSenseIdx(i)}
+                            aria-label={`Sense ${i + 1}`}
+                            className={`w-2 h-2 rounded-full transition-colors ${i === activeSenseIdx ? 'bg-indigo-600' : 'bg-gray-300 hover:bg-gray-400'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveSenseIdx(i => Math.min(word.senses.length - 1, i + 1))}
+                      disabled={activeSenseIdx >= word.senses.length - 1}
+                      aria-label="Next sense"
+                      className="w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:border-indigo-300 disabled:opacity-30 flex items-center justify-center text-lg leading-none"
+                    >›</button>
+                  </div>
+                )}
+                {(() => {
+                  const si = Math.min(activeSenseIdx, word.senses.length - 1)
+                  const sense = word.senses[si]
                   const posBadge = POS_STYLES[sense.pos] || POS_STYLES.preposition
                   const STAGE_COLORS = { new: 'bg-gray-100 text-gray-500', early: 'bg-yellow-50 text-yellow-700', mid: 'bg-yellow-100 text-yellow-800', late: 'bg-orange-50 text-orange-700', known: 'bg-green-50 text-green-700', mastered: 'bg-indigo-50 text-indigo-700' }
                   const stageColor = STAGE_COLORS[sense.learningStage] || STAGE_COLORS.new
@@ -1053,7 +1088,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                       </div>
                     </div>
                   )
-                })}
+                })()}
               </div>
             ) : (
               /* ── Legacy flat display (pre-migration words) ── */
@@ -1136,7 +1171,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
 
             <div className="flex flex-col gap-2">
               <button
-                onClick={handleIdentify}
+                onClick={() => handleIdentify()}
                 disabled={identifying}
                 className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
               >
@@ -1147,6 +1182,11 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                   </>
                 ) : '✨ Identify with AI'}
               </button>
+              <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
+                <span>Re-identify in</span>
+                <button onClick={() => handleIdentify('English')} disabled={identifying} className="px-2 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 text-gray-600 disabled:opacity-50">🇬🇧 EN</button>
+                <button onClick={() => handleIdentify('Ukrainian')} disabled={identifying} className="px-2 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 text-gray-600 disabled:opacity-50">🇺🇦 UA</button>
+              </div>
               {identifyError && <p className="text-xs text-red-500 text-center">{identifyError}</p>}
             </div>
 

@@ -2,50 +2,36 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { useTargetLang } from '../lib/TargetLangContext'
 import { identifyWord } from '../lib/claude'
 
+const LANG_NAME = { de: 'German', en: 'English' }
+
 export default function Migrate() {
-  const navigate   = useNavigate()
+  const navigate = useNavigate()
   const { user }   = useAuth()
-  const { targetLang, targetLanguageName } = useTargetLang()
 
   const [phase, setPhase]       = useState('idle') // idle | running | done
+  const [targetFilter, setTargetFilter] = useState('all')      // all | de | en
+  const [translateTo, setTranslateTo]   = useState('English')  // English | Ukrainian
   const [words, setWords]       = useState([])
   const [current, setCurrent]   = useState(null)
-  const [index, setIndex]       = useState(0)
   const [succeeded, setSucceeded] = useState([])
   const [failed, setFailed]     = useState([])
 
-  async function loadWords() {
-    const { data } = await supabase
-      .from('words')
-      .select('id, word, target_language')
-      .eq('user_id', user.id)
-      .in('target_language', ['de', 'en'])
-      .order('target_language', { ascending: true })
-      .order('created_at', { ascending: true })
-    setWords(data || [])
+  function buildQuery() {
+    let q = supabase.from('words').select('id, word, target_language').eq('user_id', user.id)
+    q = targetFilter === 'all'
+      ? q.in('target_language', ['de', 'en'])
+      : q.eq('target_language', targetFilter)
+    return q.order('target_language', { ascending: true }).order('created_at', { ascending: true })
   }
 
-  const LANG_NAME = { de: 'German', en: 'English' }
-
   async function handleStart() {
-    await loadWords()
     setPhase('running')
-    setSucceeded([])
-    setFailed([])
-    setIndex(0)
+    setSucceeded([]); setFailed([]); setCurrent(null)
 
-    const { data: allWords } = await supabase
-      .from('words')
-      .select('id, word, target_language')
-      .eq('user_id', user.id)
-      .in('target_language', ['de', 'en'])
-      .order('target_language', { ascending: true })
-      .order('created_at', { ascending: true })
-
-    if (!allWords?.length) { setPhase('done'); return }
+    const { data: allWords } = await buildQuery()
+    if (!allWords?.length) { setWords([]); setPhase('done'); return }
     setWords(allWords)
 
     const ok = []
@@ -54,10 +40,9 @@ export default function Migrate() {
     for (let i = 0; i < allWords.length; i++) {
       const w = allWords[i]
       setCurrent(w.word)
-      setIndex(i)
       try {
         const langName = LANG_NAME[w.target_language] ?? w.target_language
-        const result = await identifyWord(w.word, langName, 'English')
+        const result = await identifyWord(w.word, langName, translateTo)
         if (!result.senses?.length) throw new Error('no senses returned')
 
         // Delete existing senses for this word (idempotent re-run)
@@ -115,27 +100,66 @@ export default function Migrate() {
   const total = words.length
   const pct   = total > 0 ? Math.round(((succeeded.length + failed.length) / total) * 100) : 0
 
+  const targetOptions = [
+    { id: 'all', label: 'German + English' },
+    { id: 'de',  label: 'German only' },
+    { id: 'en',  label: 'English only' },
+  ]
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6">
       <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg p-8">
         <button onClick={() => navigate('/dictionary')} className="text-sm text-gray-400 hover:text-gray-700 mb-6 block">← Back to Dictionary</button>
 
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Senses Migration</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">Re-identify words</h1>
         <p className="text-sm text-gray-500 mb-6">
-          Re-identifies your <strong>German and English</strong> words with Claude (German first) and creates a sense row for each distinct meaning.
-          Existing senses are replaced. Learning progress resets to <em>new</em> for these words.
+          Re-runs Claude on your words and rebuilds a sense row for each meaning. Choose which words and the
+          translation language. Existing senses are replaced; learning progress resets to <em>new</em>.
         </p>
 
         {phase === 'idle' && (
           <>
+            {/* Which words */}
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Re-identify</p>
+            <div className="flex gap-2 mb-5">
+              {targetOptions.map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => setTargetFilter(opt.id)}
+                  className={`flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                    targetFilter === opt.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Translation language */}
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Translate into</p>
+            <div className="flex gap-2 mb-6">
+              {['English', 'Ukrainian'].map(l => (
+                <button
+                  key={l}
+                  onClick={() => setTranslateTo(l)}
+                  className={`flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                    translateTo === l ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  {l === 'English' ? '🇬🇧 English' : '🇺🇦 Ukrainian'}
+                </button>
+              ))}
+            </div>
+
             <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm text-amber-800 mb-6">
-              Calls the Claude API once per word (~5–12s each), German words first then English. Keep this tab open until it finishes.
+              Calls the Claude API once per word (~5–12s each). Re-identifying <strong>{targetOptions.find(o => o.id === targetFilter)?.label}</strong> with
+              {' '}<strong>{translateTo}</strong> translations. Keep this tab open until it finishes.
             </div>
             <button
               onClick={handleStart}
               className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm transition-colors"
             >
-              Start migration
+              Start
             </button>
           </>
         )}
@@ -143,10 +167,7 @@ export default function Migrate() {
         {phase === 'running' && (
           <div className="flex flex-col gap-4">
             <div className="w-full bg-gray-100 rounded-full h-2">
-              <div
-                className="h-2 bg-indigo-500 rounded-full transition-all duration-300"
-                style={{ width: `${pct}%` }}
-              />
+              <div className="h-2 bg-indigo-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
             </div>
             <div className="flex items-center justify-between text-sm text-gray-500">
               <span>{succeeded.length + failed.length} / {total}</span>
@@ -154,7 +175,7 @@ export default function Migrate() {
             </div>
             {current && (
               <div className="bg-indigo-50 rounded-xl px-4 py-3 text-center">
-                <p className="text-xs text-indigo-400 mb-1">Identifying</p>
+                <p className="text-xs text-indigo-400 mb-1">Identifying → {translateTo}</p>
                 <p className="text-lg font-semibold text-indigo-700">{current}</p>
               </div>
             )}
@@ -179,14 +200,12 @@ export default function Migrate() {
               </div>
             )}
             <div className="flex gap-2 w-full">
-              {failed.length > 0 && (
-                <button
-                  onClick={() => { setPhase('idle'); setWords([]); setSucceeded([]); setFailed([]) }}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50"
-                >
-                  Re-run
-                </button>
-              )}
+              <button
+                onClick={() => { setPhase('idle'); setWords([]); setSucceeded([]); setFailed([]) }}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50"
+              >
+                Run another
+              </button>
               <button
                 onClick={() => navigate('/dictionary')}
                 className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold"
