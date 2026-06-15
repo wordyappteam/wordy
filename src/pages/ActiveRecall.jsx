@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage, targetAdverbUk } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
+import { displayTranslation } from '../lib/senseDisplay'
 
 const SESSION_SIZE = 15
 
@@ -280,7 +281,7 @@ export default function ActiveRecall() {
                             {speaking ? '🔊' : '🔈'}
                           </button>
                         </div>
-                        <div className="text-xs text-gray-400 mt-0.5">{r.card.translation}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{displayTranslation(r.card.translation)}</div>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-xs text-red-400">{lang === 'uk' ? 'ви написали:' : 'you typed:'}</div>
@@ -338,7 +339,7 @@ export default function ActiveRecall() {
           <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">
             {lang === 'uk' ? `Як це ${targetAdverbUk(targetLanguageName)}?` : `How do you say this in ${targetLanguageName}?`}
           </p>
-          <p className="text-2xl font-bold text-gray-900 mb-2">{card.translation}</p>
+          <p className="text-2xl font-bold text-gray-900 mb-2">{displayTranslation(card.translation)}</p>
           {card.pos === 'noun' && card.form && (
             <p className="text-xs text-gray-400 mt-1">{lang === 'uk' ? 'іменник' : 'noun'}</p>
           )}

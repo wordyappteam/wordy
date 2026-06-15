@@ -8,6 +8,7 @@ import { useTargetLang } from '../lib/TargetLangContext'
 import { identifyWord } from '../lib/claude'
 import { saveBook, getBooks, getChapterList, getChapter, deleteBook, updateProgress } from '../lib/readerDb'
 import NavBar from '../components/NavBar'
+import { displayTranslation } from '../lib/senseDisplay'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -234,7 +235,7 @@ function WordPopup({ tapped, lookup, onAdd, onClose, adding }) {
             </div>
 
             {/* Translation */}
-            <p className="text-lg text-gray-700 font-medium">{sense.translation}</p>
+            <p className="text-lg text-gray-700 font-medium">{displayTranslation(sense.translation)}</p>
 
             {/* Grammar note */}
             {sense.grammarNote && !/^(countable|uncountable) noun/i.test(sense.grammarNote) && (

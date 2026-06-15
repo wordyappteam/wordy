@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { identifyWord as identifyWordAI, suggestCollectionWords } from '../lib/claude'
+import { displayTranslation } from '../lib/senseDisplay'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import {
@@ -649,7 +650,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
                           checked ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'
                         }`}>{checked ? '✓' : ''}</span>
                       </div>
-                      <p className="text-sm text-gray-600">{sense.translation}</p>
+                      <p className="text-sm text-gray-600">{displayTranslation(sense.translation, (result.senses || []).length > 1)}</p>
                       {sense.grammarNote && (
                         <p className="text-xs text-gray-400 mt-1">{sense.grammarNote}</p>
                       )}
@@ -941,7 +942,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                       </div>
                       <div className="px-4 py-3 flex flex-col gap-3">
                         <SenseImage sense={sense} userId={userId} onChange={onSenseImageChange} />
-                        <p className="text-base font-medium text-gray-800">{sense.translation}</p>
+                        <p className="text-base font-medium text-gray-800">{displayTranslation(sense.translation, word.senses.length > 1)}</p>
                         {sense.grammarNote && !/^(countable|uncountable) noun/i.test(sense.grammarNote) && (
                           <div className={`rounded-xl px-3 py-2 text-xs font-medium flex items-start gap-2 ${
                             sense.isException ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
@@ -1059,7 +1060,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
               <>
                 <div>
                   <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{t('dict.translation')}</p>
-                  <p className="text-xl font-semibold text-gray-800">{word.translation}</p>
+                  <p className="text-xl font-semibold text-gray-800">{displayTranslation(word.translation, word.senses.length > 1)}</p>
                 </div>
                 {word.explanation && (
                   <div>
@@ -1348,7 +1349,7 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
             <p className="text-sm text-gray-400 italic -mt-2">{current.form}</p>
           )}
           {current.translation
-            ? <p className="text-lg text-gray-600">{current.translation}</p>
+            ? <p className="text-lg text-gray-600">{displayTranslation(current.translation)}</p>
             : <p className="text-sm text-gray-300 italic">No translation yet</p>
           }
           {current.grammarNote && (

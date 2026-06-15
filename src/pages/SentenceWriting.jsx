@@ -5,6 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useLanguage, targetAdverbUk } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { reviewSentence } from '../lib/claude'
+import { displayTranslation } from '../lib/senseDisplay'
 
 function renderFeedback(text) {
   const lines = text.split('\n').filter((l) => l.trim())
@@ -341,7 +342,7 @@ export default function SentenceWriting() {
             </span>
           )}
           <div className="text-3xl font-bold text-gray-900 mt-2 mb-2">{card.word}</div>
-          <div className="text-base text-gray-500">{card.translation}</div>
+          <div className="text-base text-gray-500">{displayTranslation(card.translation)}</div>
           {card.grammar_note && (
             <div className="mt-3 text-xs text-indigo-500 bg-indigo-50 rounded-xl px-3 py-2 inline-block">
               {card.grammar_note}

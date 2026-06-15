@@ -5,6 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { inSession, advanceSession, nextExerciseName } from '../lib/sessionFlow'
+import { displayTranslation } from '../lib/senseDisplay'
 
 const POS_LABELS = {
   verb: 'verb', noun: 'noun', adjective: 'adj.',
@@ -610,7 +611,7 @@ export default function Flashcards() {
                   <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">
                     {lang === 'uk' ? 'Переклад' : 'Translation'}
                   </div>
-                  <div className={`font-bold text-gray-900 ${sessionMode === 'visual' ? 'text-lg' : 'text-2xl'}`}>{card.translation}</div>
+                  <div className={`font-bold text-gray-900 ${sessionMode === 'visual' ? 'text-lg' : 'text-2xl'}`}>{displayTranslation(card.translation)}</div>
                 </div>
                 {sessionMode !== 'visual' && (
                   <button

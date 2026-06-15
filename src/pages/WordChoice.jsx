@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { displayTranslation } from '../lib/senseDisplay'
 
 // Each option carries the form used in the sentence + its translation shown after answering
 const QUESTIONS = [
@@ -286,7 +287,7 @@ export default function WordChoice() {
                     {revealed && isSelected && !isCorrectOpt && <span className="text-red-400">✗</span>}
                   </div>
                   {revealed && (
-                    <div className="text-xs font-normal mt-1 opacity-70 italic">{translation}</div>
+                    <div className="text-xs font-normal mt-1 opacity-70 italic">{displayTranslation(translation)}</div>
                   )}
                 </button>
               )
