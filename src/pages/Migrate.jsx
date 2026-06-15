@@ -22,6 +22,8 @@ export default function Migrate() {
       .from('words')
       .select('id, word, target_language')
       .eq('user_id', user.id)
+      .in('target_language', ['de', 'en'])
+      .order('target_language', { ascending: true })
       .order('created_at', { ascending: true })
     setWords(data || [])
   }
@@ -39,6 +41,8 @@ export default function Migrate() {
       .from('words')
       .select('id, word, target_language')
       .eq('user_id', user.id)
+      .in('target_language', ['de', 'en'])
+      .order('target_language', { ascending: true })
       .order('created_at', { ascending: true })
 
     if (!allWords?.length) { setPhase('done'); return }
@@ -118,14 +122,14 @@ export default function Migrate() {
 
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Senses Migration</h1>
         <p className="text-sm text-gray-500 mb-6">
-          Re-identifies all your words (all languages) with Claude and creates a sense row for each distinct meaning.
-          Existing senses are replaced. Learning progress resets to <em>new</em> for all words.
+          Re-identifies your <strong>German and English</strong> words with Claude (German first) and creates a sense row for each distinct meaning.
+          Existing senses are replaced. Learning progress resets to <em>new</em> for these words.
         </p>
 
         {phase === 'idle' && (
           <>
             <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm text-amber-800 mb-6">
-              This will call the Claude API once per word. For 161 words it takes roughly 3–5 minutes and uses ~160 API calls.
+              Calls the Claude API once per word (~5–12s each), German words first then English. Keep this tab open until it finishes.
             </div>
             <button
               onClick={handleStart}
