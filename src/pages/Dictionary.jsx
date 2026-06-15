@@ -775,11 +775,12 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
     ? [...aspectSenses].sort((a, b) => aspectRank(a) - aspectRank(b)).map(s => s.wordForm).join(' / ')
     : null
 
-  async function handleIdentify() {
+  async function handleIdentify(reidentLang) {
     setIdentifying(true)
     setIdentifyError(null)
     try {
-      const result = await identifyWordAI(word.word, targetLanguageName, interfaceLanguage || 'English', null, { topics })
+      const lang = reidentLang || interfaceLanguage || 'English'
+      const result = await identifyWordAI(word.word, targetLanguageName, lang, null, { topics })
       const primary = result.senses?.[0]
       const updated = {
         ...word,
@@ -796,7 +797,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
       }
       onUpdate(updated)
     } catch (e) {
-      setIdentifyError('AI identification failed. Try again.')
+      setIdentifyError(t(e?.overloaded ? 'dict.busyError' : 'dict.identifyError'))
     } finally {
       setIdentifying(false)
     }
@@ -1136,7 +1137,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
 
             <div className="flex flex-col gap-2">
               <button
-                onClick={handleIdentify}
+                onClick={() => handleIdentify()}
                 disabled={identifying}
                 className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
               >
@@ -1147,6 +1148,11 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                   </>
                 ) : '✨ Identify with AI'}
               </button>
+              <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
+                <span>Re-identify in</span>
+                <button onClick={() => handleIdentify('English')} disabled={identifying} className="px-2 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 text-gray-600 disabled:opacity-50">🇬🇧 EN</button>
+                <button onClick={() => handleIdentify('Ukrainian')} disabled={identifying} className="px-2 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 text-gray-600 disabled:opacity-50">🇺🇦 UA</button>
+              </div>
               {identifyError && <p className="text-xs text-red-500 text-center">{identifyError}</p>}
             </div>
 
