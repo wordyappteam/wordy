@@ -63,6 +63,11 @@ export default function Flashcards() {
   const collectionId   = searchParams.get('collectionId')
   const collectionName = searchParams.get('collectionName') ?? ''
 
+  const backDest  = collectionId ? '/dictionary' : '/dashboard'
+  const backLabel = collectionId
+    ? (lang === 'uk' ? '← Словник' : '← Dictionary')
+    : (lang === 'uk' ? '← Головна' : '← Dashboard')
+
   const [phase, setPhase]       = useState(collectionId ? 'loading' : 'picker')   // 'picker' | 'loading' | 'session' | 'done'
   const [cards, setCards]       = useState([])
   const [counts, setCounts]     = useState({ new: 0, learning: 0, known: 0, mastered: 0, due: 0, withImages: 0 })
@@ -388,11 +393,6 @@ export default function Flashcards() {
       </div>
     )
   }
-
-  const backDest  = collectionId ? '/dictionary' : '/dashboard'
-  const backLabel = collectionId
-    ? (lang === 'uk' ? '← Словник' : '← Dictionary')
-    : (lang === 'uk' ? '← Головна' : '← Dashboard')
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading || phase === 'loading') {
