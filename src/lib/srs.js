@@ -158,7 +158,7 @@ export function planSessionV2(senses, opts = {}) {
   for (const s of selected) {
     const step = s.interval_step ?? 0
     const remedial = !!s._remedial
-    const base = { senseId: s.id, wordId: s.word_id, remedial, direction: directionFor(step), stage: stageName(step), ...display(s) }
+    const base = { senseId: s.id, wordId: s.word_id, pos: s.pos, remedial, direction: directionFor(step), stage: stageName(step), ...display(s) }
     for (const ex of (remedial ? ['flashcard'] : scaffoldFor(step))) {
       scaffoldSteps.push({ ...base, exercise: ex, graded: false })
     }

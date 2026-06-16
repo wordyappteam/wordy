@@ -38,11 +38,11 @@ function shuffle(arr) {
   return a
 }
 // Build multiple-choice options: correct value + distractors drawn from the deck.
-function makeOptions(correct, pool, valueOf, excludeId, n = 3) {
+function makeOptions(correct, pool, valueOf, excludeWordId, n = 3) {
   const seen = new Set([norm(correct)])
   const ds = []
   for (const s of shuffle(pool)) {
-    if (s.id === excludeId) continue
+    if (s.word_id === excludeWordId) continue // skip the word itself AND its sibling senses
     const v = valueOf(s)
     if (!v || seen.has(norm(v))) continue
     seen.add(norm(v)); ds.push(v)
@@ -103,7 +103,7 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
 
   // ----- graded: recognition (L2->L1) -----
   if (step.exercise === 'recognition') {
-    const options = makeOptions(cleanTr, pool, (s) => displayTranslation(s.translation), step.senseId)
+    const options = makeOptions(cleanTr, pool, (s) => displayTranslation(s.translation), step.wordId)
     const choose = (opt) => {
       if (feedback) return
       const outcome = norm(opt) === norm(cleanTr) ? 'correct' : 'wrong'
@@ -112,6 +112,7 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
     return (
       <Shell step={step}>
         <p className="text-3xl font-bold text-gray-900 text-center mb-1">{step.word}</p>
+        {step.pos && <p className="text-xs text-gray-400 text-center mb-1 italic">{step.pos}</p>}
         <p className="text-xs text-gray-400 text-center mb-5">Which translation?</p>
         <div className="grid gap-2">
           {options.map((opt) => <Option key={opt} opt={opt} picked={picked} correct={cleanTr} disabled={!!feedback} onClick={() => choose(opt)} />)}
@@ -123,7 +124,7 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
 
   // ----- graded: word_choice (L1->L2 assemble/recognise the form) -----
   if (step.exercise === 'word_choice') {
-    const options = makeOptions(step.word, pool, (s) => s.word_form, step.senseId)
+    const options = makeOptions(step.word, pool, (s) => s.word_form, step.wordId)
     const choose = (opt) => {
       if (feedback) return
       const outcome = norm(opt) === norm(step.word) ? 'correct' : 'wrong'
