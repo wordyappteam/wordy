@@ -124,7 +124,7 @@ export function planSessionV2(senses, opts = {}) {
     today = new Date().toISOString().split('T')[0],
     timeBudget = 15,
     gradedCap = capForBudget(timeBudget),
-    newCap = 5,
+    newCap = 10,
     leechCap = 2,
     antiClusterWindow = 2,
   } = opts
@@ -132,7 +132,7 @@ export function planSessionV2(senses, opts = {}) {
   const isNew = (s) => !s.last_reviewed && (s.interval_step ?? 0) === 0
   const isDue = (s) => !isNew(s) && (!s.next_review_date || s.next_review_date <= today)
 
-  const news    = senses.filter(isNew)
+  const news    = shuffleArr(senses.filter(isNew)) // shuffle → a fresh, varied pack of new words each session
   const dueAll  = senses.filter(isDue)
   const leeches = dueAll.filter((s) => s.is_leech)
   const reviews = dueAll.filter((s) => !s.is_leech)
@@ -173,6 +173,15 @@ export function planSessionV2(senses, opts = {}) {
 }
 
 function capForBudget(min) { return min >= 45 ? 28 : min >= 30 ? 18 : 10 }
+
+function shuffleArr(arr) {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
 
 // Greedy reorder so no two items sharing keyOf sit within `window` positions.
 function antiCluster(items, keyOf, window) {
