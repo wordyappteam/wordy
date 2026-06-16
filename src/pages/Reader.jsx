@@ -612,9 +612,11 @@ export default function Reader() {
         .select('id')
         .single()
 
-      if (newWord?.id && result.senses?.length) {
+      // Reader adds the word as used in this sentence — save only the contextual
+      // sense shown in the popup, not every meaning of the word.
+      if (newWord?.id && primary) {
         await supabase.from('word_senses').insert(
-          result.senses.map(s => ({
+          [primary].map(s => ({
             word_id: newWord.id,
             user_id: user.id,
             target_language: targetLang,
@@ -640,7 +642,7 @@ export default function Reader() {
       setLookup(prev => ({ ...prev, status: 'added' }))
       setKnownWords(prev => {
         const next = new Set(prev)
-        result.senses.forEach(s => next.add(normalizeWordForm(s.wordForm || result.word)))
+        next.add(normalizeWordForm(primary.wordForm || result.word))
         next.add(normalizeWordForm(result.word))
         next.add(normalizeWordForm(popup.word)) // the exact surface form tapped
         return next
