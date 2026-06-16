@@ -75,6 +75,15 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
   const cleanTr = displayTranslation(step.translation)
   const example = (step.examples && step.examples[0]) || null
 
+  // Compute the multiple-choice options ONCE per step (not every render), so they
+  // don't reshuffle when you answer — and so your picked wrong option stays in the
+  // list and can be highlighted red.
+  const options = useMemo(() => {
+    if (step.exercise === 'recognition') return makeOptions(cleanTr, pool, (s) => displayTranslation(s.translation), step.wordId)
+    if (step.exercise === 'word_choice') return makeOptions(step.word, pool, (s) => s.word_form, step.wordId)
+    return []
+  }, [step.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ----- ungraded scaffolds: flashcard / fill_blank -----
   if (!step.graded) {
     const isFill = step.exercise === 'fill_blank' && example?.target
@@ -103,7 +112,6 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
 
   // ----- graded: recognition (L2->L1) -----
   if (step.exercise === 'recognition') {
-    const options = makeOptions(cleanTr, pool, (s) => displayTranslation(s.translation), step.wordId)
     const choose = (opt) => {
       if (feedback) return
       const outcome = norm(opt) === norm(cleanTr) ? 'correct' : 'wrong'
@@ -124,7 +132,6 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
 
   // ----- graded: word_choice (L1->L2 assemble/recognise the form) -----
   if (step.exercise === 'word_choice') {
-    const options = makeOptions(step.word, pool, (s) => s.word_form, step.wordId)
     const choose = (opt) => {
       if (feedback) return
       const outcome = norm(opt) === norm(step.word) ? 'correct' : 'wrong'
