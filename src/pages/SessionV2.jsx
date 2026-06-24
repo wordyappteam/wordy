@@ -9,7 +9,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { useLanguage } from '../lib/i18n'
 import { reviewSentence } from '../lib/claude'
-import { planSessionV2 } from '../lib/srs'
+import { planSessionV2, sentenceOutcome } from '../lib/srs'
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
 
@@ -188,9 +188,9 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
       setBusy(true)
       try {
         const r = await reviewSentence(step.word, cleanTr, input, ifaceLang, targetLanguageName)
-        // reviewSentence currently returns only isCorrect -> map to correct/wrong.
-        // (v2 wants meaning/form split for an 'almost' tier — follow-up.)
-        setFeedback({ outcome: r.isCorrect ? 'correct' : 'wrong', detail: r.feedback, corrected: r.corrected })
+        // meaning wrong = FAIL; meaning ok but form wrong = HOLD ("almost"); both = PASS.
+        // A grammar slip on a known word no longer demotes it.
+        setFeedback({ outcome: sentenceOutcome(r), detail: r.feedback, corrected: r.corrected })
       } catch (e) {
         setFeedback({ outcome: e?.overloaded ? null : 'wrong', detail: e?.overloaded ? 'AI is busy — skipping scoring.' : 'Could not review.' })
       } finally { setBusy(false) }

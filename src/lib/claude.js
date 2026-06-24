@@ -449,14 +449,21 @@ They wrote this ${targetLanguage} sentence:
 
 Evaluate it and return exactly this JSON:
 {
+  "meaningCorrect": true or false,
+  "formCorrect": true or false,
   "isCorrect": true or false,
   "corrected": "the corrected sentence (identical to input if already correct)",
   "feedback": "your feedback in ${interfaceLanguage}"
 }
 
+Judge meaning and form SEPARATELY:
+- "meaningCorrect": true if the sentence uses "${word}" with its correct meaning and is comprehensible — i.e. the student clearly knows what the word means and used it appropriately — EVEN IF there are grammar or spelling mistakes. False if the word is misused, means something else here, or the sentence doesn't use "${word}" at all.
+- "formCorrect": true if the sentence is grammatically and orthographically correct (cases, endings, gender, word order, spelling, compounding, punctuation). False if there is any such error.
+- "isCorrect": true only if BOTH meaningCorrect AND formCorrect are true.
+
 Feedback format rules:
-- If correct: one short encouraging sentence confirming it's right. Max 15 words.
-- If incorrect: list each mistake as a numbered point. Max 3 points. Example format:
+- If both correct: one short encouraging sentence confirming it's right. Max 15 words.
+- Otherwise: list each mistake as a numbered point. Max 3 points. Example format:
   1. "träume Stelle" → **Traumstelle** — nouns form compounds in German; write as one word, capitalised.
   2. Missing comma before **zu bewerben** — infinitive clauses with "zu" need a comma.
 - Wrap corrections and key grammar terms in **double asterisks** so they render bold
@@ -464,9 +471,7 @@ Feedback format rules:
 - Be direct — name the case, ending, or rule. No filler phrases, no "Great try"
 
 Other rules:
-- isCorrect is true only if the sentence is grammatically correct AND uses the target word naturally
-- Correct minor typos in "corrected" too
-- If the sentence doesn't use the target word at all, isCorrect is false`
+- Correct minor typos in "corrected" too`
 
   const text = await callClaude({
     system,

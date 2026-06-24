@@ -65,6 +65,17 @@ export function gradeRetrieval(outcome) {
   return 'FAIL'
 }
 
+// Map a sentence review that judged meaning and form separately to a session
+// outcome. Meaning wrong = 'wrong' (FAIL); meaning right but form wrong =
+// 'almost' (HOLD) so a grammar slip never nukes a word; both right = 'correct'
+// (PASS). Falls back to isCorrect when the meaning/form split is absent.
+export function sentenceOutcome(review = {}) {
+  const { meaningCorrect, formCorrect, isCorrect } = review
+  if (meaningCorrect === undefined) return isCorrect ? 'correct' : 'wrong'
+  if (!meaningCorrect) return 'wrong'
+  return formCorrect ? 'correct' : 'almost'
+}
+
 // ── The core transition: (sense state, verdict) -> next state ────────────────
 // Pure. One call per sense per session. Returns the exact columns to write to
 // word_senses (so the caller does a single idempotent update).
@@ -83,7 +94,10 @@ export function applyVerdict(state, verdict, todayISO) {
     nextStep = clampStep(step + 1)                // …then advance one step
     slipped = false
   } else if (verdict === 'HOLD') {
-    nextDate = addDays(todayISO, INTERVALS[step]) // same spacing, no advance
+    // "Almost": never advance. If the word was on a fail-retry, an almost is not
+    // enough to earn the full interval back — re-test on a short leash; only a
+    // clean PASS resumes normal spacing.
+    nextDate = addDays(todayISO, slipped ? Math.min(2, INTERVALS[step]) : INTERVALS[step])
     slipped = false
   } else { // FAIL
     if (!slipped) {
@@ -92,8 +106,10 @@ export function applyVerdict(state, verdict, todayISO) {
       nextDate = addDays(todayISO, 1)
     } else {
       // Confirmed lapse across a gap: tighten schedule, maybe drop a band.
-      nextStep = Math.max(1, step - 2)
-      if (stageOf(step) >= 2) lapses += 1 // only count lapses once form was established (mid+)
+      // Floor at step 1 once past "new", but a word never answered correctly
+      // (still step 0) stays new rather than being promoted by failing.
+      nextStep = step <= 0 ? 0 : Math.max(1, step - 2)
+      lapses += 1 // count every confirmed lapse so stuck words (even new ones) reach leech help
       slipped = false
       nextDate = addDays(todayISO, 1)
     }
@@ -124,7 +140,7 @@ export function planSessionV2(senses, opts = {}) {
     today = new Date().toISOString().split('T')[0],
     timeBudget = 15,
     gradedCap = capForBudget(timeBudget),
-    newCap = 10,
+    newCap = 7,
     leechCap = 2,
     antiClusterWindow = 2,
   } = opts
@@ -142,12 +158,13 @@ export function planSessionV2(senses, opts = {}) {
   reviews.sort(byDate)
   leeches.sort(byDate)
 
-  // Select within caps. Priority: due reviews -> a few leeches -> some new.
-  const selected = []
-  const take = (s) => { if (selected.length < gradedCap) selected.push(s) }
-  reviews.forEach(take)
-  leeches.slice(0, leechCap).forEach((s) => take({ ...s, _remedial: true }))
-  news.slice(0, newCap).forEach(take)
+  // Select within caps. New words and leeches get RESERVED slots up front so a
+  // backlog of due reviews can never starve them; reviews take whatever budget
+  // is left. Total still bounded by gradedCap.
+  const newTake = news.slice(0, newCap)
+  const leechTake = leeches.slice(0, leechCap).map((s) => ({ ...s, _remedial: true }))
+  const reviewBudget = Math.max(0, gradedCap - newTake.length - leechTake.length)
+  const selected = [...reviews.slice(0, reviewBudget), ...leechTake, ...newTake]
   if (selected.length === 0) return []
 
   // Build steps: a scaffold (encode) phase, then a graded (test) phase. Two
@@ -158,7 +175,7 @@ export function planSessionV2(senses, opts = {}) {
   for (const s of selected) {
     const step = s.interval_step ?? 0
     const remedial = !!s._remedial
-    const base = { senseId: s.id, wordId: s.word_id, pos: s.pos, remedial, direction: directionFor(step), stage: stageName(step), ...display(s) }
+    const base = { senseId: s.id, wordId: s.word_id, pos: s.pos, examples: s.examples ?? [], remedial, direction: directionFor(step), stage: stageName(step), ...display(s) }
     for (const ex of (remedial ? ['flashcard'] : scaffoldFor(step))) {
       scaffoldSteps.push({ ...base, exercise: ex, graded: false })
     }
