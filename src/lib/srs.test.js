@@ -1,7 +1,7 @@
 // Pure-core SRS v2 tests. Run with: node --test src/lib/srs.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank } from './srs.js'
+import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, gradeFillIn } from './srs.js'
 
 // ── Bug #1: fill_blank scaffold must carry the sense's examples ───────────────
 // The UI renders a context fill-blank from step.examples[0].target. If the
@@ -141,4 +141,21 @@ test('buildFillBlank falls back to the lemma regex when no blank field', () => {
 test('buildFillBlank returns null when nothing matches', () => {
   const ex = { target: "Gestern aßen wir.", translation: "…" } // inflected, no blank field, lemma absent
   assert.equal(buildFillBlank(ex, "essen"), null)
+})
+
+test('gradeFillIn: exact inflected form passes', () => {
+  assert.equal(gradeFillIn("isst", { answer: "isst", lemma: "essen" }), "correct")
+})
+test('gradeFillIn: right word wrong form is almost (lemma typed)', () => {
+  assert.equal(gradeFillIn("essen", { answer: "isst", lemma: "essen" }), "almost")
+})
+test('gradeFillIn: small typo is almost', () => {
+  assert.equal(gradeFillIn("isstt", { answer: "isst", lemma: "essen" }), "almost")
+})
+test('gradeFillIn: wrong word fails; empty fails', () => {
+  assert.equal(gradeFillIn("trinkt", { answer: "isst", lemma: "essen" }), "wrong")
+  assert.equal(gradeFillIn("", { answer: "isst", lemma: "essen" }), "wrong")
+})
+test('gradeFillIn: case and accents are ignored', () => {
+  assert.equal(gradeFillIn("  KNYHU ", { answer: "knyhu", lemma: "knyha" }), "correct")
 })
