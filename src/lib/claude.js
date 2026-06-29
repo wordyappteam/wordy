@@ -1,3 +1,5 @@
+import { parseSentenceSet } from './sentenceSet'
+
 async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTokens = 1024 }) {
   // In dev: Vite proxies /api/anthropic/v1/messages → Anthropic directly (vite.config.js)
   // In prod (Vercel): /api/anthropic is a serverless function that proxies the request
@@ -553,4 +555,43 @@ Write in ${interfaceLanguage}. Be specific and factual.`
   const match = clean.match(/\{[\s\S]*\}/)
   if (!match) throw new Error('No JSON found in memory response')
   return JSON.parse(match[0])
+}
+
+// ── Sentence-set practice (target-aware fill-the-sentences) ──────────────────
+export async function generateSentenceSet(words, { targetLanguage = "German", interfaceLanguage = "English", theme = null } = {}) {
+  const list = words.map((w, i) => `${i + 1}. ${w.lemma} (${w.translation}) [${w.pos}]`).join("\n")
+  const themeLine = theme ? `Theme/topic to weave in if natural: "${theme}".` : "No fixed theme."
+
+  const system = `You create ${targetLanguage} fill-in-the-blank practice. Return ONLY valid JSON — no markdown, no code fences.`
+
+  const prompt = `Make a "fill the sentences" exercise in ${targetLanguage} for these words:
+${list}
+
+${themeLine}
+
+Rules:
+- Write exactly 5 short, natural, SELF-CONTAINED sentences. They do NOT need to connect to each other.
+- Each sentence has exactly ONE blank marked with ___ , filled by ONE of the words above.
+- Use 5 different words from the list for the 5 blanks; the remaining listed words become distractors.
+- The blank uses the word in the form the sentence needs (conjugated / declined). Keep articles and prepositions visible — blank only the content word.
+- "bank" = base/infinitive forms of all answer words PLUS 2 plausible distractor base forms (7 chips total).
+- For every sentence return: target-language "text" with ___, the "senseId" of the word used, "answerLemma" (base form), "answerForm" (exact form that fills the blank), a short "hint" (e.g. tense + subject, or case), and a one-line "explanation".
+- Write "hint" and "explanation" in ${interfaceLanguage}. Keep explanations POS-shaped: nouns → gender/case/plural; verbs → tense/person; adjectives → declension.
+- Everything except hint/explanation must be in ${targetLanguage}.
+
+Return JSON exactly:
+{
+  "bank": [ { "lemma": "…", "senseId": "…" } ],
+  "sentences": [
+    { "text": "… ___ …", "senseId": "…", "answerLemma": "…", "answerForm": "…", "hint": "…", "explanation": "…" }
+  ]
+}`
+
+  const text = await callClaude({
+    system,
+    messages: [{ role: "user", content: prompt }],
+    model: "claude-haiku-4-5",
+    maxTokens: 2048,
+  })
+  return parseSentenceSet(text)
 }
