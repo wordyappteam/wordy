@@ -9,7 +9,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { useLanguage } from '../lib/i18n'
 import { reviewSentence } from '../lib/claude'
-import { planSessionV2, sentenceOutcome } from '../lib/srs'
+import { planSessionV2, sentenceOutcome, buildFillBlank, nextExampleIndex, gradeFillIn } from '../lib/srs'
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
 
@@ -75,6 +75,20 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
   const cleanTr = displayTranslation(step.translation)
   const example = (step.examples && step.examples[0]) || null
 
+  // Rotate through the sense's examples (anti-memorization). Cursor persists
+  // per sense in localStorage; advances each time this card mounts.
+  const fillBlank = useMemo(() => {
+    if (step.exercise !== 'fill_in' && step.exercise !== 'fill_blank') return null
+    const exs = step.examples || []
+    if (!exs.length) return null
+    const key = `wordy_ex_cursor_${step.senseId}`
+    let cursor = 0
+    try { cursor = parseInt(localStorage.getItem(key) || '0', 10) || 0 } catch { /* no storage */ }
+    const idx = nextExampleIndex(cursor, exs.length)
+    try { localStorage.setItem(key, String(cursor + 1)) } catch { /* no storage */ }
+    return buildFillBlank(exs[idx], step.word)
+  }, [step.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Compute the multiple-choice options ONCE per step (not every render), so they
   // don't reshuffle when you answer — and so your picked wrong option stays in the
   // list and can be highlighted red.
@@ -86,8 +100,7 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
 
   // ----- ungraded scaffolds: flashcard / fill_blank -----
   if (!step.graded) {
-    const isFill = step.exercise === 'fill_blank' && example?.target
-    const blanked = isFill ? example.target.replace(new RegExp(`\\b${escapeRe(step.word)}\\b`, 'i'), '____') : null
+    const isFill = step.exercise === 'fill_blank' && fillBlank
     return (
       <Shell step={step}>
         {!isFill ? (
@@ -97,7 +110,7 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
           </>
         ) : (
           <>
-            <p className="text-xl text-gray-800 text-center">{revealed ? example.target : blanked}</p>
+            <p className="text-xl text-gray-800 text-center">{revealed ? fillBlank.target : fillBlank.sentence}</p>
             <p className="text-sm text-gray-400 text-center mt-1">{cleanTr}</p>
           </>
         )}
@@ -145,6 +158,49 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
           {options.map((opt) => <Option key={opt} opt={opt} picked={picked} correct={step.word} disabled={!!feedback} onClick={() => choose(opt)} />)}
         </div>
         {feedback && <NextBtn outcome={feedback.outcome} onClick={() => onDone(feedback.outcome)} />}
+      </Shell>
+    )
+  }
+
+  // ----- graded: fill_in (type the word into its own example sentence) -----
+  if (step.exercise === 'fill_in') {
+    // No usable example → fall back to a plain translation→type prompt.
+    const submit = () => {
+      if (feedback) return
+      const outcome = fillBlank
+        ? gradeFillIn(input, { answer: fillBlank.answer, lemma: step.word })
+        : (norm(input) === norm(step.word) ? 'correct' : 'wrong')
+      setFeedback({ outcome })
+    }
+    return (
+      <Shell step={step}>
+        <p className="text-sm text-gray-500 text-center mb-1">{cleanTr}</p>
+        {fillBlank
+          ? <p className="text-lg text-gray-800 text-center mb-4 leading-relaxed">{fillBlank.sentence}</p>
+          : <p className="text-xs text-gray-400 text-center mb-4">Type the {targetLanguageName} word</p>}
+        <input
+          autoFocus value={input} disabled={!!feedback}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg focus:outline-none focus:border-indigo-400"
+          placeholder="…"
+        />
+        {!feedback ? (
+          <button onClick={submit} className="btn-primary mt-4">Check</button>
+        ) : (
+          <>
+            {feedback.outcome === 'correct' && (
+              <p className="text-center mt-4 text-sm text-green-600">✓ Correct</p>
+            )}
+            {feedback.outcome === 'almost' && (
+              <p className="text-center mt-4 text-sm text-amber-600">≈ Almost — you were on the right path · <strong>{fillBlank?.answer ?? step.word}</strong></p>
+            )}
+            {feedback.outcome === 'wrong' && (
+              <p className="text-center mt-4 text-sm text-rose-400">The word was <strong>{fillBlank?.answer ?? step.word}</strong></p>
+            )}
+            <NextBtn outcome={feedback.outcome} onClick={() => onDone(feedback.outcome)} />
+          </>
+        )}
       </Shell>
     )
   }
