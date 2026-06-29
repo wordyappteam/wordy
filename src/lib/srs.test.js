@@ -1,7 +1,7 @@
 // Pure-core SRS v2 tests. Run with: node --test src/lib/srs.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planSessionV2, applyVerdict, sentenceOutcome } from './srs.js'
+import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor } from './srs.js'
 
 // ── Bug #1: fill_blank scaffold must carry the sense's examples ───────────────
 // The UI renders a context fill-blank from step.examples[0].target. If the
@@ -101,4 +101,15 @@ test('sentenceOutcome maps separated meaning/form judgements to a session outcom
 test('sentenceOutcome falls back to isCorrect when the meaning/form split is absent', () => {
   assert.equal(sentenceOutcome({ isCorrect: true }), 'correct')
   assert.equal(sentenceOutcome({ isCorrect: false }), 'wrong')
+})
+
+test('mid-stage graded exercise is fill_in (steps 3 and 4)', () => {
+  assert.equal(gradedExerciseFor(3), 'fill_in')
+  assert.equal(gradedExerciseFor(4), 'fill_in')
+})
+
+test('early stays word_choice, late stays active_recall, known stays sentence_writing', () => {
+  assert.equal(gradedExerciseFor(1), 'word_choice')   // early
+  assert.equal(gradedExerciseFor(5), 'active_recall')  // late
+  assert.equal(gradedExerciseFor(6), 'sentence_writing') // known
 })

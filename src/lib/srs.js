@@ -37,9 +37,9 @@ export function gradedExerciseFor(step) {
   switch (stageOf(step)) {
     case 0: return 'recognition'        // multiple-choice L2->L1
     case 1: return 'word_choice'        // assemble — recognition->production bridge
-    case 2: return 'active_recall'      // type the word, L1->L2
-    case 3: return 'active_recall'      // or word_order
-    case 4: return 'sentence_writing'   // or active_recall
+    case 2: return 'fill_in'            // mid: type the word in a context sentence
+    case 3: return 'active_recall'      // late: type the word cold (or word_order)
+    case 4: return 'sentence_writing'   // known: or active_recall
     default: return 'sentence_writing'  // mastered spot-check
   }
 }
