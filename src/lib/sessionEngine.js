@@ -98,7 +98,7 @@ export function planSession(words, timeBudget = 15, lang = 'en') {
       description: uk
         ? `${newWords.slice(0,5).length} нових слів + ${Math.min(freshLearning.length, 10)} слів, які ви нещодавно вивчали`
         : `${newWords.slice(0,5).length} new words + ${Math.min(freshLearning.length, 10)} words you've seen recently`,
-      exercises:   ['flashcards', 'word_order', 'fill_blank'],
+      exercises:   ['flashcards', 'word_order'],
       words:       introduceWords,
       durationMin: 15,
     })
@@ -116,9 +116,9 @@ export function planSession(words, timeBudget = 15, lang = 'en') {
       type:        'consolidate',
       title:       uk ? 'Закріпити та просунути' : 'Consolidate & push forward',
       description: uk
-        ? `${consolidateWords.length} слів близьких до рівня «знаю» — флеш-картки, заповніть пропуск, активне відтворення`
-        : `${consolidateWords.length} words close to known — flashcards, fill in blank, active recall`,
-      exercises:   ['flashcards', 'fill_blank', 'active_recall'],
+        ? `${consolidateWords.length} слів близьких до рівня «знаю» — флеш-картки, активне відтворення`
+        : `${consolidateWords.length} words close to known — flashcards, active recall`,
+      exercises:   ['flashcards', 'active_recall'],
       words:       consolidateWords,
       durationMin: 15,
     })
@@ -164,7 +164,7 @@ export function planSession(words, timeBudget = 15, lang = 'en') {
       description: uk
         ? `Все разом: нові слова, закріплення та поглиблення — повна тренування`
         : `Everything: new words, consolidation and deep practice in one flow`,
-      exercises:   ['flashcards', 'fill_blank', 'active_recall', 'word_order'],
+      exercises:   ['flashcards', 'active_recall', 'word_order'],
       words:       allWords,
       durationMin: 45,
     }]

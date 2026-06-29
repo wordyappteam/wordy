@@ -7,7 +7,7 @@ import { useTargetLang } from '../lib/TargetLangContext'
 import { planSession } from '../lib/sessionEngine'
 import NavBar from '../components/NavBar'
 import {
-  FlashcardsIcon, PrepositionsIcon, FillBlankIcon,
+  FlashcardsIcon, PrepositionsIcon,
   WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
 } from '../components/ExerciseIcons'
 import { collectionColor } from '../lib/collections'
@@ -204,7 +204,6 @@ export default function Dashboard() {
     { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          Icon: FlashcardsIcon,      path: '/flashcards',       count: total },
     collections.length > 0 && { type: lang === 'uk' ? 'Практика колекції' : 'Practice collection', Icon: CollectionIcon, onClick: () => setShowCollectionPicker(p => !p), count: collections.length },
     features.prepositionDrills && { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', Icon: PrepositionsIcon,    path: '/prepositions',     count: prepVerbCount },
-    features.fillBlank        && { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   Icon: FillBlankIcon,       path: '/fill-blank',       count: total },
     { type: lang === 'uk' ? 'Порядок слів'           : 'Word order',          Icon: WordOrderIcon,       path: '/word-order',       count: total },
     { type: lang === 'uk' ? 'Активне відтворення'    : 'Active recall',       Icon: ActiveRecallIcon,    path: '/active-recall',    count: byStatus.learning + byStatus.known + byStatus.mastered },
     { type: lang === 'uk' ? 'Написання речень'       : 'Sentence writing',    Icon: SentenceWritingIcon, path: '/sentence-writing', count: total },

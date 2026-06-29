@@ -746,7 +746,7 @@ function SenseImage({ sense, userId, onChange }) {
 }
 
 // ── Word Panel ────────────────────────────────────────────────────────────
-function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange, topics = [] }) {
+function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange, topics = [] }) {
   const { t } = useLanguage()
   const [editing, setEditing]             = useState(false)
   const [draft, setDraft]                 = useState(word)
@@ -758,6 +758,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
   const [expandedConjugation, setExpandedConjugation] = useState(new Set())
   const [activeSenseIdx, setActiveSenseIdx] = useState(0)
   useEffect(() => { setActiveSenseIdx(0) }, [word.id]) // reset pager when a different word opens
+  const [confirmDeleteSense, setConfirmDeleteSense] = useState(false)
+  useEffect(() => { setConfirmDeleteSense(false) }, [word.id, activeSenseIdx]) // close confirm on word/sense change
 
   function toggleConjugation(key) {
     setExpandedConjugation(prev => {
@@ -974,8 +976,44 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
                           <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 capitalize">{sense.register}</span>
                         )}
                         <span className={`ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}>{sense.learningStage || 'new'}</span>
+                        <button
+                          onClick={() => setConfirmDeleteSense(true)}
+                          aria-label="Delete sense"
+                          title={t('dict.deleteSenseConfirm')}
+                          className="text-gray-300 hover:text-red-500 text-sm leading-none transition-colors"
+                        >🗑</button>
                       </div>
                       <div className="px-4 py-3 flex flex-col gap-3">
+                        {confirmDeleteSense && (
+                          /* In-place sense confirm — last sense deletes the whole word */
+                          <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                            <p className="text-xs text-red-700 font-medium">
+                              {word.senses.length > 1 ? t('dict.deleteSenseConfirm') : t('dict.deleteConfirm')}
+                            </p>
+                            <div className="flex gap-2 shrink-0">
+                              <button
+                                onClick={() => setConfirmDeleteSense(false)}
+                                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white transition-colors"
+                              >
+                                {t('dict.cancel')}
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  setConfirmDeleteSense(false)
+                                  if (word.senses.length > 1) {
+                                    setActiveSenseIdx(i => Math.max(0, Math.min(i, word.senses.length - 2)))
+                                    await onDeleteSense(word.id, sense.id)
+                                  } else {
+                                    onDelete(word.id)
+                                  }
+                                }}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold transition-colors"
+                              >
+                                {t('dict.deleteConfirmBtn')}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                         <SenseImage sense={sense} userId={userId} onChange={onSenseImageChange} />
                         <p className="text-base font-medium text-gray-800">{displayTranslation(sense.translation, word.senses.length > 1)}</p>
                         {sense.grammarNote && !/^(countable|uncountable) noun/i.test(sense.grammarNote) && (
@@ -1191,44 +1229,45 @@ function WordPanel({ word, onClose, onUpdate, onDelete, interfaceLanguage, targe
             </div>
 
             <div className="flex gap-2 pt-1">
-              <button className="flex-1 py-2.5 rounded-xl border border-indigo-200 text-indigo-600 text-sm font-medium hover:bg-indigo-50 transition-colors">
-                {t('dict.practiceWord')}
-              </button>
-              <button
-                onClick={startEdit}
-                className="py-2.5 px-4 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 hover:text-gray-700 transition-colors"
-              >
-                {t('dict.edit')}
-              </button>
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="py-2.5 px-3 rounded-xl border border-red-100 text-red-400 text-sm font-medium hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
-              >
-                🗑
-              </button>
-            </div>
-
-            {confirmDelete && (
-              <div className="bg-red-50 border border-red-100 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
-                <p className="text-xs text-red-700 font-medium">
-                  {t('dict.deleteConfirm')}
-                </p>
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white transition-colors"
-                  >
-                    {t('dict.cancel')}
+              {!confirmDelete ? (
+                <>
+                  <button className="flex-1 py-2.5 rounded-xl border border-indigo-200 text-indigo-600 text-sm font-medium hover:bg-indigo-50 transition-colors">
+                    {t('dict.practiceWord')}
                   </button>
                   <button
-                    onClick={() => onDelete(word.id)}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold transition-colors"
+                    onClick={startEdit}
+                    className="py-2.5 px-4 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 hover:text-gray-700 transition-colors"
                   >
-                    {t('dict.deleteConfirmBtn')}
+                    {t('dict.edit')}
                   </button>
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="py-2.5 px-3 rounded-xl border border-red-100 text-red-400 text-sm font-medium hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                  >
+                    🗑
+                  </button>
+                </>
+              ) : (
+                /* In-place confirm — same row, no scroll needed */
+                <div className="flex-1 flex items-center justify-between gap-3 bg-red-50 border border-red-100 rounded-xl px-4 py-2">
+                  <p className="text-xs text-red-700 font-medium">{t('dict.deleteConfirm')}</p>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white transition-colors"
+                    >
+                      {t('dict.cancel')}
+                    </button>
+                    <button
+                      onClick={() => onDelete(word.id)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold transition-colors"
+                    >
+                      {t('dict.deleteConfirmBtn')}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
@@ -2155,6 +2194,22 @@ export default function Dictionary() {
     setSelectedWord(null)
   }
 
+  // Delete ONE sense directly by id. Deliberately NOT routed through handleUpdate,
+  // which re-inserts all sense rows and would reset the v2 SRS columns
+  // (interval_step, lapses, …) on the surviving siblings.
+  async function handleDeleteSense(wordId, senseId) {
+    if (!user) return
+    const w = words.find((x) => x.id === wordId)
+    if (!w) return
+    const doomed = (w.senses || []).find((s) => s.id === senseId)
+    if (doomed?.imageUrl) deleteSenseImageByUrl(doomed.imageUrl)
+    await supabase.from('word_senses').delete().eq('id', senseId).eq('user_id', user.id)
+    const remaining = (w.senses || []).filter((s) => s.id !== senseId)
+    const updatedWord = { ...w, senses: remaining, hasSenses: remaining.length > 0 }
+    setWords((prev) => prev.map((x) => (x.id === wordId ? updatedWord : x)))
+    setSelectedWord(updatedWord)
+  }
+
   async function handleUpdate(updated) {
     if (!user) return
     const primarySense = updated.senses?.[0]
@@ -2546,7 +2601,7 @@ export default function Dictionary() {
         )}
       </main>
 
-      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale} topics={topics}
+      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} onDeleteSense={handleDeleteSense} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale} topics={topics}
         collections={collections} wordCollectionIds={membershipByWord[selectedWord.id]} onToggleCollection={toggleWordCollection} onQuickCreateCollection={handleQuickCreateCollection}
         userId={user.id} onSenseImageChange={handleSenseImageChange} />}
       {confirmBulkDelete && (
