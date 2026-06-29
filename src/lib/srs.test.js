@@ -1,7 +1,7 @@
 // Pure-core SRS v2 tests. Run with: node --test src/lib/srs.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor } from './srs.js'
+import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank } from './srs.js'
 
 // ── Bug #1: fill_blank scaffold must carry the sense's examples ───────────────
 // The UI renders a context fill-blank from step.examples[0].target. If the
@@ -112,4 +112,33 @@ test('early stays word_choice, late stays active_recall, known stays sentence_wr
   assert.equal(gradedExerciseFor(1), 'word_choice')   // early
   assert.equal(gradedExerciseFor(5), 'active_recall')  // late
   assert.equal(gradedExerciseFor(6), 'sentence_writing') // known
+})
+
+test('nextExampleIndex cycles and guards empty', () => {
+  assert.equal(nextExampleIndex(0, 3), 0)
+  assert.equal(nextExampleIndex(1, 3), 1)
+  assert.equal(nextExampleIndex(3, 3), 0)   // wraps
+  assert.equal(nextExampleIndex(4, 3), 1)
+  assert.equal(nextExampleIndex(0, 0), 0)   // no examples
+  assert.equal(nextExampleIndex(undefined, 3), 0)
+})
+
+test('buildFillBlank uses the inflected blank field when present', () => {
+  const ex = { target: "Sie isst jeden Morgen ein Ei.", translation: "…", blank: "isst" }
+  const r = buildFillBlank(ex, "essen")
+  assert.equal(r.sentence, "Sie ____ jeden Morgen ein Ei.")
+  assert.equal(r.answer, "isst")
+  assert.equal(r.target, "Sie isst jeden Morgen ein Ei.")
+})
+
+test('buildFillBlank falls back to the lemma regex when no blank field', () => {
+  const ex = { target: "Ich mag Senf.", translation: "…" }
+  const r = buildFillBlank(ex, "Senf")
+  assert.equal(r.sentence, "Ich mag ____.")
+  assert.equal(r.answer, "Senf")
+})
+
+test('buildFillBlank returns null when nothing matches', () => {
+  const ex = { target: "Gestern aßen wir.", translation: "…" } // inflected, no blank field, lemma absent
+  assert.equal(buildFillBlank(ex, "essen"), null)
 })

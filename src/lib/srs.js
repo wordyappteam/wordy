@@ -212,6 +212,32 @@ function antiCluster(items, keyOf, window) {
   return out
 }
 
+// ── Fill-in helpers (pure) ───────────────────────────────────────────────────
+export function nextExampleIndex(cursor, total) {
+  if (!total || total < 1) return 0
+  const c = Number.isFinite(cursor) ? cursor : 0
+  return ((c % total) + total) % total
+}
+
+// Turn one example into a fill-in: blank the target word, return the answer.
+// Prefers the inflected `blank` surface form; falls back to a base-form regex.
+export function buildFillBlank(example, lemma) {
+  if (!example || !example.target) return null
+  const text = example.target
+  const surface = example.blank
+  if (surface && text.includes(surface)) {
+    return { sentence: text.replace(surface, "____"), answer: surface, target: text }
+  }
+  if (lemma) {
+    const re = new RegExp(`\\b${escapeReSrs(lemma)}\\b`, "i")
+    const m = text.match(re)
+    if (m) return { sentence: text.replace(re, "____"), answer: m[0], target: text }
+  }
+  return null
+}
+
+function escapeReSrs(s) { return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 function clampStep(s) { return Math.max(0, Math.min(MAX_STEP, (s | 0))) }
 function addDays(iso, n) {
