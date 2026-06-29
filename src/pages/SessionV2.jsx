@@ -73,7 +73,6 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
   const [busy, setBusy] = useState(false)
 
   const cleanTr = displayTranslation(step.translation)
-  const example = (step.examples && step.examples[0]) || null
 
   // Rotate through the sense's examples (anti-memorization). Cursor persists
   // per sense in localStorage; advances each time this card mounts.
@@ -299,7 +298,6 @@ function Option({ opt, picked, correct, disabled, onClick }) {
 function NextBtn({ outcome, onClick }) {
   return <button onClick={onClick} className="btn-primary mt-5">Next →</button>
 }
-function escapeRe(s) { return (s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
 
 // ── fast-forward (test) helpers ──────────────────────────────────────────────
 const realToday = () => new Date().toISOString().split('T')[0]
