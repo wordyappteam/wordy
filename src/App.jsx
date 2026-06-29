@@ -22,6 +22,7 @@ import Session from './pages/Session'
 import SessionV2 from './pages/SessionV2'
 import Migrate from './pages/Migrate'
 import Reader from './pages/Reader'
+import FillSentences from './pages/FillSentences'
 
 // Wraps pages that require login
 function Protected({ children }) {
@@ -71,6 +72,7 @@ function App() {
           <Route path="/session-v2"       element={<Protected><SessionV2 /></Protected>} />
           <Route path="/migrate"          element={<Protected><Migrate /></Protected>} />
           <Route path="/reader"           element={<Protected><Reader /></Protected>} />
+          <Route path="/fill-sentences"   element={<Protected><FillSentences /></Protected>} />
           <Route path="*"            element={<Navigate to="/" />} />
         </Routes>
       </TargetLangProvider>
