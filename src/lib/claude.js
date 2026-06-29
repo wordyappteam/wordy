@@ -148,9 +148,9 @@ Return ONLY this JSON:
       "register": "neutral|formal|informal|colloquial|slang|archaic|vulgar",
       "cefr": "A1|A2|B1|B2|C1|C2",
       "examples": [
-        { "target": "natural ${targetLanguage} example", "translation": "${ifaceLang} translation", "tense": "present|past|null" },
-        { "target": "...", "translation": "...", "tense": "..." },
-        { "target": "...", "translation": "...", "tense": "..." }
+        { "target": "natural ${targetLanguage} example", "translation": "${ifaceLang} translation", "tense": "present|past|null", "blank": "the target word EXACTLY as written in target, including its inflected form" },
+        { "target": "...", "translation": "...", "tense": "...", "blank": "..." },
+        { "target": "...", "translation": "...", "tense": "...", "blank": "..." }
       ],
       "conjugation": null
     }
@@ -162,6 +162,7 @@ Rules:
 ${nounArticleRule}
 - isException: true only for irregular verbs, exceptional grammar, or fixed collocations
 - Always include exactly 3 example sentences per sense
+- For each example, "blank" must be the single target word copied verbatim from "target", in the exact inflected form used there (e.g. target "Sie isst ein Ei" → blank "isst"; for nouns include no article, e.g. blank "Hund" not "den Hund")
 - Keep example sentences positive and everyday — avoid war, death, violence, illness, accidents, or tragedy unless the word itself specifically relates to such topics
 - For verbs: present, past, one varied — set "tense" accordingly. For nouns/adj/other: "tense": null
 - register: language register for this specific sense. Use "neutral" for everyday vocabulary with no special register
