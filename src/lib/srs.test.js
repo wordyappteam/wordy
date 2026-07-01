@@ -65,28 +65,30 @@ test('HOLD on a word that was not slipped keeps the normal full interval', () =>
   assert.equal(held.next_review_date, '2026-07-15', '2026-06-24 + INTERVALS[5]=21 days')
 })
 
-// ── Bug #3: new words get a reserved quota; a review backlog can't starve them ─
-test('new words are not starved by a backlog of due reviews', () => {
-  const due = (i) => ({
-    id: `r${i}`, word_id: `rw${i}`, interval_step: 4,
-    last_reviewed: '2026-06-01', next_review_date: '2026-06-01', is_leech: false,
-    word_form: `Wort${i}`, translation: `word${i}`,
-  })
-  const fresh = (i) => ({
-    id: `n${i}`, word_id: `nw${i}`, interval_step: 0,
-    last_reviewed: null, next_review_date: null, is_leech: false,
-    word_form: `Neu${i}`, translation: `new${i}`,
-  })
-  const reviews = Array.from({ length: 30 }, (_, i) => due(i))
-  const news = Array.from({ length: 10 }, (_, i) => fresh(i))
+test('planSessionV2: reviews take priority; new words fill leftover room under the cap', () => {
+  const due = Array.from({ length: 15 }, (_, i) => ({ id: `d${i}`, word_id: `wd${i}`, interval_step: 3, last_reviewed: '2026-06-20', next_review_date: '2026-06-25', word_form: `due${i}`, translation: 't' }))
+  const news = Array.from({ length: 10 }, (_, i) => ({ id: `n${i}`, word_id: `wn${i}`, interval_step: 0, last_reviewed: null, next_review_date: null, word_form: `new${i}`, translation: 't' }))
+  const steps = planSessionV2([...due, ...news], { today: '2026-07-01', gradedCap: 18, newPerDay: 7, newToday: 0 })
+  const gradedSenses = new Set(steps.filter(s => s.graded).map(s => s.senseId))
+  assert.equal(gradedSenses.size, 18)                    // capped at 18
+  const newInSession = [...gradedSenses].filter(id => id.startsWith('n')).length
+  assert.equal(newInSession, 3)                          // 15 due + 3 new = 18
+})
 
-  const steps = planSessionV2([...reviews, ...news], { today: '2026-06-24', timeBudget: 30 })
-  const gradedIds = new Set(steps.filter((s) => s.graded).map((s) => s.senseId))
-  const newGraded = [...gradedIds].filter((id) => id.startsWith('n'))
+test('planSessionV2: new words pause when a full session of reviews is already due', () => {
+  const due = Array.from({ length: 30 }, (_, i) => ({ id: `d${i}`, word_id: `wd${i}`, interval_step: 3, last_reviewed: '2026-06-20', next_review_date: '2026-06-25', word_form: `due${i}`, translation: 't' }))
+  const news = Array.from({ length: 10 }, (_, i) => ({ id: `n${i}`, word_id: `wn${i}`, interval_step: 0, last_reviewed: null, next_review_date: null, word_form: `new${i}`, translation: 't' }))
+  const steps = planSessionV2([...due, ...news], { today: '2026-07-01', gradedCap: 18, newPerDay: 7, newToday: 0 })
+  const gradedSenses = new Set(steps.filter(s => s.graded).map(s => s.senseId))
+  const newInSession = [...gradedSenses].filter(id => id.startsWith('n')).length
+  assert.equal(newInSession, 0)                          // behind → 0 new
+})
 
-  assert.ok(newGraded.length > 0, 'new words should appear even with a big review backlog')
-  assert.equal(newGraded.length, 7, 'new words filled to newCap (7)')
-  assert.ok(gradedIds.size <= 18, 'total graded stays within gradedCap for a 30-min budget')
+test('planSessionV2: per-day budget subtracts new words already introduced today', () => {
+  const news = Array.from({ length: 10 }, (_, i) => ({ id: `n${i}`, word_id: `wn${i}`, interval_step: 0, last_reviewed: null, next_review_date: null, word_form: `new${i}`, translation: 't' }))
+  const steps = planSessionV2(news, { today: '2026-07-01', gradedCap: 18, newPerDay: 7, newToday: 5 })
+  const gradedSenses = new Set(steps.filter(s => s.graded).map(s => s.senseId))
+  assert.equal(gradedSenses.size, 2)                     // 7 - 5 already done = 2 left today
 })
 
 // ── Bug #2: sentence reviews score meaning and form separately ────────────────

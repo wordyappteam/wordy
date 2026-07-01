@@ -140,7 +140,8 @@ export function planSessionV2(senses, opts = {}) {
     today = new Date().toISOString().split('T')[0],
     timeBudget = 15,
     gradedCap = capForBudget(timeBudget),
-    newCap = 7,
+    newPerDay = 7,
+    newToday = 0,
     leechCap = 2,
     antiClusterWindow = 2,
   } = opts
@@ -158,13 +159,15 @@ export function planSessionV2(senses, opts = {}) {
   reviews.sort(byDate)
   leeches.sort(byDate)
 
-  // Select within caps. New words and leeches get RESERVED slots up front so a
-  // backlog of due reviews can never starve them; reviews take whatever budget
-  // is left. Total still bounded by gradedCap.
-  const newTake = news.slice(0, newCap)
+  const cap = gradedCap
   const leechTake = leeches.slice(0, leechCap).map((s) => ({ ...s, _remedial: true }))
-  const reviewBudget = Math.max(0, gradedCap - newTake.length - leechTake.length)
-  const selected = [...reviews.slice(0, reviewBudget), ...leechTake, ...newTake]
+  const roomAfterLeech = Math.max(0, cap - leechTake.length)
+  const reviewTake = reviews.slice(0, roomAfterLeech)               // reviews take priority
+  const behind = reviews.length >= cap                             // a full session already due
+  const newBudget = behind ? 0 : Math.max(0, newPerDay - newToday) // per-DAY budget, 0 when behind
+  const roomForNew = Math.max(0, cap - leechTake.length - reviewTake.length)
+  const newTake = news.slice(0, Math.min(newBudget, roomForNew))
+  const selected = [...reviewTake, ...leechTake, ...newTake]
   if (selected.length === 0) return []
 
   // Build steps: a scaffold (encode) phase, then a graded (test) phase. Two
