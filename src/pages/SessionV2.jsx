@@ -314,32 +314,55 @@ export default function SessionV2() {
   const [outcomes, setOutcomes] = useState({})
   const [sessionId, setSessionId] = useState(null)
   const [summary, setSummary] = useState([])
+  const [remainingDue, setRemainingDue] = useState(0)
+  const uk = lang === 'uk'
+
+  // Fresh DB read + plan — never the stale in-memory `pool`/`steps`. Senses that
+  // were just reviewed get a future next_review_date, so only a re-query knows
+  // what's still actually due right now.
+  async function fetchDuePlan() {
+    const { data, error } = await supabase.from('word_senses').select('*').eq('user_id', user.id).eq('target_language', targetLang)
+    if (error) { console.error('[v2] load error:', error.message); return { error } }
+    const senses = (data ?? []).filter((s) => s.translation?.trim() && s.word_form?.trim())
+    const todayISO = new Date().toISOString().split('T')[0]
+    const plan = planSessionV2(senses, {
+      today: todayISO,
+      gradedCap: 18,
+      blockSize: 5,
+      newPerDay: 7,
+      newToday: getNewToday(todayISO),
+    })
+    return { senses, plan }
+  }
+
+  // Shared by the initial mount and "Keep going": re-query, re-plan, start a
+  // fresh session row, and drop the runner into 'running'. `isCancelled` guards
+  // against setting state after the owning effect has been cleaned up.
+  async function loadAndPlan(isCancelled) {
+    const { error, senses, plan } = await fetchDuePlan()
+    if (isCancelled?.()) return
+    if (error) { setPhase('error'); return }
+    if (!plan.length) { setPhase('empty'); return }
+    const gradedCount = new Set(plan.filter((s) => s.graded).map((s) => s.senseId)).size
+    const id = await startSession(user.id, 'v2', gradedCount)
+    if (isCancelled?.()) return
+    setPool(senses); setSteps(plan); setSessionId(id); setPhase('running')
+  }
 
   useEffect(() => {
     if (!user) return
     let cancelled = false
-    setPhase('loading'); setIdx(0); setOutcomes({}); setSummary([])
-    ;(async () => {
-      const { data, error } = await supabase.from('word_senses').select('*').eq('user_id', user.id).eq('target_language', targetLang)
-      if (cancelled) return
-      if (error) { console.error('[v2] load error:', error.message); setPhase('error'); return }
-      const senses = (data ?? []).filter((s) => s.translation?.trim() && s.word_form?.trim())
-      const todayISO = new Date().toISOString().split('T')[0]
-      const plan = planSessionV2(senses, {
-        today: todayISO,
-        gradedCap: 18,
-        blockSize: 5,
-        newPerDay: 7,
-        newToday: getNewToday(todayISO),
-      })
-      if (!plan.length) { setPhase('empty'); return }
-      const gradedCount = new Set(plan.filter((s) => s.graded).map((s) => s.senseId)).size
-      const id = await startSession(user.id, 'v2', gradedCount)
-      if (cancelled) return
-      setPool(senses); setSteps(plan); setSessionId(id); setPhase('running')
-    })()
+    setPhase('loading'); setIdx(0); setOutcomes({}); setSummary([]); setRemainingDue(0)
+    loadAndPlan(() => cancelled)
     return () => { cancelled = true }
-  }, [user, targetLang])
+  }, [user, targetLang]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "Keep going": reset the runner state and re-run the load+plan path so the
+  // next batch is capped fresh (new words still throttled by the updated newToday).
+  function restart() {
+    setPhase('loading'); setIdx(0); setOutcomes({}); setSummary([]); setRemainingDue(0)
+    loadAndPlan()
+  }
 
   async function handleDone(outcome) {
     const step = steps[idx]
@@ -358,12 +381,18 @@ export default function SessionV2() {
       .select('id, word_form, translation, interval_step, learning_stage, next_review_date')
       .in('id', results.map((r) => r.senseId))
     setSummary((data ?? []).map((s) => ({ ...s, outcome: nextOutcomes[s.id] })))
+
+    // Fresh re-query for what's still due — the senses above were just rescheduled
+    // to a future next_review_date, so they must not count toward "remaining due".
+    const { plan: nextPlan } = await fetchDuePlan()
+    setRemainingDue(new Set((nextPlan ?? []).filter((s) => s.graded).map((s) => s.senseId)).size)
+
     setPhase('done')
   }
 
   const wrap = (inner) => (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col items-center justify-center px-4 py-10">
-      <style>{`.btn-primary{width:100%;padding:.75rem;border-radius:.75rem;background:#4f46e5;color:#fff;font-weight:600;font-size:.875rem}.btn-primary:hover{background:#4338ca}`}</style>
+      <style>{`.btn-primary{width:100%;padding:.75rem;border-radius:.75rem;background:#4f46e5;color:#fff;font-weight:600;font-size:.875rem}.btn-primary:hover{background:#4338ca}.btn-secondary{width:100%;padding:.75rem;border-radius:.75rem;background:#eef2ff;color:#4338ca;font-weight:600;font-size:.875rem}.btn-secondary:hover{background:#e0e7ff}`}</style>
       {inner}
     </div>
   )
@@ -395,6 +424,11 @@ export default function SessionV2() {
           ))}
         </div>
         <button onClick={() => navigate('/dashboard')} className="btn-primary">Done</button>
+        {remainingDue > 0 && (
+          <button onClick={restart} className="btn-secondary mt-3">
+            {uk ? 'Продовжити →' : 'Keep going →'} ({remainingDue})
+          </button>
+        )}
       </div>
     )
   }
