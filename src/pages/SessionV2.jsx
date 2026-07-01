@@ -3,7 +3,7 @@
 // grades ONE outcome per sense, then calls completeSessionV2. Deliberately not
 // wired into the live session flow — this is for validating the v2 loop.
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTargetLang } from '../lib/TargetLangContext'
@@ -12,6 +12,7 @@ import { reviewSentence } from '../lib/claude'
 import { planSessionV2, sentenceOutcome, firstFillBlank, gradeFillIn } from '../lib/srs'
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
+import { getNewToday, addNewToday } from '../lib/dailyNew'
 
 // ── grading helpers ──────────────────────────────────────────────────────────
 const norm = (s) => (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -298,32 +299,13 @@ function NextBtn({ outcome, onClick }) {
   return <button onClick={onClick} className="btn-primary mt-5">Next →</button>
 }
 
-// ── fast-forward (test) helpers ──────────────────────────────────────────────
-const realToday = () => new Date().toISOString().split('T')[0]
-const isISODate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '')
-function addDaysISO(iso, n) {
-  const d = new Date(`${iso}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + n)
-  return d.toISOString().split('T')[0]
-}
-
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function SessionV2() {
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
   const { targetLang, targetLanguageName, speechLocale } = useTargetLang()
   const { lang } = useLanguage()
   const ifaceLang = lang === 'uk' ? 'Ukrainian' : 'English'
-
-  // Fast-forward: ?date=YYYY-MM-DD overrides "today" so we can simulate the
-  // spaced schedule without waiting real days. Defaults to the real date.
-  const simToday = useMemo(() => {
-    const d = searchParams.get('date')
-    return isISODate(d) ? d : realToday()
-  }, [searchParams])
-  const simActive = simToday !== realToday()
-  const jumpTo = (date) => setSearchParams(date === realToday() ? {} : { date })
 
   const [phase, setPhase] = useState('loading') // loading | running | saving | done | empty | error
   const [pool, setPool] = useState([])
@@ -342,7 +324,14 @@ export default function SessionV2() {
       if (cancelled) return
       if (error) { console.error('[v2] load error:', error.message); setPhase('error'); return }
       const senses = (data ?? []).filter((s) => s.translation?.trim() && s.word_form?.trim())
-      const plan = planSessionV2(senses, { today: simToday, timeBudget: 30 })
+      const todayISO = new Date().toISOString().split('T')[0]
+      const plan = planSessionV2(senses, {
+        today: todayISO,
+        gradedCap: 18,
+        blockSize: 5,
+        newPerDay: 7,
+        newToday: getNewToday(todayISO),
+      })
       if (!plan.length) { setPhase('empty'); return }
       const gradedCount = new Set(plan.filter((s) => s.graded).map((s) => s.senseId)).size
       const id = await startSession(user.id, 'v2', gradedCount)
@@ -350,7 +339,7 @@ export default function SessionV2() {
       setPool(senses); setSteps(plan); setSessionId(id); setPhase('running')
     })()
     return () => { cancelled = true }
-  }, [user, targetLang, simToday])
+  }, [user, targetLang])
 
   async function handleDone(outcome) {
     const step = steps[idx]
@@ -359,8 +348,11 @@ export default function SessionV2() {
     if (idx + 1 < steps.length) { setIdx(idx + 1); return }
 
     setPhase('saving')
+    const todayISO = new Date().toISOString().split('T')[0]
     const results = Object.entries(nextOutcomes).map(([senseId, o]) => ({ senseId, outcome: o }))
-    await completeSessionV2(sessionId, user.id, results, simToday)
+    await completeSessionV2(sessionId, user.id, results, todayISO)
+    const newGraded = steps.filter((s) => s.graded && s.stage === 'new').length
+    if (newGraded > 0) addNewToday(todayISO, newGraded)
     const { data } = await supabase
       .from('word_senses')
       .select('id, word_form, translation, interval_step, learning_stage, next_review_date')
@@ -376,31 +368,15 @@ export default function SessionV2() {
     </div>
   )
 
-  const JumpBar = () => (
-    <div className="w-full max-w-md mb-4 flex items-center justify-between gap-2 text-xs">
-      <span className={`px-2.5 py-1 rounded-full font-medium ${simActive ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'}`}>
-        {simActive ? '⏩ ' : '📅 '}{simToday}
-      </span>
-      <div className="flex gap-1">
-        {[1, 3, 7, 30].map((d) => (
-          <button key={d} onClick={() => jumpTo(addDaysISO(simToday, d))} className="px-2 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 text-gray-600">+{d}d</button>
-        ))}
-        {simActive && <button onClick={() => jumpTo(realToday())} className="px-2 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 text-gray-500">today</button>}
-      </div>
-    </div>
-  )
-
   if (phase === 'loading' || phase === 'saving')
     return wrap(<p className="text-gray-400 text-sm">{phase === 'saving' ? 'Saving your progress…' : 'Planning your session…'}</p>)
   if (phase === 'error')
     return wrap(<div className="text-center"><p className="text-red-500 text-sm mb-4">Couldn't load senses. Has migration 0008 been applied?</p><button onClick={() => navigate('/dashboard')} className="btn-primary max-w-xs">Back</button></div>)
   if (phase === 'empty')
-    return wrap(<><JumpBar /><div className="text-center"><p className="text-gray-500 text-sm mb-4">Nothing due on {simToday}. Jump forward, add words, or come back later.</p><button onClick={() => navigate('/dashboard')} className="btn-primary max-w-xs">Back to dashboard</button></div></>)
+    return wrap(<div className="text-center"><p className="text-gray-500 text-sm mb-4">Nothing due today. Add words, or come back later.</p><button onClick={() => navigate('/dashboard')} className="btn-primary max-w-xs">Back to dashboard</button></div>)
 
   if (phase === 'done') {
     return wrap(
-      <>
-      <JumpBar />
       <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-8 w-full max-w-md">
         <div className="text-4xl text-center mb-3">🎉</div>
         <h2 className="text-xl font-bold text-gray-900 text-center mb-1">Session complete</h2>
@@ -420,7 +396,6 @@ export default function SessionV2() {
         </div>
         <button onClick={() => navigate('/dashboard')} className="btn-primary">Done</button>
       </div>
-      </>
     )
   }
 
@@ -430,7 +405,6 @@ export default function SessionV2() {
   const gradedSoFar = Object.keys(outcomes).length
   return wrap(
     <>
-      {simActive && <div className="w-full max-w-md mb-2 text-xs"><span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 font-medium">⏩ Simulating {simToday}</span></div>}
       <div className="w-full max-w-md mb-5">
         <div className="flex justify-between text-xs text-gray-400 mb-1.5"><span>Step {idx + 1} / {steps.length}</span><span>{gradedSoFar} / {graded} graded</span></div>
         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${((idx + 1) / steps.length) * 100}%` }} /></div>
