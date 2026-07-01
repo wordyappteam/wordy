@@ -1,31 +1,48 @@
 import { parseSentenceSet } from './sentenceSet'
 
+// Transient statuses worth an automatic retry: rate-limit, overload, gateway blips.
+const RETRYABLE = [429, 500, 502, 503, 504, 529]
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
 async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTokens = 1024 }) {
   // In dev: Vite proxies /api/anthropic/v1/messages → Anthropic directly (vite.config.js)
   // In prod (Vercel): /api/anthropic is a serverless function that proxies the request
   const endpoint = import.meta.env.DEV
     ? '/api/anthropic/v1/messages'
     : '/api/anthropic'
+  const body = JSON.stringify({ model, max_tokens: maxTokens, system, messages })
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }),
-  })
+  // A single overload/network blip used to surface as a hard failure ("Could not
+  // identify this word"). Retry transient errors a few times with backoff+jitter
+  // so they self-heal instead of bothering the user.
+  const attempts = 3
+  let lastErr
+  for (let i = 0; i < attempts; i++) {
+    let res
+    try {
+      res = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body })
+    } catch (netErr) {
+      lastErr = netErr                                    // network error — retry
+      if (i < attempts - 1) { await sleep(400 * 2 ** i + Math.random() * 200); continue }
+      throw netErr
+    }
 
-  if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json()
+      return data.content[0].text
+    }
+
     const err = await res.json().catch(() => ({}))
-    console.error('Claude proxy error:', err)
     const e = new Error(err?.error?.message ?? `HTTP ${res.status}`)
     e.status = res.status
     // Overload / rate-limit / transient gateway errors → caller can show a
     // friendlier "AI is busy, try again" message and let the user retry.
-    e.overloaded = [429, 500, 502, 503, 504, 529].includes(res.status)
+    e.overloaded = RETRYABLE.includes(res.status)
+    if (e.overloaded && i < attempts - 1) { lastErr = e; await sleep(400 * 2 ** i + Math.random() * 200); continue }
+    console.error('Claude proxy error:', err)
     throw e
   }
-
-  const data = await res.json()
-  return data.content[0].text
+  throw lastErr
 }
 
 // ── Word identification ────────────────────────────────────────────────────
