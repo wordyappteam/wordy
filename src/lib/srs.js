@@ -134,7 +134,7 @@ export function applyVerdict(state, verdict, todayISO) {
 // A sense row needs: { id, word_id, interval_step, last_reviewed,
 //   next_review_date, is_leech, word_form|word, translation }
 //
-// opts: { today, timeBudget, gradedCap, newCap, leechCap, antiClusterWindow }
+// opts: { today, timeBudget, gradedCap, newPerDay, newToday, blockSize, leechCap, antiClusterWindow }
 export function planSessionV2(senses, opts = {}) {
   const {
     today = new Date().toISOString().split('T')[0],
@@ -142,6 +142,7 @@ export function planSessionV2(senses, opts = {}) {
     gradedCap = capForBudget(timeBudget),
     newPerDay = 7,
     newToday = 0,
+    blockSize = 5,
     leechCap = 2,
     antiClusterWindow = 2,
   } = opts
@@ -170,26 +171,29 @@ export function planSessionV2(senses, opts = {}) {
   const selected = [...reviewTake, ...leechTake, ...newTake]
   if (selected.length === 0) return []
 
-  // Build steps: a scaffold (encode) phase, then a graded (test) phase. Two
-  // phases give every word maximum in-session spacing before its graded test.
+  // Build steps in blocks: for each block of ~blockSize senses, encode then test.
+  // This gives a predictable cadence with spacing preserved within blocks.
   const display = (s) => ({ word: s.word_form ?? s.word ?? '', translation: s.translation ?? '' })
-  const scaffoldSteps = []
-  const gradedSteps = []
-  for (const s of selected) {
-    const step = s.interval_step ?? 0
-    const remedial = !!s._remedial
-    const base = { senseId: s.id, wordId: s.word_id, pos: s.pos, examples: s.examples ?? [], remedial, direction: directionFor(step), stage: stageName(step), ...display(s) }
-    for (const ex of (remedial ? ['flashcard'] : scaffoldFor(step))) {
-      scaffoldSteps.push({ ...base, exercise: ex, graded: false })
+  const out = []
+  for (let i = 0; i < selected.length; i += blockSize) {
+    const block = selected.slice(i, i + blockSize)
+    const scaffoldSteps = []
+    const gradedSteps = []
+    for (const s of block) {
+      const step = s.interval_step ?? 0
+      const remedial = !!s._remedial
+      const base = { senseId: s.id, wordId: s.word_id, pos: s.pos, examples: s.examples ?? [], remedial, direction: directionFor(step), stage: stageName(step), ...display(s) }
+      for (const ex of (remedial ? ['flashcard'] : scaffoldFor(step))) {
+        scaffoldSteps.push({ ...base, exercise: ex, graded: false })
+      }
+      gradedSteps.push({ ...base, exercise: remedial ? 'word_choice' : gradedExerciseFor(step), graded: true })
     }
-    gradedSteps.push({ ...base, exercise: remedial ? 'word_choice' : gradedExerciseFor(step), graded: true })
+    out.push(
+      ...antiCluster(scaffoldSteps, (x) => x.wordId, antiClusterWindow),
+      ...antiCluster(gradedSteps, (x) => x.wordId, antiClusterWindow),
+    )
   }
-
-  // No two senses of the same lemma back-to-back (semantic-interference guard).
-  return [
-    ...antiCluster(scaffoldSteps, (x) => x.wordId, antiClusterWindow),
-    ...antiCluster(gradedSteps, (x) => x.wordId, antiClusterWindow),
-  ]
+  return out
 }
 
 function capForBudget(min) { return min >= 45 ? 28 : min >= 30 ? 18 : 10 }

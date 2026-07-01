@@ -208,3 +208,15 @@ test('gap forgiveness does NOT apply to an on-time FAIL (normal two-strike still
   assert.equal(r.interval_step, 3)           // max(1, 5-2) = 3 demotion
   assert.equal(r.lapses, 1)
 })
+
+test('planSessionV2: chunks into blocks — block 1 is fully tested before block 2 encodes', () => {
+  // 7 mid senses, blockSize 3 → blocks [0,1,2] [3,4,5] [6]
+  const senses = Array.from({ length: 7 }, (_, i) => ({ id: `s${i}`, word_id: `w${i}`, interval_step: 3, last_reviewed: '2026-06-20', next_review_date: '2026-06-25', word_form: `w${i}`, translation: 't', examples: [] }))
+  const steps = planSessionV2(senses, { today: '2026-07-01', gradedCap: 18, blockSize: 3 })
+  const firstBlockIds = new Set(['s0', 's1', 's2'])
+  // index of the first graded step whose sense is in block 1
+  const firstBlockGradedIdx = steps.findIndex(s => s.graded && firstBlockIds.has(s.senseId))
+  // index of the first encode step whose sense is NOT in block 1 (i.e. block 2)
+  const secondBlockEncodeIdx = steps.findIndex(s => !s.graded && !firstBlockIds.has(s.senseId))
+  assert.ok(firstBlockGradedIdx < secondBlockEncodeIdx, 'block 1 must be graded before block 2 encodes')
+})
