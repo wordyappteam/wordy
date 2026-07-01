@@ -18,7 +18,6 @@ import WordOrder from './pages/WordOrder'
 import ActiveRecall from './pages/ActiveRecall'
 import SentenceWriting from './pages/SentenceWriting'
 import Exercises from './pages/Exercises'
-import Session from './pages/Session'
 import SessionV2 from './pages/SessionV2'
 import Migrate from './pages/Migrate'
 import Reader from './pages/Reader'
@@ -68,8 +67,8 @@ function App() {
           <Route path="/active-recall"    element={<Protected><ActiveRecall /></Protected>} />
           <Route path="/sentence-writing" element={<Protected><SentenceWriting /></Protected>} />
           <Route path="/exercises"        element={<Protected><Exercises /></Protected>} />
-          <Route path="/session"          element={<Protected><Session /></Protected>} />
-          <Route path="/session-v2"       element={<Protected><SessionV2 /></Protected>} />
+          <Route path="/session"          element={<Protected><SessionV2 /></Protected>} />
+          <Route path="/session-v2"       element={<Navigate to="/session" replace />} />
           <Route path="/migrate"          element={<Protected><Migrate /></Protected>} />
           <Route path="/reader"           element={<Protected><Reader /></Protected>} />
           <Route path="/fill-sentences"   element={<Protected><FillSentences /></Protected>} />
