@@ -1,7 +1,7 @@
 // Pure-core SRS v2 tests. Run with: node --test src/lib/srs.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, gradeFillIn } from './srs.js'
+import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn } from './srs.js'
 
 // ── Bug #1: fill_blank scaffold must carry the sense's examples ───────────────
 // The UI renders a context fill-blank from step.examples[0].target. If the
@@ -141,6 +141,36 @@ test('buildFillBlank falls back to the lemma regex when no blank field', () => {
 test('buildFillBlank returns null when nothing matches', () => {
   const ex = { target: "Gestern aßen wir.", translation: "…" } // inflected, no blank field, lemma absent
   assert.equal(buildFillBlank(ex, "essen"), null)
+})
+
+test('firstFillBlank scans past a non-blankable example to the one that works', () => {
+  // The "slide" bug: rotated example uses an inflected form with no blank field,
+  // but another example of the same sense contains the lemma verbatim.
+  const exs = [
+    { target: "Gestern aßen wir spät.", translation: "…" },  // inflected, lemma absent → null
+    { target: "Wir essen jeden Tag.", translation: "…" },    // contains lemma → usable
+  ]
+  const r = firstFillBlank(exs, "essen", 0)
+  assert.equal(r.sentence, "Wir ____ jeden Tag.")
+  assert.equal(r.answer, "essen")
+})
+
+test('firstFillBlank returns null only when NO example yields a blank', () => {
+  const exs = [
+    { target: "Gestern aßen wir.", translation: "…" },
+    { target: "Sie aß ein Ei.", translation: "…" },
+  ]
+  assert.equal(firstFillBlank(exs, "essen", 0), null)
+  assert.equal(firstFillBlank([], "essen", 0), null)
+  assert.equal(firstFillBlank(null, "essen", 0), null)
+})
+
+test('firstFillBlank starts scanning at the rotation cursor', () => {
+  const exs = [
+    { target: "Ich mag Senf.", translation: "…" },     // idx 0
+    { target: "Er kaufte Senf.", translation: "…" },   // idx 1
+  ]
+  assert.equal(firstFillBlank(exs, "Senf", 1).target, "Er kaufte Senf.")
 })
 
 test('gradeFillIn: exact inflected form passes', () => {

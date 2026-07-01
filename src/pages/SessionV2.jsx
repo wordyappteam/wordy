@@ -9,7 +9,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { useLanguage } from '../lib/i18n'
 import { reviewSentence } from '../lib/claude'
-import { planSessionV2, sentenceOutcome, buildFillBlank, nextExampleIndex, gradeFillIn } from '../lib/srs'
+import { planSessionV2, sentenceOutcome, firstFillBlank, gradeFillIn } from '../lib/srs'
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
 
@@ -83,9 +83,8 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
     const key = `wordy_ex_cursor_${step.senseId}`
     let cursor = 0
     try { cursor = parseInt(localStorage.getItem(key) || '0', 10) || 0 } catch { /* no storage */ }
-    const idx = nextExampleIndex(cursor, exs.length)
     try { localStorage.setItem(key, String(cursor + 1)) } catch { /* no storage */ }
-    return buildFillBlank(exs[idx], step.word)
+    return firstFillBlank(exs, step.word, cursor)
   }, [step.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Compute the multiple-choice options ONCE per step (not every render), so they

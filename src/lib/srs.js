@@ -47,7 +47,7 @@ export function gradedExerciseFor(step) {
 export function scaffoldFor(step) {
   switch (stageOf(step)) {
     case 0: return ['flashcard']
-    case 1: return ['flashcard']
+    case 1: return ['flashcard', 'fill_blank']   // early: see it, then meet it in context
     case 2: return ['flashcard', 'fill_blank']
     case 3: return ['fill_blank']
     default: return []
@@ -237,6 +237,21 @@ export function buildFillBlank(example, lemma) {
 }
 
 function escapeReSrs(s) { return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
+
+// Scan a sense's examples (starting at the rotation cursor) and return the first
+// that yields a usable blanked sentence. A single inflected example the matcher
+// can't blank must never force the card into context-free fallback while other
+// examples of the same sense would work.
+export function firstFillBlank(examples, lemma, cursor = 0) {
+  const exs = Array.isArray(examples) ? examples : []
+  if (!exs.length) return null
+  const start = nextExampleIndex(cursor, exs.length)
+  for (let k = 0; k < exs.length; k++) {
+    const fb = buildFillBlank(exs[(start + k) % exs.length], lemma)
+    if (fb) return fb
+  }
+  return null
+}
 
 // ── Grading fill-in answers (pure) ───────────────────────────────────────────
 // Grade a typed fill-in answer against the sentence's surface form.
