@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
-import { planSession } from '../lib/sessionEngine'
 import NavBar from '../components/NavBar'
 import {
   FlashcardsIcon, PrepositionsIcon,
@@ -44,6 +43,8 @@ export default function Dashboard() {
 
   const [words,        setWords]        = useState([])
   const [senseCount,   setSenseCount]   = useState(null)
+  const [dueToday,     setDueToday]     = useState(0)
+  const [newAvailable, setNewAvailable] = useState(0)
   const [loading,      setLoading]      = useState(true)
   const [editingName,  setEditingName]  = useState(false)
   const [nameInput,    setNameInput]    = useState('')
@@ -77,6 +78,21 @@ export default function Dashboard() {
       .eq('user_id', user.id)
       .eq('target_language', targetLang)
       .then(({ count }) => setSenseCount(count ?? 0))
+
+    const todayISO = new Date().toISOString().split('T')[0]
+    // due reviews: reviewed before, and due today or unscheduled
+    supabase.from('word_senses')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).eq('target_language', targetLang)
+      .not('last_reviewed', 'is', null)
+      .or(`next_review_date.lte.${todayISO},next_review_date.is.null`)
+      .then(({ count }) => setDueToday(count ?? 0))
+    // new available: never reviewed, still at step 0
+    supabase.from('word_senses')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).eq('target_language', targetLang)
+      .is('last_reviewed', null).eq('interval_step', 0)
+      .then(({ count }) => setNewAvailable(count ?? 0))
   }, [user, targetLang])
 
   useEffect(() => {
@@ -112,17 +128,6 @@ export default function Dashboard() {
   ).length
 
   const recentWords = words.slice(0, 5)
-
-  // ── Session plans ──────────────────────────────────────────────────────────
-  const timeBudget = profile?.time_budget ?? 15
-  const STATUS_TO_STAGE = { new: 0, learning: 1, known: 4, mastered: 5 }
-  const wordsWithStage = words.map(w => ({
-    ...w,
-    learning_stage: w.learning_stage ?? STATUS_TO_STAGE[w.status] ?? 0,
-  }))
-  const sessionPlans = !loading && words.length > 0
-    ? planSession(wordsWithStage, timeBudget, lang)
-    : []
 
   // ── User display name ──────────────────────────────────────────────────────
   const displayName = profile?.full_name?.split(' ')[0]
@@ -383,43 +388,6 @@ export default function Dashboard() {
 
           {/* Right (1 col) — stat cards + recent words */}
           <div className="flex flex-col gap-4 h-full order-first lg:order-none">
-
-            {/* Session plans */}
-            {sessionPlans.length > 0 && (
-              <div className="flex flex-col gap-3">
-
-                {sessionPlans.map((plan, i) => (
-                  <div key={plan.id} className={`rounded-3xl p-4 ${
-                    i === 0
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                      : 'bg-white border border-gray-100 shadow-sm'
-                  }`}>
-                    <div className={`text-xs font-semibold uppercase tracking-wider mb-1 ${i === 0 ? 'text-indigo-300' : 'text-gray-400'}`}>
-                      {plan.durationMin} {lang === 'uk' ? 'хв' : 'min'}
-                    </div>
-                    <div className={`text-sm font-bold mb-1 ${i === 0 ? 'text-white' : 'text-gray-900'}`}>
-                      {plan.title}
-                    </div>
-                    <div className={`text-xs mb-3 leading-relaxed ${i === 0 ? 'text-indigo-300' : 'text-gray-400'}`}>
-                      {plan.description}
-                    </div>
-                    <button
-                      onClick={() => {
-                        sessionStorage.setItem('wordy_session', JSON.stringify(plan))
-                        navigate('/session')
-                      }}
-                      className={`w-full text-xs font-semibold py-2.5 rounded-xl transition-colors ${
-                        i === 0
-                          ? 'bg-brand-yellow text-gray-900 hover:bg-yellow-300'
-                          : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
-                      }`}
-                    >
-                      {lang === 'uk' ? 'Почати →' : 'Start →'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
 
             {/* Stat cards */}
             {[
