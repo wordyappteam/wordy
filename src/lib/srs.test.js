@@ -189,3 +189,20 @@ test('gradeFillIn: wrong word fails; empty fails', () => {
 test('gradeFillIn: case and accents are ignored', () => {
   assert.equal(gradeFillIn("  KNYHU ", { answer: "knyhu", lemma: "knyha" }), "correct")
 })
+
+test('gap forgiveness: a FAIL far past due does not demote or count a lapse', () => {
+  // step 5 (late), interval 21 days; due 2026-06-01, reviewed 2026-07-01 = 30 days late (> 21) → gap
+  const state = { interval_step: 5, lapses: 0, slipped: false, next_review_date: '2026-06-01' }
+  const r = applyVerdict(state, 'FAIL', '2026-07-01')
+  assert.equal(r.interval_step, 5)          // no demotion
+  assert.equal(r.lapses, 0)                  // no lapse counted
+  assert.equal(r.next_review_date, '2026-07-02') // short leash: retry tomorrow
+})
+
+test('gap forgiveness does NOT apply to an on-time FAIL (normal two-strike still works)', () => {
+  // reviewed exactly on the due date → not a gap; a slipped word demotes as before
+  const state = { interval_step: 5, lapses: 0, slipped: true, next_review_date: '2026-07-01' }
+  const r = applyVerdict(state, 'FAIL', '2026-07-01')
+  assert.equal(r.interval_step, 3)           // max(1, 5-2) = 3 demotion
+  assert.equal(r.lapses, 1)
+})

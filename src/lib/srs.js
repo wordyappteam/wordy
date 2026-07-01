@@ -100,16 +100,16 @@ export function applyVerdict(state, verdict, todayISO) {
     nextDate = addDays(todayISO, slipped ? Math.min(2, INTERVALS[step]) : INTERVALS[step])
     slipped = false
   } else { // FAIL
-    if (!slipped) {
-      // First strike: one-day retry, no demotion, badge unchanged.
+    const overdue = state.next_review_date ? daysBetween(state.next_review_date, todayISO) : 0
+    const gapReview = overdue > INTERVALS[step] // reviewed more than its own interval late
+    if (!slipped || gapReview) {
+      // First strike OR a review after a real gap: one-day retry, no demotion, no lapse.
       slipped = true
       nextDate = addDays(todayISO, 1)
     } else {
-      // Confirmed lapse across a gap: tighten schedule, maybe drop a band.
-      // Floor at step 1 once past "new", but a word never answered correctly
-      // (still step 0) stays new rather than being promoted by failing.
+      // Confirmed lapse (on-time second strike): tighten schedule, maybe drop a band.
       nextStep = step <= 0 ? 0 : Math.max(1, step - 2)
-      lapses += 1 // count every confirmed lapse so stuck words (even new ones) reach leech help
+      lapses += 1
       slipped = false
       nextDate = addDays(todayISO, 1)
     }
@@ -285,4 +285,7 @@ function addDays(iso, n) {
   const d = new Date(`${iso}T00:00:00Z`)
   d.setUTCDate(d.getUTCDate() + n)
   return d.toISOString().split('T')[0]
+}
+function daysBetween(fromISO, toISO) {
+  return Math.round((Date.parse(toISO) - Date.parse(fromISO)) / 86400000)
 }
