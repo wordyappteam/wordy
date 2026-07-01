@@ -572,10 +572,15 @@ ${themeLine}
 Rules:
 - Write exactly 5 short, natural, SELF-CONTAINED sentences. They do NOT need to connect to each other.
 - Each sentence has exactly ONE blank marked with ___ , filled by ONE of the words above.
+- CRITICAL — one right answer per blank: give enough specific context (who/what/where, collocations) that ONLY the intended word fits. No other word in the list — answer word OR distractor — may plausibly complete the blank. If two listed words could both fit (e.g. two colours, two adjectives), add detail until only one does.
+- CRITICAL — force the form: the grammar around the blank must require a SINGLE correct inflection. Use agreement, articles, quantifiers and number/tense cues so exactly one form is grammatical. If both singular and plural (or two tenses) would read naturally in the blank, rewrite the sentence until only one is correct.
 - Use 5 different words from the list for the 5 blanks; the remaining listed words become distractors.
 - The blank uses the word in the form the sentence needs (conjugated / declined). Keep articles and prepositions visible — blank only the content word.
+- Blank a real content word — a head noun, a main/finite verb, or an adjective in its normal spot (an adjective before its noun, like "the brazen doorknob", is fine). Do NOT blank a NOUN used as a modifier of another noun (avoid "lilac blossoms", "stone wall", where the blank isn't the head and can't inflect).
 - "bank" = base/infinitive forms of all answer words PLUS 2 plausible distractor base forms (7 chips total).
-- For every sentence return: target-language "text" with ___, the "senseId" of the word used, "answerLemma" (base form), "answerForm" (exact form that fills the blank), a short "hint" (e.g. tense + subject, or case), and a one-line "explanation".
+- For every sentence return: target-language "text" with ___, the "senseId" of the word used, "answerLemma" (base form), "answerForm" (exact form that fills the blank), a short "hint", and a one-line "explanation".
+- "hint" = a PLAIN, everyday nudge about the expected FORM only, max ~5 words, no grammar jargon. Use terms learners know: "plural", "past tense", "infinitive" (prefer "infinitive" over "base form"). Only name a grammatical case when ${targetLanguage} marks case. Describe ONLY the blanked word's own form — never another word's agreement, and never the meaning.
+- If the blanked word is in its plain base form (unchanged from the bank word): for an English adjective or adverb (these never inflect), set "hint" to just its part of speech — "adjective" or "adverb"; for a noun or verb that simply doesn't change here (e.g. a mass noun like "mustard"), set "hint" to null. Never invent grammatical detail, and never call an English adjective "singular"/"plural".
 - Write "hint" and "explanation" in ${interfaceLanguage}. Keep explanations POS-shaped: nouns → gender/case/plural; verbs → tense/person; adjectives → declension.
 - Everything except hint/explanation must be in ${targetLanguage}.
 
@@ -583,7 +588,7 @@ Return JSON exactly:
 {
   "bank": [ { "lemma": "…", "senseId": "…" } ],
   "sentences": [
-    { "text": "… ___ …", "senseId": "…", "answerLemma": "…", "answerForm": "…", "hint": "…", "explanation": "…" }
+    { "text": "… ___ …", "senseId": "…", "answerLemma": "…", "answerForm": "…", "hint": "… or null", "explanation": "…" }
   ]
 }`
 

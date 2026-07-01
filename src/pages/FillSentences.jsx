@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -23,6 +23,21 @@ export default function FillSentences() {
   const [set, setSet] = useState(null)          // { bank, sentences }
   const [answers, setAnswers] = useState({})     // idx -> typed string
   const [checked, setChecked] = useState(false)
+  const [openHint, setOpenHint] = useState(null) // idx of the sentence whose hint popover is open
+  const [fading, setFading] = useState(false)    // popover mid fade-out
+  const closeTimer = useRef(null)                // grace period before fade
+  const fadeTimer = useRef(null)                 // fade duration before unmount
+
+  const cancelHintClose = () => { clearTimeout(closeTimer.current); clearTimeout(fadeTimer.current); setFading(false) }
+  const scheduleHintClose = () => {
+    cancelHintClose()
+    closeTimer.current = setTimeout(() => {
+      setFading(true)                                                        // fully visible for the grace period, then fade
+      fadeTimer.current = setTimeout(() => { setOpenHint(null); setFading(false) }, 350)
+    }, 650)
+  }
+  const closeHintNow = () => { cancelHintClose(); setOpenHint(null) }
+  useEffect(() => () => { clearTimeout(closeTimer.current); clearTimeout(fadeTimer.current) }, [])
 
   useEffect(() => {
     if (!user) return
@@ -38,7 +53,7 @@ export default function FillSentences() {
   }, [user, targetLang])
 
   const generate = useCallback(async () => {
-    setPhase('generating'); setChecked(false); setAnswers({})
+    setPhase('generating'); setChecked(false); setAnswers({}); closeHintNow()
     try {
       const pick = [...pool].sort(() => Math.random() - 0.5).slice(0, 7)
       const words = pick.map(s => ({ senseId: s.id, lemma: s.word_form, translation: displayTranslation(s.translation), pos: s.pos, stage: s.learning_stage }))
@@ -49,6 +64,17 @@ export default function FillSentences() {
       alert(uk ? 'Не вдалося згенерувати. Спробуйте ще раз.' : 'Could not generate a set. Try again.')
     }
   }, [pool, targetLanguageName, ifaceLang, uk])
+
+  // Dismiss the hint popover: tap/click anywhere outside it (mobile taps + desktop clicks).
+  // Desktop mouse-off is handled by onMouseLeave on the popover wrapper below.
+  useEffect(() => {
+    if (openHint === null) return
+    const onDown = (e) => {
+      if (!(e.target instanceof Element) || !e.target.closest('[data-hint]')) closeHintNow()
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [openHint])
 
   const wrap = (inner) => (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col items-center justify-center px-4 py-10">{inner}</div>
@@ -92,6 +118,8 @@ export default function FillSentences() {
         {set.sentences.map((s, i) => {
           const oc = checked ? outcomeFor(s, i) : null
           const parts = s.text.split('___')
+          const needsForm = s.answerForm && s.answerLemma &&
+            s.answerForm.trim().toLowerCase() !== s.answerLemma.trim().toLowerCase()
           return (
             <div key={i}>
               <p className="text-base text-gray-800 leading-relaxed flex flex-wrap items-center gap-1">
@@ -107,6 +135,33 @@ export default function FillSentences() {
                   placeholder="…"
                 />
                 <span>{parts[1] || ''}</span>
+                {!checked && needsForm && (
+                  <span
+                    title={uk ? 'Це слово змінює базову форму тут' : 'This word changes from its base form here'}
+                    aria-label={uk ? 'Змінює форму' : 'Changes form'}
+                    className="ml-1 text-sm text-indigo-400 select-none cursor-help"
+                  >✎</span>
+                )}
+                {!checked && s.hint && (
+                  <span
+                    data-hint
+                    className="relative inline-flex items-center"
+                    onMouseEnter={cancelHintClose}
+                    onMouseLeave={scheduleHintClose}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => { cancelHintClose(); setOpenHint(openHint === i ? null : i) }}
+                      className="ml-1 text-sm opacity-40 hover:opacity-100 focus:outline-none"
+                      aria-label={uk ? 'Підказка' : 'Hint'}
+                    >💡</button>
+                    {openHint === i && (
+                      <span className={`absolute left-5 top-1/2 -translate-y-1/2 z-10 w-56 rounded-lg bg-gray-900 text-white text-xs font-normal px-3 py-2 shadow-lg transition-opacity duration-300 ${fading ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                        {s.hint}
+                      </span>
+                    )}
+                  </span>
+                )}
               </p>
               {checked && oc !== 'correct' && (
                 <p className="text-xs text-gray-500 mt-1">
