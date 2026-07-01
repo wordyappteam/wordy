@@ -110,7 +110,7 @@ export async function completeSessionV2(sessionId, userId, senseResults, todayIS
   for (const { senseId, outcome } of senseResults) {
     const { data: sense } = await supabase
       .from('word_senses')
-      .select('interval_step, lapses, slipped')
+      .select('interval_step, lapses, slipped, next_review_date')
       .eq('id', senseId)
       .eq('user_id', userId)
       .single()

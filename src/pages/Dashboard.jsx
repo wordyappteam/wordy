@@ -45,6 +45,7 @@ export default function Dashboard() {
   const [senseCount,   setSenseCount]   = useState(null)
   const [dueToday,     setDueToday]     = useState(0)
   const [newAvailable, setNewAvailable] = useState(0)
+  const [countsLoaded, setCountsLoaded] = useState(false)
   const [loading,      setLoading]      = useState(true)
   const [editingName,  setEditingName]  = useState(false)
   const [nameInput,    setNameInput]    = useState('')
@@ -81,19 +82,23 @@ export default function Dashboard() {
       .then(({ count }) => setSenseCount(count ?? 0))
 
     const todayISO = new Date().toISOString().split('T')[0]
-    // due reviews: reviewed before, and due today or unscheduled
-    supabase.from('word_senses')
+    // due reviews: NOT truly-new (last_reviewed set OR already past step 0), and due today or unscheduled
+    const dueQuery = supabase.from('word_senses')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id).eq('target_language', targetLang)
-      .not('last_reviewed', 'is', null)
+      .or('last_reviewed.not.is.null,interval_step.gt.0')
       .or(`next_review_date.lte.${todayISO},next_review_date.is.null`)
-      .then(({ count }) => setDueToday(count ?? 0))
     // new available: never reviewed, still at step 0
-    supabase.from('word_senses')
+    const newQuery = supabase.from('word_senses')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id).eq('target_language', targetLang)
       .is('last_reviewed', null).eq('interval_step', 0)
-      .then(({ count }) => setNewAvailable(count ?? 0))
+
+    Promise.all([dueQuery, newQuery]).then(([dueRes, newRes]) => {
+      setDueToday(dueRes.count ?? 0)
+      setNewAvailable(newRes.count ?? 0)
+      setCountsLoaded(true)
+    })
   }, [user, targetLang])
 
   useEffect(() => {
@@ -412,7 +417,9 @@ export default function Dashboard() {
               ? 'rounded-3xl p-5 bg-indigo-600 shadow-lg shadow-indigo-200'
               : 'rounded-3xl p-6 bg-white border border-gray-100 shadow-sm'}
             >
-              {dueToday > 0 ? (
+              {!countsLoaded ? (
+                <div className="h-11" aria-hidden="true" />
+              ) : dueToday > 0 ? (
                 <button
                   onClick={() => navigate('/session')}
                   className="w-full bg-brand-yellow text-gray-900 text-sm font-bold py-3 rounded-xl hover:bg-yellow-300 transition-colors"

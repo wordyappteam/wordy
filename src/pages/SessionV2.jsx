@@ -2,7 +2,7 @@
 // Self-contained: loads word_senses, plans with planSessionV2, runs each step,
 // grades ONE outcome per sense, then calls completeSessionV2. Deliberately not
 // wired into the live session flow — this is for validating the v2 loop.
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -316,6 +316,9 @@ export default function SessionV2() {
   const [summary, setSummary] = useState([])
   const [remainingDue, setRemainingDue] = useState(0)
   const uk = lang === 'uk'
+  // Guards addNewToday from double-incrementing if the completion handler
+  // ever fires twice for the same session (reset whenever a fresh session loads).
+  const countedRef = useRef(false)
 
   // Fresh DB read + plan — never the stale in-memory `pool`/`steps`. Senses that
   // were just reviewed get a future next_review_date, so only a re-query knows
@@ -346,6 +349,7 @@ export default function SessionV2() {
     const gradedCount = new Set(plan.filter((s) => s.graded).map((s) => s.senseId)).size
     const id = await startSession(user.id, 'v2', gradedCount)
     if (isCancelled?.()) return
+    countedRef.current = false
     setPool(senses); setSteps(plan); setSessionId(id); setPhase('running')
   }
 
@@ -374,8 +378,11 @@ export default function SessionV2() {
     const todayISO = new Date().toISOString().split('T')[0]
     const results = Object.entries(nextOutcomes).map(([senseId, o]) => ({ senseId, outcome: o }))
     await completeSessionV2(sessionId, user.id, results, todayISO)
-    const newGraded = steps.filter((s) => s.graded && s.stage === 'new').length
-    if (newGraded > 0) addNewToday(todayISO, newGraded)
+    if (!countedRef.current) {
+      countedRef.current = true
+      const newGraded = steps.filter((s) => s.graded && s.newIntake).length
+      if (newGraded > 0) addNewToday(todayISO, newGraded)
+    }
     const { data } = await supabase
       .from('word_senses')
       .select('id, word_form, translation, interval_step, learning_stage, next_review_date')
