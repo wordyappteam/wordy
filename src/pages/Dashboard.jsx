@@ -53,6 +53,7 @@ export default function Dashboard() {
   const [savingName,   setSavingName]   = useState(false)
   const [collections,  setCollections]  = useState([])
   const [showCollectionPicker, setShowCollectionPicker] = useState(false)
+  const [showExtra,    setShowExtra]    = useState(false)
   const nameRef    = useRef(null)
   const profileRef = useRef(null)
 
@@ -189,7 +190,6 @@ export default function Dashboard() {
     known:         lang === 'uk' ? 'Знаю / Засвоїв' : 'Known / Mastered',
     thisWeek:      lang === 'uk' ? 'Додано цього тижня' : 'Added this week',
     newWords:      lang === 'uk' ? 'нових' : 'new this week',
-    session:       lang === 'uk' ? 'Вправи' : 'Exercises',
     recentWords:   lang === 'uk' ? 'Останні слова' : 'Recent words',
     viewAll:       lang === 'uk' ? 'Переглянути всі →' : 'View all →',
     emptyDict:     lang === 'uk' ? 'Ваш словник порожній. Додайте перше слово!' : 'Your dictionary is empty. Add your first word!',
@@ -326,68 +326,112 @@ export default function Dashboard() {
                 </div>
               )}
 
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">{lbl.session}</h2>
-              <div className="grid grid-cols-2 gap-3">
-                {exercises.map((ex, i) => (
-                  <button
-                    key={ex.type}
-                    onClick={() => ex.onClick ? ex.onClick() : navigate(ex.path)}
-                    className={`bg-white border rounded-2xl p-4 text-left md:hover:bg-gradient-to-br md:hover:from-brand-yellow/40 md:hover:to-indigo-200 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group ${
-                      exercises.length % 2 !== 0 && i === 0 ? 'col-span-2' : ''
-                    } ${showCollectionPicker && ex.onClick ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100'}`}
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 text-indigo-600 group-hover:bg-indigo-100">
-                      <ex.Icon size={20} />
-                    </div>
-                    <div className="text-sm font-semibold text-gray-900 group-hover:text-indigo-800">{ex.type}</div>
-                    <div className="text-xs text-gray-400 group-hover:text-indigo-600 mt-0.5">
-                      {ex.count === null
-                        ? (lang === 'uk' ? 'Запитайте будь-що' : 'Ask anything')
-                        : ex.onClick
-                          ? (lang === 'uk' ? `${ex.count} колекцій` : `${ex.count} collection${ex.count !== 1 ? 's' : ''}`)
-                          : ex.count > 0
-                            ? (lang === 'uk' ? `${ex.count} слів` : `${ex.count} words`)
-                            : (lang === 'uk' ? 'Додайте слова' : 'Add words first')
-                      }
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <button
+                onClick={() => setShowExtra(v => !v)}
+                className="w-full flex items-center justify-between mb-4 group"
+              >
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide group-hover:text-indigo-600 transition-colors">
+                  {lang === 'uk' ? 'Додаткова практика' : 'Extra practice'}
+                </h2>
+                <span className="text-xs font-medium text-gray-400 group-hover:text-indigo-600 transition-colors flex items-center gap-1">
+                  {showExtra
+                    ? (lang === 'uk' ? 'Згорнути' : 'Hide')
+                    : (lang === 'uk' ? 'Показати' : 'Show')}
+                  <span className={`transition-transform ${showExtra ? 'rotate-180' : ''}`}>▾</span>
+                </span>
+              </button>
 
-              {/* Collection picker — expands below the grid */}
-              {showCollectionPicker && (
-                <div className="mt-3 border border-indigo-100 rounded-2xl overflow-hidden">
-                  <div className="bg-indigo-50 px-4 py-2.5 flex items-center justify-between border-b border-indigo-100">
-                    <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
-                      {lang === 'uk' ? 'Оберіть колекцію' : 'Choose a collection'}
-                    </span>
-                    <button onClick={() => setShowCollectionPicker(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
+              {showExtra && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    {exercises.map((ex, i) => (
+                      <button
+                        key={ex.type}
+                        onClick={() => ex.onClick ? ex.onClick() : navigate(ex.path)}
+                        className={`bg-white border rounded-2xl p-4 text-left md:hover:bg-gradient-to-br md:hover:from-brand-yellow/40 md:hover:to-indigo-200 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group ${
+                          exercises.length % 2 !== 0 && i === 0 ? 'col-span-2' : ''
+                        } ${showCollectionPicker && ex.onClick ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100'}`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 text-indigo-600 group-hover:bg-indigo-100">
+                          <ex.Icon size={20} />
+                        </div>
+                        <div className="text-sm font-semibold text-gray-900 group-hover:text-indigo-800">{ex.type}</div>
+                        <div className="text-xs text-gray-400 group-hover:text-indigo-600 mt-0.5">
+                          {ex.count === null
+                            ? (lang === 'uk' ? 'Запитайте будь-що' : 'Ask anything')
+                            : ex.onClick
+                              ? (lang === 'uk' ? `${ex.count} колекцій` : `${ex.count} collection${ex.count !== 1 ? 's' : ''}`)
+                              : ex.count > 0
+                                ? (lang === 'uk' ? `${ex.count} слів` : `${ex.count} words`)
+                                : (lang === 'uk' ? 'Додайте слова' : 'Add words first')
+                          }
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                  <div className="divide-y divide-gray-50">
-                    {collections.map(c => {
-                      const col = collectionColor(c.color)
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => navigate(`/flashcards?collectionId=${c.id}&collectionName=${encodeURIComponent(c.name)}`)}
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors text-left"
-                        >
-                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.dot}`} />
-                          <span className="text-sm font-medium text-gray-800">{c.name}</span>
-                          <span className="ml-auto text-xs text-indigo-600 font-semibold">
-                            {lang === 'uk' ? 'Практикувати →' : 'Practice →'}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
+
+                  {/* Collection picker — expands below the grid */}
+                  {showCollectionPicker && (
+                    <div className="mt-3 border border-indigo-100 rounded-2xl overflow-hidden">
+                      <div className="bg-indigo-50 px-4 py-2.5 flex items-center justify-between border-b border-indigo-100">
+                        <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+                          {lang === 'uk' ? 'Оберіть колекцію' : 'Choose a collection'}
+                        </span>
+                        <button onClick={() => setShowCollectionPicker(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
+                      </div>
+                      <div className="divide-y divide-gray-50">
+                        {collections.map(c => {
+                          const col = collectionColor(c.color)
+                          return (
+                            <button
+                              key={c.id}
+                              onClick={() => navigate(`/flashcards?collectionId=${c.id}&collectionName=${encodeURIComponent(c.name)}`)}
+                              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors text-left"
+                            >
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.dot}`} />
+                              <span className="text-sm font-medium text-gray-800">{c.name}</span>
+                              <span className="ml-auto text-xs text-indigo-600 font-semibold">
+                                {lang === 'uk' ? 'Практикувати →' : 'Practice →'}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
 
           {/* Right (1 col) — stat cards + recent words */}
           <div className="flex flex-col gap-4 h-full order-first lg:order-none">
+
+            {/* Primary Start CTA */}
+            <div className={dueToday > 0 || newAvailable > 0
+              ? 'rounded-3xl p-5 bg-indigo-600 shadow-lg shadow-indigo-200'
+              : 'rounded-3xl p-6 bg-white border border-gray-100 shadow-sm'}
+            >
+              {dueToday > 0 ? (
+                <button
+                  onClick={() => navigate('/session')}
+                  className="w-full bg-brand-yellow text-gray-900 text-sm font-bold py-3 rounded-xl hover:bg-yellow-300 transition-colors"
+                >
+                  {lang === 'uk' ? `Почати — ${Math.min(dueToday, 18)} сьогодні` : `Start — ${Math.min(dueToday, 18)} today`}
+                </button>
+              ) : newAvailable > 0 ? (
+                <button
+                  onClick={() => navigate('/session')}
+                  className="w-full bg-brand-yellow text-gray-900 text-sm font-bold py-3 rounded-xl hover:bg-yellow-300 transition-colors"
+                >
+                  {lang === 'uk' ? `Ви все опрацювали — вивчити ${Math.min(newAvailable, 7)} нових?` : `You're caught up — learn ${Math.min(newAvailable, 7)} new?`}
+                </button>
+              ) : (
+                <p className="text-sm text-gray-500 text-center">
+                  {lang === 'uk' ? 'Усе опрацьовано. Повертайтеся завтра ✨' : 'All caught up. Come back tomorrow ✨'}
+                </p>
+              )}
+            </div>
 
             {/* Stat cards */}
             {[
