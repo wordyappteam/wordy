@@ -210,7 +210,7 @@ test('gap forgiveness does NOT apply to an on-time FAIL (normal two-strike still
 })
 
 test('planSessionV2: chunks into blocks — block 1 is fully tested before block 2 encodes', () => {
-  // 7 mid senses, blockSize 3 → blocks [0,1,2] [3,4,5] [6]
+  // 7 mid senses, blockSize 3 → balanced blocks [0,1,2] [3,4] [5,6]
   const senses = Array.from({ length: 7 }, (_, i) => ({ id: `s${i}`, word_id: `w${i}`, interval_step: 3, last_reviewed: '2026-06-20', next_review_date: '2026-06-25', word_form: `w${i}`, translation: 't', examples: [] }))
   const steps = planSessionV2(senses, { today: '2026-07-01', gradedCap: 18, blockSize: 3 })
   const firstBlockIds = new Set(['s0', 's1', 's2'])
@@ -387,4 +387,16 @@ test('planSessionV2: sibling senses of one word are not adjacent within a phase 
       assert.ok(!(a.wordId === 'shared' && b.wordId === 'shared'), 'sibling senses must not sit adjacent within a phase')
     }
   }
+})
+
+test("packSenses: multiple tiny scaffolded packs cascade-merge into one stage-ordered pack", () => {
+  const selected = [
+    seqSense(1, 5),                  // late
+    seqSense(2, 3),                  // mid
+    seqSense(3, 1),                  // early
+    seqSense(4, 0, { isNew: true }), // new
+  ]
+  const packs = packSenses(selected)
+  assert.equal(packs.length, 1, "four tiny stage packs collapse into one")
+  assert.deepEqual(packs[0].map((s) => s.id), ["s4", "s3", "s2", "s1"], "merged pack is stage-ordered: new, early, mid, late")
 })
