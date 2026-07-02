@@ -53,6 +53,9 @@ In `src/pages/Reader.jsx` (`parseEpub`/`extractBlocks`/`loadSectionDoc`):
 
 Pipeline, all via jszip + lenient DOM parsing:
 
+0. **Size gate:** files over 35 MiB are rejected at import with a clear
+   message before any parsing (the corpus's largest book, *Determined* at
+   ~33.7 MiB, fits under it).
 1. `META-INF/container.xml` → OPF path. `META-INF/encryption.xml` present →
    throw a clear "DRM-protected" error.
 2. OPF: metadata (title, creator, `dc:language`), manifest (id → href,
@@ -162,6 +165,7 @@ plain text. Word spans `stopPropagation` so taps don't turn pages.
 
 ## Error handling
 
+- File over the 35 MiB cap → rejected at import with an explicit message.
 - DRM → explicit message at import.
 - Per-section parse failures → import completes with a warning count, book
   still readable; warnings listed in the import result.
