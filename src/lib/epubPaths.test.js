@@ -27,6 +27,15 @@ test('findZipEntry: exact, case-insensitive, then unique suffix', () => {
   assert.equal(findZipEntry(names, 'nope.xhtml'), null)
 })
 
+test('findZipEntry returns null when suffix is not unique', () => {
+  const names = ['OEBPS/a/ch1.xhtml', 'OEBPS/b/ch1.xhtml']
+  assert.equal(findZipEntry(names, 'ch1.xhtml'), null)
+})
+
+test('normalizePath keeps raw segment on malformed escape', () => {
+  assert.equal(normalizePath('OEBPS/ch%zz.xhtml'), 'OEBPS/ch%zz.xhtml')
+})
+
 test('mapTocToChapters maps hrefs to chapter indices, drops misses', () => {
   const raw = [
     { label: 'One', path: 'OEBPS/ch1.xhtml', depth: 0 },
