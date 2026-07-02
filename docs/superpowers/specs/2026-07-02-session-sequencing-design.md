@@ -77,29 +77,41 @@ all flashcards → all context cards → all tests
 
 - Every context card refers to a flashcard shown moments earlier in the same
   cycle; the flashcard→test gap stays wide (the rest of the cycle intervenes).
-- **Chunk ceiling:** a pack larger than `blockSize` (default 5, existing
-  option) silently splits into balanced encode→test cycles of at most
-  `blockSize` — `ceil(n / blockSize)` chunks of near-equal size, so a 12-word
-  mid pack runs as three cycles of 4 (never 5+5+2 with a runt tail) — still
-  100% mid words. The ceiling
-  is a rhythm device, not a visible rule: it caps how many cards sit between a
-  word's flashcard and its test, and keeps the learn-a-little/test-a-little
-  cadence.
-- **Tiny packs (1–2 words) are accepted as-is.** The test lands close to the
-  flashcard there; this is occasional and low-stakes, and merging tiny packs
-  into neighbors would reintroduce mixed-stage blocks.
+- **Chunk ceiling:** a pack larger than `blockSize` (**default changes 5 → 4**)
+  silently splits into balanced encode→test cycles of at most `blockSize` —
+  `ceil(n / blockSize)` chunks of near-equal size, so a 12-word mid pack runs
+  as three cycles of 4 (never with a runt tail) — still 100% mid words. The
+  ceiling is a rhythm device, not a visible rule: it caps how many cards sit
+  between a word's flashcard and its test (~8–11 with blockSize 4), and keeps
+  the learn-a-little/test-a-little cadence. `SessionV2.jsx` passes
+  `blockSize: 4` (was 5).
+- **Tiny scaffolded packs merge into a stage neighbor.** A *scaffolded* pack
+  (new/early/mid/late) with fewer than 3 words folds into the adjacent pack
+  whose scaffold recipe matches best (early↔mid are identical; new↔early
+  close). Repeat until no scaffolded pack has <3 words or only one pack
+  remains. The merged pack still runs clean type phases — only the test phase
+  mixes test types, in stage order. If the whole session is 1–2 words, accept
+  the short flashcard→test gap — nothing to merge with.
+- **Exempt from merging:** the **leech-help** pack (leech cap is 2, so it is
+  *always* tiny — but its short flashcard→test gap is desirable: stuck words
+  need an easy win, and it stays a distinct rescue tail) and **known+** packs
+  (test-only, no answer shown beforehand, so a tiny one has no inflated-PASS
+  problem).
 - `antiCluster` no longer interleaves card types. It applies **within each
   phase only**, keeping sibling senses of the same word from sitting adjacent.
 
-### 3. Resulting shape (example: 3 new, 1 early, 12 mid, 1 late)
+### 3. Resulting shape (example: 3 new, 1 early, 12 mid, 1 late, 2 leech)
+
+The lone early and late words merge into the mid pack (their nearest recipe
+neighbor), giving 14 words → four balanced cycles of 4/4/3/3:
 
 ```
-▸ NEW pack        🃏🃏🃏 → ✅✅✅ (choose-meaning)
-▸ EARLY pack      🃏 → 📝 → ✅ (word-choice)
-▸ MID pack        cycle 1: 🃏×4 → 📝×4 → ✅×4 (fill-in)
-                  cycle 2: 🃏×4 → 📝×4 → ✅×4
-                  cycle 3: 🃏×4 → 📝×4 → ✅×4
-▸ LATE pack       📝 → ✅ (active-recall)
+▸ NEW pack          🃏🃏🃏 → ✅✅✅ (choose-meaning)
+▸ EARLY+MID+LATE    cycle 1: 🃏×4 → 📝×4 → ✅×4
+  (14 words)                 (tests in stage order:
+                              word-choice → fill-in → recall)
+                    cycles 2–4: same shape (4/3/3)
+▸ LEECH-HELP        🃏🃏 → ✅✅ (word-choice) — never merged
 ```
 
 ## Implementation sketch
@@ -108,8 +120,10 @@ All inside `planSessionV2`'s block-building section (`src/lib/srs.js:174-195`):
 
 1. Bucket `selected` by `stageOf(interval_step)` with `isNew` → bucket 0 and
    `_remedial` → last bucket; concatenate buckets in pack order.
-2. Slice each pack into chunks of ≤ `blockSize`.
-3. Per chunk, emit `flashcard` steps, then `fill_blank` steps, then graded
+2. Merge scaffolded packs of <3 words into their best stage neighbor
+   (leech-help and known+ exempt).
+3. Slice each pack into balanced chunks of ≤ `blockSize` (4).
+4. Per chunk, emit `flashcard` steps, then `fill_blank` steps, then graded
    steps — same word order per phase, `antiCluster` applied per phase.
 
 No schema, engine, or UI changes.
@@ -122,8 +136,10 @@ Given a mixed roster (new + early + mid + late + known + leech):
   and card types do not interleave within a phase.
 - (b) Pack order is new → early → mid → late → known+ → leech-help; no chunk
   mixes stages.
-- (c) A pack of >blockSize words splits into multiple encode→test cycles, each
-  ≤ blockSize.
+- (c) A pack of >blockSize words splits into balanced encode→test cycles, each
+  ≤ blockSize (4).
+- (c2) A scaffolded pack of <3 words merges into a stage neighbor; leech-help
+  and known+ packs never merge; a 1–2 word session still plans correctly.
 - (d) Selection is unchanged: same set of senseIds and same graded exercise
   per sense as before the change (order aside).
 - (e) Sibling senses (same wordId) are not adjacent within a phase when
