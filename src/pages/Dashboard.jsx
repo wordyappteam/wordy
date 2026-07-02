@@ -4,13 +4,13 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
-import { planSession } from '../lib/sessionEngine'
 import NavBar from '../components/NavBar'
 import {
-  FlashcardsIcon, PrepositionsIcon, FillBlankIcon,
+  FlashcardsIcon, PrepositionsIcon,
   WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
 } from '../components/ExerciseIcons'
 import { collectionColor } from '../lib/collections'
+import { remainingNewToday } from '../lib/dailyNew'
 
 function CollectionIcon({ size = 20 }) {
   return (
@@ -44,6 +44,9 @@ export default function Dashboard() {
 
   const [words,        setWords]        = useState([])
   const [senseCount,   setSenseCount]   = useState(null)
+  const [dueToday,     setDueToday]     = useState(0)
+  const [newAvailable, setNewAvailable] = useState(0)
+  const [countsLoaded, setCountsLoaded] = useState(false)
   const [loading,      setLoading]      = useState(true)
   const [editingName,  setEditingName]  = useState(false)
   const [nameInput,    setNameInput]    = useState('')
@@ -52,6 +55,7 @@ export default function Dashboard() {
   const [savingName,   setSavingName]   = useState(false)
   const [collections,  setCollections]  = useState([])
   const [showCollectionPicker, setShowCollectionPicker] = useState(false)
+  const [showExtra,    setShowExtra]    = useState(false)
   const nameRef    = useRef(null)
   const profileRef = useRef(null)
 
@@ -77,6 +81,25 @@ export default function Dashboard() {
       .eq('user_id', user.id)
       .eq('target_language', targetLang)
       .then(({ count }) => setSenseCount(count ?? 0))
+
+    const todayISO = new Date().toISOString().split('T')[0]
+    // due reviews: NOT truly-new (last_reviewed set OR already past step 0), and due today or unscheduled
+    const dueQuery = supabase.from('word_senses')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).eq('target_language', targetLang)
+      .or('last_reviewed.not.is.null,interval_step.gt.0')
+      .or(`next_review_date.lte.${todayISO},next_review_date.is.null`)
+    // new available: never reviewed, still at step 0
+    const newQuery = supabase.from('word_senses')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).eq('target_language', targetLang)
+      .is('last_reviewed', null).eq('interval_step', 0)
+
+    Promise.all([dueQuery, newQuery]).then(([dueRes, newRes]) => {
+      setDueToday(dueRes.count ?? 0)
+      setNewAvailable(newRes.count ?? 0)
+      setCountsLoaded(true)
+    })
   }, [user, targetLang])
 
   useEffect(() => {
@@ -112,17 +135,6 @@ export default function Dashboard() {
   ).length
 
   const recentWords = words.slice(0, 5)
-
-  // ── Session plans ──────────────────────────────────────────────────────────
-  const timeBudget = profile?.time_budget ?? 15
-  const STATUS_TO_STAGE = { new: 0, learning: 1, known: 4, mastered: 5 }
-  const wordsWithStage = words.map(w => ({
-    ...w,
-    learning_stage: w.learning_stage ?? STATUS_TO_STAGE[w.status] ?? 0,
-  }))
-  const sessionPlans = !loading && words.length > 0
-    ? planSession(wordsWithStage, timeBudget, lang)
-    : []
 
   // ── User display name ──────────────────────────────────────────────────────
   const displayName = profile?.full_name?.split(' ')[0]
@@ -184,7 +196,6 @@ export default function Dashboard() {
     known:         lang === 'uk' ? 'Знаю / Засвоїв' : 'Known / Mastered',
     thisWeek:      lang === 'uk' ? 'Додано цього тижня' : 'Added this week',
     newWords:      lang === 'uk' ? 'нових' : 'new this week',
-    session:       lang === 'uk' ? 'Вправи' : 'Exercises',
     recentWords:   lang === 'uk' ? 'Останні слова' : 'Recent words',
     viewAll:       lang === 'uk' ? 'Переглянути всі →' : 'View all →',
     emptyDict:     lang === 'uk' ? 'Ваш словник порожній. Додайте перше слово!' : 'Your dictionary is empty. Add your first word!',
@@ -204,11 +215,14 @@ export default function Dashboard() {
     { type: lang === 'uk' ? 'Флеш-картки'           : 'Flashcards',          Icon: FlashcardsIcon,      path: '/flashcards',       count: total },
     collections.length > 0 && { type: lang === 'uk' ? 'Практика колекції' : 'Practice collection', Icon: CollectionIcon, onClick: () => setShowCollectionPicker(p => !p), count: collections.length },
     features.prepositionDrills && { type: lang === 'uk' ? 'Дієслова з прийменником': 'Verbs + prepositions', Icon: PrepositionsIcon,    path: '/prepositions',     count: prepVerbCount },
-    features.fillBlank        && { type: lang === 'uk' ? 'Заповніть пропуск'      : 'Fill in the blank',   Icon: FillBlankIcon,       path: '/fill-blank',       count: total },
     { type: lang === 'uk' ? 'Порядок слів'           : 'Word order',          Icon: WordOrderIcon,       path: '/word-order',       count: total },
     { type: lang === 'uk' ? 'Активне відтворення'    : 'Active recall',       Icon: ActiveRecallIcon,    path: '/active-recall',    count: byStatus.learning + byStatus.known + byStatus.mastered },
     { type: lang === 'uk' ? 'Написання речень'       : 'Sentence writing',    Icon: SentenceWritingIcon, path: '/sentence-writing', count: total },
   ].filter(Boolean)
+
+  // What the "learn N new?" CTA may honestly offer: capped by the same per-day
+  // budget the session planner enforces, so the button never opens an empty session.
+  const newOffer = Math.min(newAvailable, remainingNewToday(new Date().toISOString().split('T')[0]))
 
   return (
     <div className="min-h-screen bg-[#F7F7FB]">
@@ -322,62 +336,80 @@ export default function Dashboard() {
                 </div>
               )}
 
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">{lbl.session}</h2>
-              <div className="grid grid-cols-2 gap-3">
-                {exercises.map((ex, i) => (
-                  <button
-                    key={ex.type}
-                    onClick={() => ex.onClick ? ex.onClick() : navigate(ex.path)}
-                    className={`bg-white border rounded-2xl p-4 text-left md:hover:bg-gradient-to-br md:hover:from-brand-yellow/40 md:hover:to-indigo-200 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group ${
-                      exercises.length % 2 !== 0 && i === 0 ? 'col-span-2' : ''
-                    } ${showCollectionPicker && ex.onClick ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100'}`}
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 text-indigo-600 group-hover:bg-indigo-100">
-                      <ex.Icon size={20} />
-                    </div>
-                    <div className="text-sm font-semibold text-gray-900 group-hover:text-indigo-800">{ex.type}</div>
-                    <div className="text-xs text-gray-400 group-hover:text-indigo-600 mt-0.5">
-                      {ex.count === null
-                        ? (lang === 'uk' ? 'Запитайте будь-що' : 'Ask anything')
-                        : ex.onClick
-                          ? (lang === 'uk' ? `${ex.count} колекцій` : `${ex.count} collection${ex.count !== 1 ? 's' : ''}`)
-                          : ex.count > 0
-                            ? (lang === 'uk' ? `${ex.count} слів` : `${ex.count} words`)
-                            : (lang === 'uk' ? 'Додайте слова' : 'Add words first')
-                      }
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <button
+                onClick={() => setShowExtra(v => !v)}
+                className="w-full flex items-center justify-between mb-4 group"
+              >
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide group-hover:text-indigo-600 transition-colors">
+                  {lang === 'uk' ? 'Додаткова практика' : 'Extra practice'}
+                </h2>
+                <span className="text-xs font-medium text-gray-400 group-hover:text-indigo-600 transition-colors flex items-center gap-1">
+                  {showExtra
+                    ? (lang === 'uk' ? 'Згорнути' : 'Hide')
+                    : (lang === 'uk' ? 'Показати' : 'Show')}
+                  <span className={`transition-transform ${showExtra ? 'rotate-180' : ''}`}>▾</span>
+                </span>
+              </button>
 
-              {/* Collection picker — expands below the grid */}
-              {showCollectionPicker && (
-                <div className="mt-3 border border-indigo-100 rounded-2xl overflow-hidden">
-                  <div className="bg-indigo-50 px-4 py-2.5 flex items-center justify-between border-b border-indigo-100">
-                    <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
-                      {lang === 'uk' ? 'Оберіть колекцію' : 'Choose a collection'}
-                    </span>
-                    <button onClick={() => setShowCollectionPicker(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
+              {showExtra && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    {exercises.map((ex, i) => (
+                      <button
+                        key={ex.type}
+                        onClick={() => ex.onClick ? ex.onClick() : navigate(ex.path)}
+                        className={`bg-white border rounded-2xl p-4 text-left md:hover:bg-gradient-to-br md:hover:from-brand-yellow/40 md:hover:to-indigo-200 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group ${
+                          exercises.length % 2 !== 0 && i === 0 ? 'col-span-2' : ''
+                        } ${showCollectionPicker && ex.onClick ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100'}`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 text-indigo-600 group-hover:bg-indigo-100">
+                          <ex.Icon size={20} />
+                        </div>
+                        <div className="text-sm font-semibold text-gray-900 group-hover:text-indigo-800">{ex.type}</div>
+                        <div className="text-xs text-gray-400 group-hover:text-indigo-600 mt-0.5">
+                          {ex.count === null
+                            ? (lang === 'uk' ? 'Запитайте будь-що' : 'Ask anything')
+                            : ex.onClick
+                              ? (lang === 'uk' ? `${ex.count} колекцій` : `${ex.count} collection${ex.count !== 1 ? 's' : ''}`)
+                              : ex.count > 0
+                                ? (lang === 'uk' ? `${ex.count} слів` : `${ex.count} words`)
+                                : (lang === 'uk' ? 'Додайте слова' : 'Add words first')
+                          }
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                  <div className="divide-y divide-gray-50">
-                    {collections.map(c => {
-                      const col = collectionColor(c.color)
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => navigate(`/flashcards?collectionId=${c.id}&collectionName=${encodeURIComponent(c.name)}`)}
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors text-left"
-                        >
-                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.dot}`} />
-                          <span className="text-sm font-medium text-gray-800">{c.name}</span>
-                          <span className="ml-auto text-xs text-indigo-600 font-semibold">
-                            {lang === 'uk' ? 'Практикувати →' : 'Practice →'}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
+
+                  {/* Collection picker — expands below the grid */}
+                  {showCollectionPicker && (
+                    <div className="mt-3 border border-indigo-100 rounded-2xl overflow-hidden">
+                      <div className="bg-indigo-50 px-4 py-2.5 flex items-center justify-between border-b border-indigo-100">
+                        <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+                          {lang === 'uk' ? 'Оберіть колекцію' : 'Choose a collection'}
+                        </span>
+                        <button onClick={() => setShowCollectionPicker(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
+                      </div>
+                      <div className="divide-y divide-gray-50">
+                        {collections.map(c => {
+                          const col = collectionColor(c.color)
+                          return (
+                            <button
+                              key={c.id}
+                              onClick={() => navigate(`/flashcards?collectionId=${c.id}&collectionName=${encodeURIComponent(c.name)}`)}
+                              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors text-left"
+                            >
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.dot}`} />
+                              <span className="text-sm font-medium text-gray-800">{c.name}</span>
+                              <span className="ml-auto text-xs text-indigo-600 font-semibold">
+                                {lang === 'uk' ? 'Практикувати →' : 'Practice →'}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -385,42 +417,35 @@ export default function Dashboard() {
           {/* Right (1 col) — stat cards + recent words */}
           <div className="flex flex-col gap-4 h-full order-first lg:order-none">
 
-            {/* Session plans */}
-            {sessionPlans.length > 0 && (
-              <div className="flex flex-col gap-3">
-
-                {sessionPlans.map((plan, i) => (
-                  <div key={plan.id} className={`rounded-3xl p-4 ${
-                    i === 0
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                      : 'bg-white border border-gray-100 shadow-sm'
-                  }`}>
-                    <div className={`text-xs font-semibold uppercase tracking-wider mb-1 ${i === 0 ? 'text-indigo-300' : 'text-gray-400'}`}>
-                      {plan.durationMin} {lang === 'uk' ? 'хв' : 'min'}
-                    </div>
-                    <div className={`text-sm font-bold mb-1 ${i === 0 ? 'text-white' : 'text-gray-900'}`}>
-                      {plan.title}
-                    </div>
-                    <div className={`text-xs mb-3 leading-relaxed ${i === 0 ? 'text-indigo-300' : 'text-gray-400'}`}>
-                      {plan.description}
-                    </div>
-                    <button
-                      onClick={() => {
-                        sessionStorage.setItem('wordy_session', JSON.stringify(plan))
-                        navigate('/session')
-                      }}
-                      className={`w-full text-xs font-semibold py-2.5 rounded-xl transition-colors ${
-                        i === 0
-                          ? 'bg-brand-yellow text-gray-900 hover:bg-yellow-300'
-                          : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
-                      }`}
-                    >
-                      {lang === 'uk' ? 'Почати →' : 'Start →'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* Primary Start CTA. The "learn N new?" offer must respect the
+                per-day new budget the session planner enforces (dailyNew) —
+                otherwise it offers a session the planner returns empty. */}
+            <div className={dueToday > 0 || newOffer > 0
+              ? 'rounded-3xl p-5 bg-indigo-600 shadow-lg shadow-indigo-200'
+              : 'rounded-3xl p-6 bg-white border border-gray-100 shadow-sm'}
+            >
+              {!countsLoaded ? (
+                <div className="h-11" aria-hidden="true" />
+              ) : dueToday > 0 ? (
+                <button
+                  onClick={() => navigate('/session')}
+                  className="w-full bg-brand-yellow text-gray-900 text-sm font-bold py-3 rounded-xl hover:bg-yellow-300 transition-colors"
+                >
+                  {lang === 'uk' ? `Почати — ${Math.min(dueToday, 18)} сьогодні` : `Start — ${Math.min(dueToday, 18)} today`}
+                </button>
+              ) : newOffer > 0 ? (
+                <button
+                  onClick={() => navigate('/session')}
+                  className="w-full bg-brand-yellow text-gray-900 text-sm font-bold py-3 rounded-xl hover:bg-yellow-300 transition-colors"
+                >
+                  {lang === 'uk' ? `Ви все опрацювали — вивчити ${newOffer} нових?` : `You're caught up — learn ${newOffer} new?`}
+                </button>
+              ) : (
+                <p className="text-sm text-gray-500 text-center">
+                  {lang === 'uk' ? 'Усе опрацьовано. Повертайтеся завтра ✨' : 'All caught up. Come back tomorrow ✨'}
+                </p>
+              )}
+            </div>
 
             {/* Stat cards */}
             {[

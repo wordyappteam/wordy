@@ -20,6 +20,7 @@ export default function Exercises() {
 
   const [words,   setWords]   = useState([])
   const [loading, setLoading] = useState(true)
+  const [blankable, setBlankable] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -29,6 +30,15 @@ export default function Exercises() {
       .eq('user_id', user.id)
       .eq('target_language', targetLang)
       .then(({ data }) => { setWords(data ?? []); setLoading(false) })
+    supabase
+      .from('word_senses')
+      .select('id, learning_stage')
+      .eq('user_id', user.id)
+      .eq('target_language', targetLang)
+      .then(({ data }) => {
+        const n = (data ?? []).filter(s => ['mid','late','known','mastered'].includes(s.learning_stage)).length
+        setBlankable(n)
+      })
   }, [user])
 
   // ── Derived counts ──────────────────────────────────────────────────────
@@ -103,6 +113,23 @@ export default function Exercises() {
       color:       'border-amber-100 hover:border-amber-300',
       iconBg:      'bg-amber-50',
       disabled:    recallReady === 0,
+    },
+    {
+      id: 'fill-sentences',
+      Icon: FillBlankIcon,
+      name:        uk ? 'Заповніть речення'         : 'Fill the sentences',
+      desc:        uk ? 'Доберіть слово до кожного речення та введіть правильну форму.'
+                      : 'Match a word to each sentence, then type the correct form.',
+      level:       uk ? 'Середній' : 'Intermediate',
+      levelColor:  'bg-amber-50 text-amber-700 border-amber-100',
+      stat:        loading ? '…' : blankable >= 10
+        ? `${blankable} ${uk ? 'слів готові' : 'words ready'}`
+        : null,
+      statEmpty:   uk ? 'Відкриється від 10 слів рівня «mid»+' : 'Unlocks at 10+ mid-stage words',
+      path:        '/fill-sentences',
+      color:       'border-purple-100 hover:border-purple-300',
+      iconBg:      'bg-purple-50',
+      disabled:    blankable < 10,
     },
     {
       id: 'sentence-writing',

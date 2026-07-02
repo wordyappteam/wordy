@@ -1,29 +1,48 @@
+import { parseSentenceSet } from './sentenceSet'
+
+// Transient statuses worth an automatic retry: rate-limit, overload, gateway blips.
+const RETRYABLE = [429, 500, 502, 503, 504, 529]
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
 async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTokens = 1024 }) {
   // In dev: Vite proxies /api/anthropic/v1/messages → Anthropic directly (vite.config.js)
   // In prod (Vercel): /api/anthropic is a serverless function that proxies the request
   const endpoint = import.meta.env.DEV
     ? '/api/anthropic/v1/messages'
     : '/api/anthropic'
+  const body = JSON.stringify({ model, max_tokens: maxTokens, system, messages })
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }),
-  })
+  // A single overload/network blip used to surface as a hard failure ("Could not
+  // identify this word"). Retry transient errors a few times with backoff+jitter
+  // so they self-heal instead of bothering the user.
+  const attempts = 3
+  let lastErr
+  for (let i = 0; i < attempts; i++) {
+    let res
+    try {
+      res = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body })
+    } catch (netErr) {
+      lastErr = netErr                                    // network error — retry
+      if (i < attempts - 1) { await sleep(400 * 2 ** i + Math.random() * 200); continue }
+      throw netErr
+    }
 
-  if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json()
+      return data.content[0].text
+    }
+
     const err = await res.json().catch(() => ({}))
-    console.error('Claude proxy error:', err)
     const e = new Error(err?.error?.message ?? `HTTP ${res.status}`)
     e.status = res.status
     // Overload / rate-limit / transient gateway errors → caller can show a
     // friendlier "AI is busy, try again" message and let the user retry.
-    e.overloaded = [429, 500, 502, 503, 504, 529].includes(res.status)
+    e.overloaded = RETRYABLE.includes(res.status)
+    if (e.overloaded && i < attempts - 1) { lastErr = e; await sleep(400 * 2 ** i + Math.random() * 200); continue }
+    console.error('Claude proxy error:', err)
     throw e
   }
-
-  const data = await res.json()
-  return data.content[0].text
+  throw lastErr
 }
 
 // ── Word identification ────────────────────────────────────────────────────
@@ -148,9 +167,9 @@ Return ONLY this JSON:
       "register": "neutral|formal|informal|colloquial|slang|archaic|vulgar",
       "cefr": "A1|A2|B1|B2|C1|C2",
       "examples": [
-        { "target": "natural ${targetLanguage} example", "translation": "${ifaceLang} translation", "tense": "present|past|null" },
-        { "target": "...", "translation": "...", "tense": "..." },
-        { "target": "...", "translation": "...", "tense": "..." }
+        { "target": "natural ${targetLanguage} example", "translation": "${ifaceLang} translation", "tense": "present|past|null", "blank": "the target word EXACTLY as written in target, including its inflected form" },
+        { "target": "...", "translation": "...", "tense": "...", "blank": "..." },
+        { "target": "...", "translation": "...", "tense": "...", "blank": "..." }
       ],
       "conjugation": null
     }
@@ -162,6 +181,7 @@ Rules:
 ${nounArticleRule}
 - isException: true only for irregular verbs, exceptional grammar, or fixed collocations
 - Always include exactly 3 example sentences per sense
+- For each example, "blank" must be the single target word copied verbatim from "target", in the exact inflected form used there (e.g. target "Sie isst ein Ei" → blank "isst"; for nouns include no article, e.g. blank "Hund" not "den Hund")
 - Keep example sentences positive and everyday — avoid war, death, violence, illness, accidents, or tragedy unless the word itself specifically relates to such topics
 - For verbs: present, past, one varied — set "tense" accordingly. For nouns/adj/other: "tense": null
 - register: language register for this specific sense. Use "neutral" for everyday vocabulary with no special register
@@ -449,14 +469,21 @@ They wrote this ${targetLanguage} sentence:
 
 Evaluate it and return exactly this JSON:
 {
+  "meaningCorrect": true or false,
+  "formCorrect": true or false,
   "isCorrect": true or false,
   "corrected": "the corrected sentence (identical to input if already correct)",
   "feedback": "your feedback in ${interfaceLanguage}"
 }
 
+Judge meaning and form SEPARATELY:
+- "meaningCorrect": true if the sentence uses "${word}" with its correct meaning and is comprehensible — i.e. the student clearly knows what the word means and used it appropriately — EVEN IF there are grammar or spelling mistakes. False if the word is misused, means something else here, or the sentence doesn't use "${word}" at all.
+- "formCorrect": true if the sentence is grammatically and orthographically correct (cases, endings, gender, word order, spelling, compounding, punctuation). False if there is any such error.
+- "isCorrect": true only if BOTH meaningCorrect AND formCorrect are true.
+
 Feedback format rules:
-- If correct: one short encouraging sentence confirming it's right. Max 15 words.
-- If incorrect: list each mistake as a numbered point. Max 3 points. Example format:
+- If both correct: one short encouraging sentence confirming it's right. Max 15 words.
+- Otherwise: list each mistake as a numbered point. Max 3 points. Example format:
   1. "träume Stelle" → **Traumstelle** — nouns form compounds in German; write as one word, capitalised.
   2. Missing comma before **zu bewerben** — infinitive clauses with "zu" need a comma.
 - Wrap corrections and key grammar terms in **double asterisks** so they render bold
@@ -464,9 +491,7 @@ Feedback format rules:
 - Be direct — name the case, ending, or rule. No filler phrases, no "Great try"
 
 Other rules:
-- isCorrect is true only if the sentence is grammatically correct AND uses the target word naturally
-- Correct minor typos in "corrected" too
-- If the sentence doesn't use the target word at all, isCorrect is false`
+- Correct minor typos in "corrected" too`
 
   const text = await callClaude({
     system,
@@ -547,4 +572,48 @@ Write in ${interfaceLanguage}. Be specific and factual.`
   const match = clean.match(/\{[\s\S]*\}/)
   if (!match) throw new Error('No JSON found in memory response')
   return JSON.parse(match[0])
+}
+
+// ── Sentence-set practice (target-aware fill-the-sentences) ──────────────────
+export async function generateSentenceSet(words, { targetLanguage = "German", interfaceLanguage = "English", theme = null } = {}) {
+  const list = words.map((w, i) => `${i + 1}. ${w.lemma} (${w.translation}) [${w.pos}]`).join("\n")
+  const themeLine = theme ? `Theme/topic to weave in if natural: "${theme}".` : "No fixed theme."
+
+  const system = `You create ${targetLanguage} fill-in-the-blank practice. Return ONLY valid JSON — no markdown, no code fences.`
+
+  const prompt = `Make a "fill the sentences" exercise in ${targetLanguage} for these words:
+${list}
+
+${themeLine}
+
+Rules:
+- Write exactly 5 short, natural, SELF-CONTAINED sentences. They do NOT need to connect to each other.
+- Each sentence has exactly ONE blank marked with ___ , filled by ONE of the words above.
+- CRITICAL — one right answer per blank: give enough specific context (who/what/where, collocations) that ONLY the intended word fits. No other word in the list — answer word OR distractor — may plausibly complete the blank. If two listed words could both fit (e.g. two colours, two adjectives), add detail until only one does.
+- CRITICAL — force the form: the grammar around the blank must require a SINGLE correct inflection. Use agreement, articles, quantifiers and number/tense cues so exactly one form is grammatical. If both singular and plural (or two tenses) would read naturally in the blank, rewrite the sentence until only one is correct.
+- Use 5 different words from the list for the 5 blanks; the remaining listed words become distractors.
+- The blank uses the word in the form the sentence needs (conjugated / declined). Keep articles and prepositions visible — blank only the content word.
+- Blank a real content word — a head noun, a main/finite verb, or an adjective in its normal spot (an adjective before its noun, like "the brazen doorknob", is fine). Do NOT blank a NOUN used as a modifier of another noun (avoid "lilac blossoms", "stone wall", where the blank isn't the head and can't inflect).
+- "bank" = base/infinitive forms of all answer words PLUS 2 plausible distractor base forms (7 chips total).
+- For every sentence return: target-language "text" with ___, the "senseId" of the word used, "answerLemma" (base form), "answerForm" (exact form that fills the blank), a short "hint", and a one-line "explanation".
+- "hint" = a PLAIN, everyday nudge about the expected FORM only, max ~5 words, no grammar jargon. Use terms learners know: "plural", "past tense", "infinitive" (prefer "infinitive" over "base form"). Only name a grammatical case when ${targetLanguage} marks case. Describe ONLY the blanked word's own form — never another word's agreement, and never the meaning.
+- If the blanked word is in its plain base form (unchanged from the bank word): for an English adjective or adverb (these never inflect), set "hint" to just its part of speech — "adjective" or "adverb"; for a noun or verb that simply doesn't change here (e.g. a mass noun like "mustard"), set "hint" to null. Never invent grammatical detail, and never call an English adjective "singular"/"plural".
+- Write "hint" and "explanation" in ${interfaceLanguage}. Keep explanations POS-shaped: nouns → gender/case/plural; verbs → tense/person; adjectives → declension.
+- Everything except hint/explanation must be in ${targetLanguage}.
+
+Return JSON exactly:
+{
+  "bank": [ { "lemma": "…", "senseId": "…" } ],
+  "sentences": [
+    { "text": "… ___ …", "senseId": "…", "answerLemma": "…", "answerForm": "…", "hint": "… or null", "explanation": "…" }
+  ]
+}`
+
+  const text = await callClaude({
+    system,
+    messages: [{ role: "user", content: prompt }],
+    model: "claude-haiku-4-5",
+    maxTokens: 2048,
+  })
+  return parseSentenceSet(text)
 }

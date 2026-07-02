@@ -30,27 +30,6 @@ function speak(text, lang = 'de-DE') {
   window.speechSynthesis.speak(u)
 }
 
-// ── Spaced repetition helpers ──────────────────────────────────────────────
-
-const STAGE_ORDER    = ['new', 'early', 'mid', 'late', 'known', 'mastered']
-const STAGE_INTERVAL = { new: 1, early: 2, mid: 4, late: 8, known: 14, mastered: 30 }
-
-function addDays(n) {
-  const d = new Date()
-  d.setDate(d.getDate() + n)
-  return d.toISOString().split('T')[0]
-}
-
-function computeSenseReview(stage, result) {
-  const i = STAGE_ORDER.indexOf(stage ?? 'new')
-  let newStage = stage ?? 'new'
-  if (result === 'easy')      newStage = STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)]
-  else if (result === 'difficult') newStage = STAGE_ORDER[Math.max(i - 1, 0)]
-  // 'almost' and 'practice' → no stage change
-  const interval = STAGE_INTERVAL[newStage] ?? 1
-  return { learning_stage: newStage, next_review_date: addDays(interval) }
-}
-
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function Flashcards() {
@@ -249,10 +228,6 @@ export default function Flashcards() {
     const card = cards[index]
     const next = [...results, { id: card.id, result }]
     setResults(next)
-
-    // Compute and save spaced rep on word_senses
-    const { learning_stage, next_review_date } = computeSenseReview(card.stage, result)
-    supabase.from('word_senses').update({ learning_stage, next_review_date }).eq('id', card.id).then()
 
     if (index + 1 >= cards.length) {
       setPhase('done')
