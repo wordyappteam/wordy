@@ -219,6 +219,59 @@ function antiCluster(items, keyOf, window) {
   return out
 }
 
+// ── Sequencing v2.1 helpers (spec: 2026-07-02-session-sequencing-design.md) ──
+
+// Split arr into ceil(n/maxSize) chunks of near-equal size, each <= maxSize.
+// Balanced so a 9-word pack becomes 3+3+3, never 4+4+1 with a runt tail.
+export function balancedChunks(arr, maxSize) {
+  if (arr.length === 0) return []
+  const n = Math.ceil(arr.length / maxSize)
+  const out = []
+  let start = 0
+  for (let i = 0; i < n; i++) {
+    const size = Math.ceil((arr.length - start) / (n - i))
+    out.push(arr.slice(start, start + size))
+    start += size
+  }
+  return out
+}
+
+// Pack index: 0..5 = stageOf(interval_step), 6 = leech-help (remedial tail).
+const LEECH_PACK = 6
+// Scaffold shape per mergeable pack: F = flashcard, C = context fill_blank.
+const PACK_RECIPE = ['F', 'FC', 'FC', 'C']
+const MERGE_MIN = 3
+
+// Group selected senses into stage packs (emission order), merging tiny
+// scaffolded packs (new/early/mid/late, <3 words) into the neighbor whose
+// scaffold recipe matches best. Known+ packs (test-only) and the leech-help
+// pack (deliberately tiny rescue tail, leechCap=2) never merge.
+export function packSenses(selected) {
+  const packOf = (s) => (s._remedial ? LEECH_PACK : stageOf(s.interval_step ?? 0))
+  const packs = Array.from({ length: 7 }, () => [])
+  for (const s of selected) packs[packOf(s)].push(s)
+
+  const recipeDist = (a, b) => {
+    const A = PACK_RECIPE[a], B = PACK_RECIPE[b]
+    return (A.includes('F') !== B.includes('F') ? 1 : 0) + (A.includes('C') !== B.includes('C') ? 1 : 0)
+  }
+  for (;;) {
+    const live = [0, 1, 2, 3].filter((p) => packs[p].length > 0)
+    const tiny = live.find((p) => packs[p].length < MERGE_MIN)
+    if (tiny === undefined || live.length < 2) break
+    const target = live
+      .filter((p) => p !== tiny)
+      .sort((a, b) =>
+        (recipeDist(tiny, a) - recipeDist(tiny, b)) ||
+        (Math.abs(a - tiny) - Math.abs(b - tiny)) ||
+        (a - b))[0]
+    packs[target].push(...packs[tiny])
+    packs[tiny] = []
+    packs[target].sort((a, b) => packOf(a) - packOf(b)) // stable: stage order, original order within stage
+  }
+  return packs.filter((p) => p.length > 0)
+}
+
 // ── Fill-in helpers (pure) ───────────────────────────────────────────────────
 export function nextExampleIndex(cursor, total) {
   if (!total || total < 1) return 0

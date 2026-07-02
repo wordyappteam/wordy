@@ -1,7 +1,7 @@
 // Pure-core SRS v2 tests. Run with: node --test src/lib/srs.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn } from './srs.js'
+import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn, balancedChunks, packSenses } from './srs.js'
 
 // ── Bug #1: fill_blank scaffold must carry the sense's examples ───────────────
 // The UI renders a context fill-blank from step.examples[0].target. If the
@@ -219,4 +219,75 @@ test('planSessionV2: chunks into blocks — block 1 is fully tested before block
   // index of the first encode step whose sense is NOT in block 1 (i.e. block 2)
   const secondBlockEncodeIdx = steps.findIndex(s => !s.graded && !firstBlockIds.has(s.senseId))
   assert.ok(firstBlockGradedIdx < secondBlockEncodeIdx, 'block 1 must be graded before block 2 encodes')
+})
+
+// ── Sequencing v2.1: balanced chunks ──────────────────────────────────────────
+// Spec: docs/superpowers/specs/2026-07-02-session-sequencing-design.md
+
+test('balancedChunks: splits into near-equal cycles, never a runt tail', () => {
+  const arr = (n) => Array.from({ length: n }, (_, i) => i)
+  assert.deepEqual(balancedChunks(arr(12), 4).map((c) => c.length), [4, 4, 4])
+  assert.deepEqual(balancedChunks(arr(7), 4).map((c) => c.length), [4, 3])
+  assert.deepEqual(balancedChunks(arr(9), 4).map((c) => c.length), [3, 3, 3], 'never 4+4+1')
+  assert.deepEqual(balancedChunks(arr(3), 4).map((c) => c.length), [3])
+  assert.deepEqual(balancedChunks([], 4), [])
+  assert.deepEqual(balancedChunks(arr(7), 4).flat(), arr(7), 'order preserved')
+})
+
+// Shared factory for sequencing tests. `step` fixes the stage; new senses have
+// last_reviewed null + step 0; everything else is due today or earlier.
+const seqSense = (id, step, opts = {}) => ({
+  id: `s${id}`, word_id: opts.wordId ?? `w${id}`, interval_step: step,
+  last_reviewed: opts.isNew ? null : '2026-06-01',
+  next_review_date: opts.isNew ? null : (opts.due ?? '2026-06-20'),
+  is_leech: opts.leech ?? false,
+  word_form: `wort${id}`, translation: `t${id}`, pos: 'noun',
+  examples: [{ target: `Ein Satz mit wort${id}.`, native: 'x' }],
+})
+
+// ── Sequencing v2.1: stage packs + tiny-pack merge ────────────────────────────
+
+test('packSenses: buckets in pack order new -> early -> mid -> late -> known+ -> leech', () => {
+  const selected = [
+    seqSense(1, 6),                       // known
+    seqSense(2, 3),                       // mid
+    seqSense(3, 3),                       // mid
+    seqSense(4, 3),                       // mid
+    seqSense(5, 0, { isNew: true }),      // new
+    seqSense(6, 0, { isNew: true }),      // new
+    seqSense(7, 0, { isNew: true }),      // new
+    { ...seqSense(8, 1, { leech: true }), _remedial: true }, // leech-help
+  ]
+  const packs = packSenses(selected)
+  const stagesPerPack = packs.map((p) => p.map((s) => (s._remedial ? 'leech' : String(s.interval_step))))
+  // new(3) stays, mid(3) stays, known(1) is exempt from merging, leech last.
+  assert.deepEqual(stagesPerPack, [['0', '0', '0'], ['3', '3', '3'], ['6'], ['leech']])
+})
+
+test('packSenses: a tiny early pack merges into mid (identical recipe), stage-ordered', () => {
+  const selected = [
+    seqSense(1, 3), seqSense(2, 3), seqSense(3, 3), seqSense(4, 3), // 4 mid
+    seqSense(5, 1),                                                 // 1 early
+  ]
+  const packs = packSenses(selected)
+  assert.equal(packs.length, 1, 'early folds into mid')
+  assert.deepEqual(packs[0].map((s) => s.id), ['s5', 's1', 's2', 's3', 's4'], 'early first (stage order)')
+})
+
+test('packSenses: leech-help and known+ packs never merge, even when tiny', () => {
+  const selected = [
+    seqSense(1, 3), seqSense(2, 3), seqSense(3, 3), // 3 mid (not tiny)
+    seqSense(4, 6),                                 // 1 known
+    { ...seqSense(5, 2, { leech: true }), _remedial: true }, // 1 leech
+  ]
+  const packs = packSenses(selected)
+  assert.equal(packs.length, 3)
+  assert.equal(packs[1].length, 1, 'known+ pack of 1 stays')
+  assert.ok(packs[2][0]._remedial, 'leech-help stays a distinct tail')
+})
+
+test('packSenses: a 1-2 word session yields a single tiny pack (nothing to merge with)', () => {
+  const packs = packSenses([seqSense(1, 1)])
+  assert.equal(packs.length, 1)
+  assert.equal(packs[0].length, 1)
 })
