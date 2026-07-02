@@ -10,6 +10,7 @@ import {
   WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
 } from '../components/ExerciseIcons'
 import { collectionColor } from '../lib/collections'
+import { remainingNewToday } from '../lib/dailyNew'
 
 function CollectionIcon({ size = 20 }) {
   return (
@@ -219,6 +220,10 @@ export default function Dashboard() {
     { type: lang === 'uk' ? 'Написання речень'       : 'Sentence writing',    Icon: SentenceWritingIcon, path: '/sentence-writing', count: total },
   ].filter(Boolean)
 
+  // What the "learn N new?" CTA may honestly offer: capped by the same per-day
+  // budget the session planner enforces, so the button never opens an empty session.
+  const newOffer = Math.min(newAvailable, remainingNewToday(new Date().toISOString().split('T')[0]))
+
   return (
     <div className="min-h-screen bg-[#F7F7FB]">
       <NavBar slot={
@@ -412,8 +417,10 @@ export default function Dashboard() {
           {/* Right (1 col) — stat cards + recent words */}
           <div className="flex flex-col gap-4 h-full order-first lg:order-none">
 
-            {/* Primary Start CTA */}
-            <div className={dueToday > 0 || newAvailable > 0
+            {/* Primary Start CTA. The "learn N new?" offer must respect the
+                per-day new budget the session planner enforces (dailyNew) —
+                otherwise it offers a session the planner returns empty. */}
+            <div className={dueToday > 0 || newOffer > 0
               ? 'rounded-3xl p-5 bg-indigo-600 shadow-lg shadow-indigo-200'
               : 'rounded-3xl p-6 bg-white border border-gray-100 shadow-sm'}
             >
@@ -426,12 +433,12 @@ export default function Dashboard() {
                 >
                   {lang === 'uk' ? `Почати — ${Math.min(dueToday, 18)} сьогодні` : `Start — ${Math.min(dueToday, 18)} today`}
                 </button>
-              ) : newAvailable > 0 ? (
+              ) : newOffer > 0 ? (
                 <button
                   onClick={() => navigate('/session')}
                   className="w-full bg-brand-yellow text-gray-900 text-sm font-bold py-3 rounded-xl hover:bg-yellow-300 transition-colors"
                 >
-                  {lang === 'uk' ? `Ви все опрацювали — вивчити ${Math.min(newAvailable, 7)} нових?` : `You're caught up — learn ${Math.min(newAvailable, 7)} new?`}
+                  {lang === 'uk' ? `Ви все опрацювали — вивчити ${newOffer} нових?` : `You're caught up — learn ${newOffer} new?`}
                 </button>
               ) : (
                 <p className="text-sm text-gray-500 text-center">

@@ -12,7 +12,7 @@ import { reviewSentence } from '../lib/claude'
 import { planSessionV2, sentenceOutcome, firstFillBlank, gradeFillIn } from '../lib/srs'
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
-import { getNewToday, addNewToday } from '../lib/dailyNew'
+import { getNewToday, addNewToday, NEW_PER_DAY } from '../lib/dailyNew'
 
 // ── grading helpers ──────────────────────────────────────────────────────────
 const norm = (s) => (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -332,7 +332,7 @@ export default function SessionV2() {
       today: todayISO,
       gradedCap: 18,
       blockSize: 4,
-      newPerDay: 7,
+      newPerDay: NEW_PER_DAY,
       newToday: getNewToday(todayISO),
     })
     return { senses, plan }
