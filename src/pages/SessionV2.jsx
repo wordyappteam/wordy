@@ -331,7 +331,7 @@ export default function SessionV2() {
     const plan = planSessionV2(senses, {
       today: todayISO,
       gradedCap: 18,
-      blockSize: 5,
+      blockSize: 4,
       newPerDay: 7,
       newToday: getNewToday(todayISO),
     })
