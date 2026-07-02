@@ -142,7 +142,7 @@ export function planSessionV2(senses, opts = {}) {
     gradedCap = capForBudget(timeBudget),
     newPerDay = 7,
     newToday = 0,
-    blockSize = 5,
+    blockSize = 4,
     leechCap = 2,
     antiClusterWindow = 2,
   } = opts
@@ -171,27 +171,29 @@ export function planSessionV2(senses, opts = {}) {
   const selected = [...reviewTake, ...leechTake, ...newTake]
   if (selected.length === 0) return []
 
-  // Build steps in blocks: for each block of ~blockSize senses, encode then test.
-  // This gives a predictable cadence with spacing preserved within blocks.
+  // Sequencing v2.1: stage packs -> balanced encode->test cycles -> type
+  // phases (all flashcards, then all context cards, then all tests; same
+  // word order per phase). Spec: 2026-07-02-session-sequencing-design.md.
   const display = (s) => ({ word: s.word_form ?? s.word ?? '', translation: s.translation ?? '' })
   const out = []
-  for (let i = 0; i < selected.length; i += blockSize) {
-    const block = selected.slice(i, i + blockSize)
-    const scaffoldSteps = []
-    const gradedSteps = []
-    for (const s of block) {
-      const step = s.interval_step ?? 0
-      const remedial = !!s._remedial
-      const base = { senseId: s.id, wordId: s.word_id, pos: s.pos, examples: s.examples ?? [], remedial, direction: directionFor(step), stage: stageName(step), newIntake: isNew(s), ...display(s) }
-      for (const ex of (remedial ? ['flashcard'] : scaffoldFor(step))) {
-        scaffoldSteps.push({ ...base, exercise: ex, graded: false })
+  for (const pack of packSenses(selected)) {
+    for (const chunk of balancedChunks(pack, blockSize)) {
+      const flash = [], ctx = [], tests = []
+      for (const s of chunk) {
+        const step = s.interval_step ?? 0
+        const remedial = !!s._remedial
+        const base = { senseId: s.id, wordId: s.word_id, pos: s.pos, examples: s.examples ?? [], remedial, direction: directionFor(step), stage: stageName(step), newIntake: isNew(s), ...display(s) }
+        const scaffolds = remedial ? ['flashcard'] : scaffoldFor(step)
+        if (scaffolds.includes('flashcard')) flash.push({ ...base, exercise: 'flashcard', graded: false })
+        if (scaffolds.includes('fill_blank')) ctx.push({ ...base, exercise: 'fill_blank', graded: false })
+        tests.push({ ...base, exercise: remedial ? 'word_choice' : gradedExerciseFor(step), graded: true })
       }
-      gradedSteps.push({ ...base, exercise: remedial ? 'word_choice' : gradedExerciseFor(step), graded: true })
+      out.push(
+        ...antiCluster(flash, (x) => x.wordId, antiClusterWindow),
+        ...antiCluster(ctx, (x) => x.wordId, antiClusterWindow),
+        ...antiCluster(tests, (x) => x.wordId, antiClusterWindow),
+      )
     }
-    out.push(
-      ...antiCluster(scaffoldSteps, (x) => x.wordId, antiClusterWindow),
-      ...antiCluster(gradedSteps, (x) => x.wordId, antiClusterWindow),
-    )
   }
   return out
 }

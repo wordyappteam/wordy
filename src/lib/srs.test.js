@@ -291,3 +291,100 @@ test('packSenses: a 1-2 word session yields a single tiny pack (nothing to merge
   assert.equal(packs.length, 1)
   assert.equal(packs[0].length, 1)
 })
+
+// ── Sequencing v2.1: planner emits stage packs in type phases ─────────────────
+
+// Split the flat step list into encode->test cycles: a new cycle starts when a
+// non-graded step follows a graded one. (Consecutive test-only cycles fuse into
+// one graded run — fine for these assertions.)
+function cyclesOf(steps) {
+  const cycles = []
+  let cur = []
+  for (const st of steps) {
+    if (cur.length && !st.graded && cur[cur.length - 1].graded) { cycles.push(cur); cur = [] }
+    cur.push(st)
+  }
+  if (cur.length) cycles.push(cur)
+  return cycles
+}
+
+// A mixed deterministic roster: no new words (they are shuffled), so order
+// assertions are stable. 1 early + 5 mid + 1 late + 1 known + 2 leeches.
+function mixedRoster() {
+  return [
+    seqSense(1, 1),                    // early (tiny -> merges into mid)
+    seqSense(2, 3), seqSense(3, 3), seqSense(4, 4), seqSense(5, 4), seqSense(6, 3), // 5 mid
+    seqSense(7, 5),                    // late (tiny -> merges into mid pack too)
+    seqSense(8, 6),                    // known
+    seqSense(9, 2, { leech: true }),   // leech
+    seqSense(10, 2, { leech: true }),  // leech
+  ]
+}
+
+test('planSessionV2: card types never interleave — every cycle is flashcards, then context, then tests', () => {
+  const steps = planSessionV2(mixedRoster(), { today: '2026-07-02', gradedCap: 18, blockSize: 4 })
+  for (const cycle of cyclesOf(steps)) {
+    const kinds = cycle.map((s) => (s.graded ? 'G' : s.exercise === 'flashcard' ? 'F' : 'C')).join('')
+    assert.match(kinds, /^F*C*G+$/, `phases must not interleave, got: ${kinds}`)
+  }
+})
+
+test('planSessionV2: within a cycle, a context card always follows its own flashcard (when the recipe has one)', () => {
+  const steps = planSessionV2(mixedRoster(), { today: '2026-07-02', gradedCap: 18, blockSize: 4 })
+  for (const cycle of cyclesOf(steps)) {
+    for (const ctx of cycle.filter((s) => s.exercise === 'fill_blank')) {
+      if (ctx.stage === 'late') continue // late recipe has no flashcard by design
+      const flashIdx = cycle.findIndex((s) => s.exercise === 'flashcard' && s.senseId === ctx.senseId)
+      const ctxIdx = cycle.indexOf(ctx)
+      assert.ok(flashIdx !== -1 && flashIdx < ctxIdx, `context for ${ctx.senseId} must follow its flashcard in the same cycle`)
+    }
+  }
+})
+
+test('planSessionV2: pack order is stage-ascending with leech-help last; tests within a cycle are stage-ordered', () => {
+  const steps = planSessionV2(mixedRoster(), { today: '2026-07-02', gradedCap: 18, blockSize: 4 })
+  const graded = steps.filter((s) => s.graded)
+  // Leech tests come last.
+  const firstLeech = graded.findIndex((s) => s.remedial)
+  assert.ok(firstLeech !== -1)
+  assert.ok(graded.slice(firstLeech).every((s) => s.remedial), 'all leech tests sit at the tail')
+  // Non-leech graded steps never decrease in stage rank.
+  const rank = { new: 0, early: 1, mid: 2, late: 3, known: 4, mastered: 5 }
+  const ranks = graded.filter((s) => !s.remedial).map((s) => rank[s.stage])
+  for (let i = 1; i < ranks.length; i++) {
+    assert.ok(ranks[i] >= ranks[i - 1], `stage rank must not decrease: ${ranks.join(',')}`)
+  }
+})
+
+test('planSessionV2: a big pack splits into balanced cycles of at most blockSize', () => {
+  const nine = Array.from({ length: 9 }, (_, i) => seqSense(i + 1, 3)) // 9 mid words
+  const steps = planSessionV2(nine, { today: '2026-07-02', gradedCap: 18, blockSize: 4 })
+  const cycles = cyclesOf(steps)
+  assert.deepEqual(cycles.map((c) => c.filter((s) => s.graded).length), [3, 3, 3], '9 -> 3+3+3, never 4+4+1')
+})
+
+test('planSessionV2: sequencing changes order only — selection set and graded exercises are unchanged', () => {
+  const roster = mixedRoster()
+  const steps = planSessionV2(roster, { today: '2026-07-02', gradedCap: 18, blockSize: 4 })
+  const graded = steps.filter((s) => s.graded)
+  assert.equal(new Set(graded.map((s) => s.senseId)).size, roster.length, 'every selected sense gets exactly one graded step')
+  for (const g of graded.filter((s) => !s.remedial)) {
+    const sense = roster.find((r) => r.id === g.senseId) // seqSense ids are already "s<N>"
+    assert.equal(g.exercise, gradedExerciseFor(sense.interval_step), 'graded exercise per stage unchanged')
+  }
+  assert.ok(graded.filter((s) => s.remedial).every((s) => s.exercise === 'word_choice'), 'leech test stays word_choice')
+})
+
+test('planSessionV2: sibling senses of one word are not adjacent within a phase when avoidable', () => {
+  const roster = [
+    seqSense(1, 3, { wordId: 'shared' }), seqSense(2, 3, { wordId: 'shared' }),
+    seqSense(3, 3), seqSense(4, 3),
+  ]
+  const steps = planSessionV2(roster, { today: '2026-07-02', gradedCap: 18, blockSize: 4 })
+  for (let i = 1; i < steps.length; i++) {
+    const a = steps[i - 1], b = steps[i]
+    if (a.graded === b.graded && a.exercise === b.exercise) {
+      assert.ok(!(a.wordId === 'shared' && b.wordId === 'shared'), 'sibling senses must not sit adjacent within a phase')
+    }
+  }
+})
