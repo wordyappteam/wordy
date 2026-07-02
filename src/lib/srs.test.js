@@ -1,7 +1,7 @@
 // Pure-core SRS v2 tests. Run with: node --test src/lib/srs.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn, balancedChunks, packSenses } from './srs.js'
+import { badgeForStage, planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn, balancedChunks, packSenses } from './srs.js'
 
 // ── Bug #1: fill_blank scaffold must carry the sense's examples ───────────────
 // The UI renders a context fill-blank from step.examples[0].target. If the
@@ -399,4 +399,18 @@ test("packSenses: multiple tiny scaffolded packs cascade-merge into one stage-or
   const packs = packSenses(selected)
   assert.equal(packs.length, 1, "four tiny stage packs collapse into one")
   assert.deepEqual(packs[0].map((s) => s.id), ["s4", "s3", "s2", "s1"], "merged pack is stage-ordered: new, early, mid, late")
+})
+
+// ── Dictionary status pill: derive from a sense's text stage ──────────────────
+// The legacy words.status column has no writers since the cutover; the pill
+// derives from the primary sense's learning_stage instead (badge vocabulary).
+test('badgeForStage maps sense text stages to the four pill values', () => {
+  assert.equal(badgeForStage('new'), 'new')
+  assert.equal(badgeForStage('early'), 'learning')
+  assert.equal(badgeForStage('mid'), 'learning')
+  assert.equal(badgeForStage('late'), 'learning')
+  assert.equal(badgeForStage('known'), 'known')
+  assert.equal(badgeForStage('mastered'), 'mastered')
+  assert.equal(badgeForStage(undefined), null, 'no sense stage -> null so callers can fall back')
+  assert.equal(badgeForStage('bogus'), null)
 })

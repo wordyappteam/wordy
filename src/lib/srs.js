@@ -26,6 +26,12 @@ export function stageOf(step) {
 }
 export function stageName(step) { return STAGE_NAMES[stageOf(step)] } // for word_senses.learning_stage
 export function badge(step) { return BADGE[stageOf(step)] }           // for UI badges
+// Badge from a stage's text name (word_senses.learning_stage). Null when the
+// name is unknown/absent so callers can fall back to legacy words.status.
+export function badgeForStage(stageText) {
+  const i = STAGE_NAMES.indexOf(stageText)
+  return i === -1 ? null : BADGE[i]
+}
 
 // ── Exercise plan per stage (research-aligned: TOPRA, productive, scaffold) ───
 // Direction flips to production (L1->L2) once form is established (mid+).
