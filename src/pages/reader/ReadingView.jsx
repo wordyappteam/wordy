@@ -7,9 +7,10 @@ import AaMenu from './AaMenu'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../lib/AuthContext'
 import { useLanguage } from '../../lib/i18n'
-import { useTargetLang } from '../../lib/TargetLangContext'
+import { useTargetLang, SUPPORTED_LANGUAGES } from '../../lib/TargetLangContext'
 import { identifyWord } from '../../lib/claude'
 import { normalizeWordForm } from '../../lib/readerText'
+import { resolveReaderLanguage } from '../../lib/readerLanguage'
 import WordPopup from './WordPopup'
 
 const AA_KEY = 'wordy-reader-aa'
@@ -37,10 +38,14 @@ export default function ReadingView({ book, onClose }) {
 
   const { user, profile } = useAuth()
   const { lang } = useLanguage()
-  const { targetLang, targetLanguageName } = useTargetLang()
+  const { targetLang } = useTargetLang()
+  // A reader is about its book's language: route word identify/save/highlight to
+  // the book's language when we support it, regardless of the app's active target.
+  const readerLang = resolveReaderLanguage(book.language, targetLang, SUPPORTED_LANGUAGES)
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
   const [translationLang, setTranslationLang] = useState(interfaceLanguage)
   const [knownWords, setKnownWords] = useState(new Set())
+  const [langBannerDismissed, setLangBannerDismissed] = useState(false)
   const [displayPct, setDisplayPct] = useState(0)
   const [popup, setPopup] = useState(null)
   const [lookup, setLookup] = useState(null)
@@ -51,9 +56,9 @@ export default function ReadingView({ book, onClose }) {
   useEffect(() => {
     if (!user) return
     supabase.from('word_senses').select('word_form')
-      .eq('user_id', user.id).eq('target_language', targetLang)
+      .eq('user_id', user.id).eq('target_language', readerLang.code)
       .then(({ data }) => { if (data) setKnownWords(new Set(data.map(r => normalizeWordForm(r.word_form)))) })
-  }, [user, targetLang])
+  }, [user, readerLang.code])
 
   // load chapter + its image blobs
   useEffect(() => {
@@ -139,11 +144,11 @@ export default function ReadingView({ book, onClose }) {
     setPopup({ word, sentence })
     setLookup({ status: 'loading' })
     try {
-      const result = await identifyWord(word, targetLanguageName, translationLang, sentence, { topics: profile?.topics ?? [] })
+      const result = await identifyWord(word, readerLang.name, translationLang, sentence, { topics: profile?.topics ?? [] })
       if (!result.senses?.length) throw new Error('No senses returned')
       const { data: existing, error: existErr } = await supabase.from('words')
         .select('id, word, status').eq('user_id', user.id)
-        .eq('target_language', targetLang).ilike('word', result.word).maybeSingle()
+        .eq('target_language', readerLang.code).ilike('word', result.word).maybeSingle()
       if (existErr) console.warn("existing-word lookup failed:", existErr)
       const existingStage = existing
         ? await supabase.from('word_senses').select('learning_stage').eq('word_id', existing.id).limit(1).maybeSingle()
@@ -156,7 +161,7 @@ export default function ReadingView({ book, onClose }) {
     } catch {
       setLookup({ status: 'error' })
     }
-  }, [targetLanguageName, translationLang, targetLang, user, profile])
+  }, [readerLang.name, readerLang.code, translationLang, user, profile])
 
   async function handleAddWord() {
     if (!lookup?.result || !popup) return
@@ -170,14 +175,14 @@ export default function ReadingView({ book, onClose }) {
         explanation: primary.explanation || null, is_exception: primary.isException || false,
         conjugation: primary.conjugation || null, entry_type: result.entryType, status: 'new',
         date_added: new Date().toISOString().split('T')[0],
-        target_language: targetLang, context_sentence: popup.sentence,
+        target_language: readerLang.code, context_sentence: popup.sentence,
       }).select('id').single()
       if (wordErr || !newWord?.id) throw (wordErr || new Error("words insert returned no id"))
 
       // Reader adds the word as used in this sentence — save only the contextual sense.
       if (newWord?.id && primary) {
         const { error: senseErr } = await supabase.from('word_senses').insert([primary].map(s => ({
-          word_id: newWord.id, user_id: user.id, target_language: targetLang,
+          word_id: newWord.id, user_id: user.id, target_language: readerLang.code,
           pos: s.pos, word_form: s.wordForm || result.word,
           aspect: s.aspect ?? null, gender: s.gender ?? null,
           translation: s.translation, form: s.form || null,
@@ -228,6 +233,13 @@ export default function ReadingView({ book, onClose }) {
             className="px-2.5 py-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-50 text-sm font-semibold">Aa</button>
         </div>
       </nav>
+
+      {readerLang.isMismatch && !langBannerDismissed && (
+        <div className="shrink-0 bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center justify-center gap-3 text-xs text-indigo-800">
+          <span>This book is in <strong>{readerLang.name}</strong> — tapped words go to your {readerLang.name} dictionary.</span>
+          <button onClick={() => setLangBannerDismissed(true)} className="text-indigo-400 hover:text-indigo-700 font-semibold shrink-0">Got it</button>
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col min-h-0 max-w-3xl w-full mx-auto px-8 py-6 cursor-default" onClick={handlePageClick}>
         {chapter ? (
