@@ -133,9 +133,10 @@ export default function ReadingView({ book, onClose }) {
     try {
       const result = await identifyWord(word, targetLanguageName, translationLang, sentence, { topics: profile?.topics ?? [] })
       if (!result.senses?.length) throw new Error('No senses returned')
-      const { data: existing } = await supabase.from('words')
+      const { data: existing, error: existErr } = await supabase.from('words')
         .select('id, word, status').eq('user_id', user.id)
         .eq('target_language', targetLang).ilike('word', result.word).maybeSingle()
+      if (existErr) console.warn("existing-word lookup failed:", existErr)
       const existingStage = existing
         ? await supabase.from('word_senses').select('learning_stage').eq('word_id', existing.id).limit(1).maybeSingle()
             .then(r => r.data?.learning_stage ?? 'new')
@@ -155,7 +156,7 @@ export default function ReadingView({ book, onClose }) {
     const result = lookup.result
     const primary = result.senses[0]
     try {
-      const { data: newWord } = await supabase.from('words').insert({
+      const { data: newWord, error: wordErr } = await supabase.from('words').insert({
         user_id: user.id, word: result.word, translation: primary.translation,
         pos: primary.pos, form: primary.form || null, grammar_note: primary.grammarNote || null,
         explanation: primary.explanation || null, is_exception: primary.isException || false,
@@ -163,10 +164,11 @@ export default function ReadingView({ book, onClose }) {
         date_added: new Date().toISOString().split('T')[0],
         target_language: targetLang, context_sentence: popup.sentence,
       }).select('id').single()
+      if (wordErr || !newWord?.id) throw (wordErr || new Error("words insert returned no id"))
 
       // Reader adds the word as used in this sentence — save only the contextual sense.
       if (newWord?.id && primary) {
-        await supabase.from('word_senses').insert([primary].map(s => ({
+        const { error: senseErr } = await supabase.from('word_senses').insert([primary].map(s => ({
           word_id: newWord.id, user_id: user.id, target_language: targetLang,
           pos: s.pos, word_form: s.wordForm || result.word,
           aspect: s.aspect ?? null, gender: s.gender ?? null,
@@ -176,6 +178,7 @@ export default function ReadingView({ book, onClose }) {
           cefr: s.cefr || null, conjugation: s.conjugation || null,
           examples: s.examples || [], learning_stage: 'new', correct_recall_count: 0,
         })))
+        if (senseErr) throw senseErr
       }
 
       setLookup(prev => ({ ...prev, status: 'added' }))
