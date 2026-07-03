@@ -233,7 +233,7 @@ export async function parseEpub(arrayBuffer, bookId, opts = {}) {
       const doc = parse(await zip.file(entry).async('text'), 'text/html')
       const body = findByLocalName(doc, 'body')[0] ?? doc.documentElement
       blocks = extractBlocks(body)
-    } catch (e) {
+    } catch {
       warnings.push(`Could not read section "${item.href}" — skipped.`)
       continue
     }
@@ -293,8 +293,12 @@ export async function parseEpub(arrayBuffer, bookId, opts = {}) {
   if (coverItem) {
     const entry = findZipEntry(entryNames, resolveHref(opfDir, coverItem.href))
     if (entry) {
-      coverImageId = `${bookId}-cover`
-      imagesByPath.set('__cover__' + entry, { id: coverImageId, blob: new Blob([await zip.file(entry).async('arraybuffer')]) })
+      if (imagesByPath.has(entry)) {
+        coverImageId = imagesByPath.get(entry).id
+      } else {
+        coverImageId = `${bookId}-cover`
+        imagesByPath.set('__cover__' + entry, { id: coverImageId, blob: new Blob([await zip.file(entry).async('arraybuffer')]) })
+      }
     }
   }
 

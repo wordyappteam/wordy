@@ -52,17 +52,6 @@ export async function getBooks() {
   return all.sort((a, b) => (b.lastReadAt ?? b.addedAt) - (a.lastReadAt ?? a.addedAt))
 }
 
-export async function getBook(id) {
-  const db = await openDb()
-  return idbReq(db.transaction('books', 'readonly').objectStore('books').get(id))
-}
-
-export async function getChapterList(bookId) {
-  const db = await openDb()
-  const all = await idbReq(db.transaction('chapters', 'readonly').objectStore('chapters').index('bookId').getAll(bookId))
-  return all.sort((a, b) => a.index - b.index).map(({ id, index, title }) => ({ id, index, title }))
-}
-
 export async function getChapter(bookId, index) {
   const db = await openDb()
   return idbReq(db.transaction('chapters', 'readonly').objectStore('chapters').get(`${bookId}-${index}`))

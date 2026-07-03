@@ -33,6 +33,7 @@ export default function ReadingView({ book, onClose }) {
   const [aaOpen, setAaOpen] = useState(false)
   const paginatorRef = useRef(null)
   const pendingLastPage = useRef(false)
+  const currentBlockRef = useRef(book.lastBlockOffset ?? 0)
 
   const { user, profile } = useAuth()
   const { lang } = useLanguage()
@@ -40,6 +41,7 @@ export default function ReadingView({ book, onClose }) {
   const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
   const [translationLang, setTranslationLang] = useState(interfaceLanguage)
   const [knownWords, setKnownWords] = useState(new Set())
+  const [displayPct, setDisplayPct] = useState(0)
   const [popup, setPopup] = useState(null)
   const [lookup, setLookup] = useState(null)
   const [adding, setAdding] = useState(false)
@@ -88,6 +90,8 @@ export default function ReadingView({ book, onClose }) {
   useEffect(() => {
     if (!chapter) return
     const blockOffset = paginatorRef.current?.firstBlockOfPage(page) ?? 0
+    currentBlockRef.current = blockOffset
+    setDisplayPct(bookProgress(book.chapterBlockCounts ?? [], chapterIndex, blockOffset))
     updateProgress(book.id, chapterIndex, blockOffset)
   }, [book.id, chapter, chapterIndex, page])
 
@@ -124,6 +128,7 @@ export default function ReadingView({ book, onClose }) {
 
   function handlePageClick(e) {
     if (tocOpen || aaOpen) { setTocOpen(false); setAaOpen(false); return }
+    if (popup) { setPopup(null); setLookup(null); return }
     const rect = e.currentTarget.getBoundingClientRect()
     const x = (e.clientX - rect.left) / rect.width
     if (x < 0.2) prevPage()
@@ -198,8 +203,6 @@ export default function ReadingView({ book, onClose }) {
     setAdding(false)
   }
 
-  const pct = bookProgress(book.chapterBlockCounts ?? [], chapterIndex,
-    paginatorRef.current?.firstBlockOfPage(page) ?? 0)
   const chapterLabel = tocLabelFor(book.toc ?? [], chapterIndex) || chapter?.title || `Chapter ${chapterIndex + 1}`
 
   return (
@@ -241,6 +244,7 @@ export default function ReadingView({ book, onClose }) {
             onWordTap={handleWordTap}
             highlighted={popup?.word?.toLowerCase() ?? null}
             knownWords={knownWords}
+            onResize={() => setAnchorBlock(currentBlockRef.current)}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -254,8 +258,12 @@ export default function ReadingView({ book, onClose }) {
       </div>
 
       <div className="shrink-0 px-8 pb-3 pt-1 max-w-3xl w-full mx-auto flex items-center justify-between text-xs text-gray-400">
-        <span>{`page ${page + 1} of ${pages} in chapter`}</span>
-        <span>{`${pct}%`}</span>
+        {chapter && (
+          <>
+            <span>{`page ${page + 1} of ${pages} in chapter`}</span>
+            <span>{`${displayPct}%`}</span>
+          </>
+        )}
       </div>
 
       {tocOpen && (

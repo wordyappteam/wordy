@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect, useEffect, forwardRef, useImperativeHandle } from 'react'
+import { useState, useRef, useLayoutEffect, forwardRef, useImperativeHandle } from 'react'
 import { pageCount, pageOffset, pageOfOffsetLeft, clampPage } from '../../lib/pagination'
 import Block from './Block'
 
@@ -7,18 +7,24 @@ export const COLUMN_GAP = 56
 const SERIF = 'Georgia, "Times New Roman", serif'
 
 const Paginator = forwardRef(function Paginator(
-  { blocks, imageSrcs, typography, lang, page, anchorBlock, onMeasure, onAnchorResolve, onWordTap, highlighted, knownWords },
+  { blocks, imageSrcs, typography, lang, page, anchorBlock, onMeasure, onAnchorResolve, onWordTap, highlighted, knownWords, onResize },
   ref
 ) {
   const viewportRef = useRef(null)
   const contentRef = useRef(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const countRef = useRef(1)
+  const prevWidthRef = useRef(0)
 
   useLayoutEffect(() => {
     const el = viewportRef.current
     if (!el) return
-    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight })
+    const measure = () => {
+      const w = el.clientWidth, h = el.clientHeight
+      if (prevWidthRef.current !== 0 && prevWidthRef.current !== w) onResize?.()
+      prevWidthRef.current = w
+      setSize({ w, h })
+    }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
