@@ -38,6 +38,7 @@ export default function ReadingView({ book, onClose }) {
       for (const b of ch.blocks) {
         if (b.type === 'image' && b.imageId && !srcs[b.imageId]) {
           const rec = await getImage(b.imageId)
+          if (cancelled) break
           if (rec?.blob) { const u = URL.createObjectURL(rec.blob); urls.push(u); srcs[b.imageId] = u }
         }
       }
@@ -65,11 +66,13 @@ export default function ReadingView({ book, onClose }) {
   }, [book.id, chapter, chapterIndex, page])
 
   function nextPage() {
+    if (!chapter) return
     if (page < pages - 1) setPage(page + 1)
     else if (chapterIndex < book.chapterCount - 1) { setAnchorBlock(null); setChapter(null); setPage(0); setChapterIndex(chapterIndex + 1) }
   }
 
   function prevPage() {
+    if (!chapter) return
     if (page > 0) setPage(page - 1)
     else if (chapterIndex > 0) { setAnchorBlock(null); setChapter(null); pendingLastPage.current = true; setChapterIndex(chapterIndex - 1) }
   }
