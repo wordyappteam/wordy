@@ -1,17 +1,21 @@
 const DB_NAME = 'wordy-reader'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = (e) => {
       const db = e.target.result
-      if (!db.objectStoreNames.contains('books'))
-        db.createObjectStore('books', { keyPath: 'id' })
-      if (!db.objectStoreNames.contains('chapters')) {
-        const cs = db.createObjectStore('chapters', { keyPath: 'id' })
-        cs.createIndex('bookId', 'bookId', { unique: false })
+      // v2 = clean slate (approved): the v1 flattened-text blocks cannot be
+      // upgraded to rich blocks, so old stores are dropped and recreated.
+      for (const name of ['books', 'chapters', 'images']) {
+        if (db.objectStoreNames.contains(name)) db.deleteObjectStore(name)
       }
+      db.createObjectStore('books', { keyPath: 'id' })
+      const cs = db.createObjectStore('chapters', { keyPath: 'id' })
+      cs.createIndex('bookId', 'bookId', { unique: false })
+      const is = db.createObjectStore('images', { keyPath: 'id' })
+      is.createIndex('bookId', 'bookId', { unique: false })
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -33,58 +37,50 @@ function txDone(t) {
   })
 }
 
-export async function saveBook(book, chapters) {
+export async function saveBook(book, chapters, images = []) {
   const db = await openDb()
-  const t = db.transaction(['books', 'chapters'], 'readwrite')
+  const t = db.transaction(['books', 'chapters', 'images'], 'readwrite')
   t.objectStore('books').put(book)
   for (const ch of chapters) t.objectStore('chapters').put(ch)
+  for (const img of images) t.objectStore('images').put({ id: img.id, bookId: book.id, blob: img.blob })
   return txDone(t)
 }
 
 export async function getBooks() {
   const db = await openDb()
-  const t = db.transaction('books', 'readonly')
-  const all = await idbReq(t.objectStore('books').getAll())
+  const all = await idbReq(db.transaction('books', 'readonly').objectStore('books').getAll())
   return all.sort((a, b) => (b.lastReadAt ?? b.addedAt) - (a.lastReadAt ?? a.addedAt))
-}
-
-export async function getBook(id) {
-  const db = await openDb()
-  const t = db.transaction('books', 'readonly')
-  return idbReq(t.objectStore('books').get(id))
-}
-
-export async function getChapterList(bookId) {
-  const db = await openDb()
-  const t = db.transaction('chapters', 'readonly')
-  const all = await idbReq(t.objectStore('chapters').index('bookId').getAll(bookId))
-  return all.sort((a, b) => a.index - b.index).map(({ id, bookId: _b, index, title }) => ({ id, index, title }))
 }
 
 export async function getChapter(bookId, index) {
   const db = await openDb()
-  const t = db.transaction('chapters', 'readonly')
-  return idbReq(t.objectStore('chapters').get(`${bookId}-${index}`))
+  return idbReq(db.transaction('chapters', 'readonly').objectStore('chapters').get(`${bookId}-${index}`))
+}
+
+export async function getImage(id) {
+  const db = await openDb()
+  return idbReq(db.transaction('images', 'readonly').objectStore('images').get(id))
 }
 
 export async function deleteBook(id) {
   const db = await openDb()
-  const t1 = db.transaction('chapters', 'readonly')
-  const chapters = await idbReq(t1.objectStore('chapters').index('bookId').getAll(id))
-  const t2 = db.transaction(['books', 'chapters'], 'readwrite')
-  t2.objectStore('books').delete(id)
-  for (const ch of chapters) t2.objectStore('chapters').delete(ch.id)
-  return txDone(t2)
+  const chapters = await idbReq(db.transaction('chapters', 'readonly').objectStore('chapters').index('bookId').getAll(id))
+  const images = await idbReq(db.transaction('images', 'readonly').objectStore('images').index('bookId').getAll(id))
+  const t = db.transaction(['books', 'chapters', 'images'], 'readwrite')
+  t.objectStore('books').delete(id)
+  for (const ch of chapters) t.objectStore('chapters').delete(ch.id)
+  for (const img of images) t.objectStore('images').delete(img.id)
+  return txDone(t)
 }
 
-export async function updateProgress(bookId, chapterIndex, pageIndex = 0) {
+export async function updateProgress(bookId, chapterIndex, blockOffset = 0) {
   const db = await openDb()
   const t = db.transaction('books', 'readwrite')
   const store = t.objectStore('books')
   const book = await idbReq(store.get(bookId))
   if (book) {
     book.lastChapterIndex = chapterIndex
-    book.lastPageIndex = pageIndex
+    book.lastBlockOffset = blockOffset
     book.lastReadAt = Date.now()
     store.put(book)
   }

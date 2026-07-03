@@ -20,7 +20,7 @@ import SentenceWriting from './pages/SentenceWriting'
 import Exercises from './pages/Exercises'
 import SessionV2 from './pages/SessionV2'
 import Migrate from './pages/Migrate'
-import Reader from './pages/Reader'
+import Reader from './pages/reader'
 import FillSentences from './pages/FillSentences'
 
 // Wraps pages that require login
