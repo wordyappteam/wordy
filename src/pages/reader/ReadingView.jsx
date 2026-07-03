@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { getChapter, getImage, updateProgress } from '../../lib/readerDb'
 import { bookProgress, tocLabelFor, clampPage } from '../../lib/pagination'
 import Paginator from './Paginator'
+import TocDrawer from './TocDrawer'
+import AaMenu from './AaMenu'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../lib/AuthContext'
 import { useLanguage } from '../../lib/i18n'
@@ -104,6 +106,7 @@ export default function ReadingView({ book, onClose }) {
   }
 
   function jumpToChapter(i) {
+    setPopup(null); setLookup(null)
     setTocOpen(false)
     if (i === chapterIndex) return
     setAnchorBlock(null); setChapter(null); setPage(0); setChapterIndex(i)
@@ -255,7 +258,18 @@ export default function ReadingView({ book, onClose }) {
         <span>{`${pct}%`}</span>
       </div>
 
-      {/* TocDrawer and AaMenu mount here in Task 9 */}
+      {tocOpen && (
+        <TocDrawer toc={book.toc ?? []} currentChapter={chapterIndex}
+          onJump={jumpToChapter} onClose={() => setTocOpen(false)} />
+      )}
+      {aaOpen && (
+        <AaMenu aa={aa} onClose={() => setAaOpen(false)}
+          onChange={(next) => {
+            // capture the current position BEFORE reflow so the new layout re-anchors to it
+            setAnchorBlock(paginatorRef.current?.firstBlockOfPage(page) ?? 0)
+            setAa(next)
+          }} />
+      )}
 
       {popup && lookup && (
         <WordPopup tapped={popup} lookup={lookup} adding={adding}
