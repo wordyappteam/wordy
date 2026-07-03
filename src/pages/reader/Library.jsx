@@ -32,8 +32,10 @@ export default function Library({ onOpen }) {
     async function loadCovers() {
       const next = {}
       for (const b of books) {
+        if (cancelled) return
         if (!b.coverImageId) continue
         const rec = await getImage(b.coverImageId)
+        if (cancelled) return
         if (rec?.blob) { const u = URL.createObjectURL(rec.blob); urls.push(u); next[b.id] = u }
       }
       if (!cancelled) setCovers(next)

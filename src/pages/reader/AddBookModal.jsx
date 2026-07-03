@@ -20,7 +20,7 @@ export default function AddBookModal({ onClose, onSaved }) {
     if (!file) return
     setErrorMsg('')
     if (file.size > MAX_EPUB_BYTES) {
-      setErrorMsg(`This file is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 35 MB.`)
+      setErrorMsg(`This file is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is ${Math.round(MAX_EPUB_BYTES / 1024 / 1024)} MB.`)
       setStatus('error')
       return
     }
