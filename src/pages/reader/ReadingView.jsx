@@ -2,6 +2,13 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { getChapter, getImage, updateProgress } from '../../lib/readerDb'
 import { bookProgress, tocLabelFor, clampPage } from '../../lib/pagination'
 import Paginator from './Paginator'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../lib/AuthContext'
+import { useLanguage } from '../../lib/i18n'
+import { useTargetLang } from '../../lib/TargetLangContext'
+import { identifyWord } from '../../lib/claude'
+import { normalizeWordForm } from '../../lib/readerText'
+import WordPopup from './WordPopup'
 
 const AA_KEY = 'wordy-reader-aa'
 
@@ -25,7 +32,24 @@ export default function ReadingView({ book, onClose }) {
   const paginatorRef = useRef(null)
   const pendingLastPage = useRef(false)
 
+  const { user, profile } = useAuth()
+  const { lang } = useLanguage()
+  const { targetLang, targetLanguageName } = useTargetLang()
+  const interfaceLanguage = lang === 'uk' ? 'Ukrainian' : 'English'
+  const [translationLang, setTranslationLang] = useState(interfaceLanguage)
+  const [knownWords, setKnownWords] = useState(new Set())
+  const [popup, setPopup] = useState(null)
+  const [lookup, setLookup] = useState(null)
+  const [adding, setAdding] = useState(false)
+
   useEffect(() => { localStorage.setItem(AA_KEY, JSON.stringify(aa)) }, [aa])
+
+  useEffect(() => {
+    if (!user) return
+    supabase.from('word_senses').select('word_form')
+      .eq('user_id', user.id).eq('target_language', targetLang)
+      .then(({ data }) => { if (data) setKnownWords(new Set(data.map(r => normalizeWordForm(r.word_form)))) })
+  }, [user, targetLang])
 
   // load chapter + its image blobs
   useEffect(() => {
@@ -67,12 +91,14 @@ export default function ReadingView({ book, onClose }) {
 
   function nextPage() {
     if (!chapter) return
+    setPopup(null); setLookup(null)
     if (page < pages - 1) setPage(page + 1)
     else if (chapterIndex < book.chapterCount - 1) { setAnchorBlock(null); setChapter(null); setPage(0); setChapterIndex(chapterIndex + 1) }
   }
 
   function prevPage() {
     if (!chapter) return
+    setPopup(null); setLookup(null)
     if (page > 0) setPage(page - 1)
     else if (chapterIndex > 0) { setAnchorBlock(null); setChapter(null); pendingLastPage.current = true; setChapterIndex(chapterIndex - 1) }
   }
@@ -101,8 +127,70 @@ export default function ReadingView({ book, onClose }) {
     else if (x > 0.8) nextPage()
   }
 
-  // Task 8 wires the real word popup; until then taps are inert
-  const handleWordTap = useCallback(() => {}, [])
+  const handleWordTap = useCallback(async (word, sentence) => {
+    setPopup({ word, sentence })
+    setLookup({ status: 'loading' })
+    try {
+      const result = await identifyWord(word, targetLanguageName, translationLang, sentence, { topics: profile?.topics ?? [] })
+      if (!result.senses?.length) throw new Error('No senses returned')
+      const { data: existing } = await supabase.from('words')
+        .select('id, word, status').eq('user_id', user.id)
+        .eq('target_language', targetLang).ilike('word', result.word).maybeSingle()
+      const existingStage = existing
+        ? await supabase.from('word_senses').select('learning_stage').eq('word_id', existing.id).limit(1).maybeSingle()
+            .then(r => r.data?.learning_stage ?? 'new')
+        : null
+      setLookup({
+        status: 'ready', result,
+        existing: existing ? { id: existing.id, word: existing.word, stage: existingStage } : null,
+      })
+    } catch {
+      setLookup({ status: 'error' })
+    }
+  }, [targetLanguageName, translationLang, targetLang, user, profile])
+
+  async function handleAddWord() {
+    if (!lookup?.result || !popup) return
+    setAdding(true)
+    const result = lookup.result
+    const primary = result.senses[0]
+    try {
+      const { data: newWord } = await supabase.from('words').insert({
+        user_id: user.id, word: result.word, translation: primary.translation,
+        pos: primary.pos, form: primary.form || null, grammar_note: primary.grammarNote || null,
+        explanation: primary.explanation || null, is_exception: primary.isException || false,
+        conjugation: primary.conjugation || null, entry_type: result.entryType, status: 'new',
+        date_added: new Date().toISOString().split('T')[0],
+        target_language: targetLang, context_sentence: popup.sentence,
+      }).select('id').single()
+
+      // Reader adds the word as used in this sentence — save only the contextual sense.
+      if (newWord?.id && primary) {
+        await supabase.from('word_senses').insert([primary].map(s => ({
+          word_id: newWord.id, user_id: user.id, target_language: targetLang,
+          pos: s.pos, word_form: s.wordForm || result.word,
+          aspect: s.aspect ?? null, gender: s.gender ?? null,
+          translation: s.translation, form: s.form || null,
+          grammar_note: s.grammarNote || null, explanation: s.explanation || null,
+          is_exception: s.isException || false, register: s.register || 'neutral',
+          cefr: s.cefr || null, conjugation: s.conjugation || null,
+          examples: s.examples || [], learning_stage: 'new', correct_recall_count: 0,
+        })))
+      }
+
+      setLookup(prev => ({ ...prev, status: 'added' }))
+      setKnownWords(prev => {
+        const next = new Set(prev)
+        next.add(normalizeWordForm(primary.wordForm || result.word))
+        next.add(normalizeWordForm(result.word))
+        next.add(normalizeWordForm(popup.word))
+        return next
+      })
+    } catch (e) {
+      console.error('Add word error:', e)
+    }
+    setAdding(false)
+  }
 
   const pct = bookProgress(book.chapterBlockCounts ?? [], chapterIndex,
     paginatorRef.current?.firstBlockOfPage(page) ?? 0)
@@ -115,6 +203,14 @@ export default function ReadingView({ book, onClose }) {
         <div className="flex flex-col items-center min-w-0">
           <span className="text-sm font-semibold text-gray-800 truncate max-w-[220px]">{book.title}</span>
           <span className="text-xs text-gray-400 truncate max-w-[220px]">{chapterLabel}</span>
+        </div>
+        <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs font-semibold shrink-0">
+          {[{ code: 'English', label: 'EN' }, { code: 'Ukrainian', label: 'UA' }].map(({ code, label }) => (
+            <button key={code} onClick={() => setTranslationLang(code)}
+              className={`px-2.5 py-1 transition-colors ${translationLang === code ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-700'}`}>
+              {label}
+            </button>
+          ))}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button onClick={() => { setAaOpen(false); setTocOpen(o => !o) }} title="Contents"
@@ -137,8 +233,8 @@ export default function ReadingView({ book, onClose }) {
             onMeasure={handleMeasure}
             onAnchorResolve={handleAnchorResolve}
             onWordTap={handleWordTap}
-            highlighted={null}
-            knownWords={null}
+            highlighted={popup?.word?.toLowerCase() ?? null}
+            knownWords={knownWords}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -157,6 +253,11 @@ export default function ReadingView({ book, onClose }) {
       </div>
 
       {/* TocDrawer and AaMenu mount here in Task 9 */}
+
+      {popup && lookup && (
+        <WordPopup tapped={popup} lookup={lookup} adding={adding}
+          onAdd={handleAddWord} onClose={() => { setPopup(null); setLookup(null) }} />
+      )}
     </div>
   )
 }
