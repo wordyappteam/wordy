@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { useAuth } from './AuthContext'
 
 export const SUPPORTED_LANGUAGES = [
-  { code: 'de', label: 'DE', name: 'German',    speechLocale: 'de-DE', features: { prepositionDrills: true,  fillBlank: true,  multipleChoice: true  } },
+  { code: 'de', label: 'DE', name: 'German',    speechLocale: 'de-DE', features: { prepositionDrills: false, fillBlank: false, multipleChoice: false } },
   { code: 'en', label: 'EN', name: 'English',   speechLocale: 'en-US', features: { prepositionDrills: false, fillBlank: false, multipleChoice: false } },
   { code: 'uk', label: 'UK', name: 'Ukrainian', speechLocale: 'uk-UA', features: { prepositionDrills: false, fillBlank: false, multipleChoice: false } },
 ]
