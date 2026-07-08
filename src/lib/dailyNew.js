@@ -12,7 +12,8 @@ export function addNewToday(todayISO, n) {
 
 // The per-day new-word budget. Single source of truth: the session planner and
 // the Dashboard CTA must agree, or the CTA offers sessions the planner refuses.
-export const NEW_PER_DAY = 7
+// Raised 7 -> 12 for exam-prep reactivation pacing (dormant B2 vocab, ~54-day Studienkolleg deadline).
+export const NEW_PER_DAY = 12
 
 export function remainingNewToday(todayISO) {
   return Math.max(0, NEW_PER_DAY - getNewToday(todayISO))

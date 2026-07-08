@@ -20,7 +20,7 @@ test('remainingNewToday: full budget when nothing learned yet', () => {
 test('remainingNewToday: shrinks as new words are introduced, clamps at 0', () => {
   addNewToday('2026-07-02', 3)
   assert.equal(remainingNewToday('2026-07-02'), NEW_PER_DAY - 3)
-  addNewToday('2026-07-02', 4)
+  addNewToday('2026-07-02', NEW_PER_DAY - 3) // spend the rest of the budget
   assert.equal(remainingNewToday('2026-07-02'), 0, 'budget spent -> 0')
   addNewToday('2026-07-02', 2) // over-count (e.g. keep-going edge) must not go negative
   assert.equal(remainingNewToday('2026-07-02'), 0)
