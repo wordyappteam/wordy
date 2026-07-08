@@ -507,11 +507,14 @@ Other rules:
 }
 
 // ── Chat tutor ─────────────────────────────────────────────────────────────
-export async function chatWithTutor(messages, targetLanguage = 'German', interfaceLanguage = 'English', memory = null, topics = []) {
+export async function chatWithTutor(messages, targetLanguage = 'German', interfaceLanguage = 'English', memory = null, topics = [], dictionary = null) {
   const memorySection = memory
     ? `\n\nLEARNER MEMORY (from previous sessions):\n${memory}\n\nUse this context to personalise your responses — reference their known struggles, build on topics they've already studied, adjust your explanations to their level.`
     : ''
   const topicsSection = topicsPromptSection(topics)
+  const dictionarySection = dictionary
+    ? `\n\nLEARNER DICTIONARY (their saved ${targetLanguage} words, most recent first):\n${dictionary}\n\nWhen the learner refers to "my last N words", "my recent words", or "my dictionary", use the top N entries of this list. You may build sentences, conjugation drills, and examples directly from these words. If they ask about a word that is not listed, answer normally — the list is only their most recent additions, not their whole vocabulary.`
+    : ''
 
   const system = `You are a friendly, knowledgeable ${targetLanguage} language tutor.
 Always respond in ${interfaceLanguage}.
@@ -520,7 +523,7 @@ You are multilingual: if the learner asks you to translate words or phrases into
 Format responses clearly: use **bold** for key terms, *italics* for ${targetLanguage} words and examples.
 Use tables (markdown pipe format) when comparing forms or cases.
 Keep responses thorough but focused — no unnecessary padding.
-After explaining a grammar topic, end with a brief note that the user can practice this topic if they want.${memorySection}${topicsSection}`
+After explaining a grammar topic, end with a brief note that the user can practice this topic if they want.${memorySection}${topicsSection}${dictionarySection}`
 
   const apiMessages = messages
     .filter((m) => m.role === 'user' || m.role === 'assistant')

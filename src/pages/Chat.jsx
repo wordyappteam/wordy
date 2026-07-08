@@ -5,6 +5,7 @@ import { useLanguage, targetGenitiveUk } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../lib/supabase'
+import { buildDictionarySnapshot } from '../lib/dictionaryContext'
 import { fetchCollectionsData, createCollection, addWordToCollection, nextColor } from '../lib/collections'
 import NavBar from '../components/NavBar'
 
@@ -672,6 +673,7 @@ export default function Chat() {
   const [toast, setToast]           = useState(null)
   const [addPanel, setAddPanel]     = useState(null) // add-to-dictionary flow state
   const [memory, setMemory]         = useState(null)   // { profile, last_session, updated_at }
+  const [dictionary, setDictionary] = useState('')     // compact snapshot of recent words for the tutor
   const [exerciseReturn, setExerciseReturn] = useState(() => {
     try {
       const saved = localStorage.getItem('wordy_exercise_return')
@@ -694,6 +696,22 @@ export default function Chat() {
       .maybeSingle()
       .then(({ data }) => { if (data) setMemory(data) })
   }, [user])
+
+  // Load a most-recent-first snapshot of the learner's words so the tutor can
+  // act on "my last N words" without being handed the list. Refetches when the
+  // target language changes or a word is added mid-chat.
+  const loadDictionary = useCallback(async () => {
+    if (!user) return
+    const { data } = await supabase
+      .from('word_senses')
+      .select('word_form, translation, pos, learning_stage')
+      .eq('user_id', user.id)
+      .eq('target_language', targetLang)
+      .order('created_at', { ascending: false })
+      .limit(40)
+    setDictionary(buildDictionarySnapshot(data ?? []))
+  }, [user, targetLang])
+  useEffect(() => { loadDictionary() }, [loadDictionary])
 
   // Ref always holds current targetLang so persist effect doesn't depend on it
   const targetLangForStorage = useRef(targetLang)
@@ -785,7 +803,7 @@ export default function Chat() {
       ? `LEARNER PROFILE:\n${memory.profile || ''}\n\nLAST SESSION:\n${memory.last_session || ''}`
       : null
 
-    chatWithTutor([...messages, { role: 'user', text: trimmed }], targetLanguageName, interfaceLanguage, memoryText, profile?.topics ?? [])
+    chatWithTutor([...messages, { role: 'user', text: trimmed }], targetLanguageName, interfaceLanguage, memoryText, profile?.topics ?? [], dictionary || null)
       .then((responseText) => {
         setMessages((prev) => [
           ...prev,
@@ -956,6 +974,7 @@ export default function Chat() {
         }))
       )
     }
+    loadDictionary() // refresh the tutor's view so a just-added word is immediately usable
     return { id: newWord.id, existed: false }
   }
 
