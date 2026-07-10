@@ -330,7 +330,7 @@ export default function SessionV2() {
     const todayISO = new Date().toISOString().split('T')[0]
     const plan = planSessionV2(senses, {
       today: todayISO,
-      gradedCap: 18,
+      gradedCap: 24,
       blockSize: 4,
       newPerDay: NEW_PER_DAY,
       newToday: getNewToday(todayISO),
