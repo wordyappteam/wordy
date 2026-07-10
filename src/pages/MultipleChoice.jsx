@@ -118,7 +118,7 @@ export default function MultipleChoice() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col">
         <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-          <div className="text-xl font-bold text-indigo-600">wordy</div>
+          <div className="text-xl font-bold text-indigo-600">verba</div>
           <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-900">← Dashboard</button>
         </nav>
         <div className="flex-1 flex items-center justify-center px-4">
@@ -153,7 +153,7 @@ export default function MultipleChoice() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col">
       <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-        <div className="text-xl font-bold text-indigo-600">wordy</div>
+        <div className="text-xl font-bold text-indigo-600">verba</div>
         <div className="text-sm text-gray-500">{index + 1} / {QUESTIONS.length}</div>
         <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-400 hover:text-gray-700">✕ End</button>
       </nav>

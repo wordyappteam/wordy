@@ -9,7 +9,7 @@ export default function Landing() {
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col">
       {/* Nav */}
       <nav className="flex items-center justify-between px-5 sm:px-8 py-5 max-w-6xl mx-auto w-full gap-2">
-        <div className="text-2xl font-bold text-indigo-600 tracking-tight">wordy</div>
+        <div className="text-2xl font-bold text-indigo-600 tracking-tight">verba</div>
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Language switcher */}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
