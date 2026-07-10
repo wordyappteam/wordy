@@ -421,7 +421,7 @@ export default function Dashboard() {
                 per-day new budget the session planner enforces (dailyNew) —
                 otherwise it offers a session the planner returns empty. */}
             <div className={dueToday > 0 || newOffer > 0
-              ? 'rounded-3xl p-5 bg-white border border-gray-100 shadow-sm'
+              ? ''
               : 'rounded-3xl p-6 bg-white border border-gray-100 shadow-sm'}
             >
               {!countsLoaded ? (
@@ -429,14 +429,14 @@ export default function Dashboard() {
               ) : dueToday > 0 ? (
                 <button
                   onClick={() => navigate('/session')}
-                  className="w-full bg-indigo-600 text-white text-sm font-bold py-3.5 rounded-xl hover:bg-indigo-700 transition-colors"
+                  className="w-full bg-indigo-600 text-white text-base font-bold py-4 rounded-2xl shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-colors"
                 >
                   {lang === 'uk' ? `Почати — ${Math.min(dueToday, 18)} сьогодні` : `Start — ${Math.min(dueToday, 18)} today`}
                 </button>
               ) : newOffer > 0 ? (
                 <button
                   onClick={() => navigate('/session')}
-                  className="w-full bg-indigo-600 text-white text-sm font-bold py-3.5 rounded-xl hover:bg-indigo-700 transition-colors"
+                  className="w-full bg-indigo-600 text-white text-base font-bold py-4 rounded-2xl shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-colors"
                 >
                   {lang === 'uk' ? `Ви все опрацювали — вивчити ${newOffer} нових?` : `You're caught up — learn ${newOffer} new?`}
                 </button>
