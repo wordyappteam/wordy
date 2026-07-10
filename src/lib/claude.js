@@ -97,7 +97,7 @@ Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.
     : "for nouns: plural e.g. 'cats', 'children'; for verbs: 'goes / went / gone'"
 
   const wordFormNote = isGerman
-    ? 'canonical form for this sense — with definite article for nouns (e.g. das Buch), plain infinitive for verbs (e.g. buchen), verb+prep for phrasal verbs (e.g. achten auf)'
+    ? 'canonical form for this sense — with definite article for nouns (e.g. das Buch); for verbs, the plain infinitive (e.g. buchen), BUT attach a bound reflexive pronoun and/or governed preposition whenever this sense is not used without it — reflexive before the verb, preposition after (e.g. "sich kümmern um", "warten auf", "sich freuen auf", "sich erinnern an", "denken an", "bestehen aus"). Do NOT attach a preposition to a verb sense that is complete on its own (plain "denken" = to think).'
     : isUkrainian
     ? 'canonical form WITH stress marked using acute accents (е́ а́ и́ о́ у́ і́): nominative singular for nouns, infinitive for verbs; Cyrillic, no article; accent must fall directly on the vowel (а е є и і ї о у ю я), never on a consonant'
     : 'canonical form for this sense — plain form, no article'
@@ -105,7 +105,7 @@ Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.
   const wordNote = isUkrainian
     ? 'primary display form, stress-marked; for verbs use the imperfective infinitive'
     : isGerman
-    ? 'primary display form — with article for German nouns (e.g. die Entscheidung), plain for verbs'
+    ? 'primary display form — with article for German nouns (e.g. die Entscheidung); for verbs, plain infinitive (e.g. buchen) but WITH any bound reflexive pronoun and/or governed preposition this sense depends on attached (e.g. "sich kümmern um", "warten auf", "denken an"). Must exactly match the wordForm for this sense.'
     : 'primary display form — plain for nouns and verbs'
 
   const conjugationRules = isGerman ? `
@@ -119,7 +119,7 @@ Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.
 - Always leave "conjugation" as null`
 
   const nounArticleRule = isGerman
-    ? '- In "wordForm": include the definite article for nouns (e.g. die Entscheidung). For verb+prep phrases always order verb then preposition (e.g. "sich erinnern an"), never the reverse.'
+    ? '- In "wordForm": include the definite article for nouns (e.g. die Entscheidung). For verbs whose meaning depends on a reflexive pronoun and/or governed preposition, include those parts in BOTH "word" and "wordForm", ordered reflexive-verb-preposition (e.g. "sich erinnern an", "sich kümmern um", "warten auf"), never reversed. Attach only the parts THIS sense requires; keep a self-standing verb sense plain.'
     : isUkrainian
     ? '- In "wordForm": no article. For nouns set "gender" to m/f/n and put the genitive singular (stress-marked) in "form". For verbs set "aspect" and leave "gender" null.'
     : '- In "wordForm": no article for nouns.'
