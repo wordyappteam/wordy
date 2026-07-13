@@ -617,7 +617,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
             </button>
           </div>
           <div className="flex items-center gap-2 mb-4">
-            <span className="text-xs text-gray-400">Translate to</span>
+            <span className="text-xs text-gray-400">{t('dict.translateTo')}</span>
             <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs font-semibold">
               {TRANSLATE_LANGS.map(({ code, label }) => (
                 <button
@@ -1291,7 +1291,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
             {/* Collections: filing a word away is something you do AFTER reading it,
                 so this sits below the senses rather than above them. */}
             <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{lang === 'uk' ? 'Колекції' : 'Collections'}</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{t('dict.collectionsTitle')}</p>
               <div className="flex flex-wrap gap-2 items-center">
                 {collections.map((c) => {
                   const isMember = wordCollectionIds?.has(c.id)
@@ -1486,6 +1486,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
 
 // ── Quick Sort mode ───────────────────────────────────────────────────────
 function QuickSortMode({ words, onClose, onStatusChange }) {
+  const { t } = useLanguage()
   const [index, setIndex]   = useState(0)
   const [saving, setSaving] = useState(false)
   const [done, setDone]     = useState(false)
@@ -1521,7 +1522,7 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
             </div>
           ))}
         </div>
-        <button onClick={onClose} className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Done</button>
+        <button onClick={onClose} className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-semibold text-sm">{t('dict.done')}</button>
       </div>
     )
   }
@@ -1560,7 +1561,7 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
           )}
           {current.translation
             ? <p className="text-lg text-gray-600">{displayTranslation(current.translation)}</p>
-            : <p className="text-sm text-gray-300 italic">No translation yet</p>
+            : <p className="text-sm text-gray-300 italic">{t('dict.noTranslation')}</p>
           }
           {current.grammarNote && (
             <p className="text-xs text-gray-400 border-t border-gray-100 pt-3 w-full">{current.grammarNote}</p>
@@ -1600,6 +1601,7 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
 
 // ── Bulk Identify modal ───────────────────────────────────────────────────
 function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage, targetLanguageName = 'German', topics = [] }) {
+  const { t } = useLanguage()
   const unidentified = words.filter(w => !w.translation || !w.explanation)
   const [running, setRunning]     = useState(false)
   const [index, setIndex]         = useState(0)
@@ -1645,7 +1647,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
 
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
-            <h3 className="text-lg font-bold text-gray-900">Identify unidentified words</h3>
+            <h3 className="text-lg font-bold text-gray-900">{t('dict.identifyUnidentified')}</h3>
             {!running && <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none">×</button>}
           </div>
 
@@ -1659,7 +1661,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
                 ? <p className="text-sm text-green-600 bg-green-50 rounded-xl px-4 py-3 mb-5">✓ All words are already identified!</p>
                 : (
                   <div className="bg-gray-50 rounded-2xl px-4 py-3 mb-5 max-h-48 overflow-y-auto">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Words to identify</p>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">{t('dict.wordsToIdentify')}</p>
                     <div className="flex flex-wrap gap-1.5">
                       {unidentified.map(w => (
                         <span key={w.id} className="px-2.5 py-1 bg-white border border-gray-200 rounded-full text-xs text-gray-600">{w.word}</span>
@@ -1669,7 +1671,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
                 )
               }
               <div className="flex gap-2">
-                <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50">Cancel</button>
+                <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50">{t('dict.cancel')}</button>
                 {total > 0 && (
                   <button onClick={handleStart} className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
                     Identify all {total}
@@ -1696,7 +1698,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
 
           {done && (
             <div className="flex flex-col items-center py-4 gap-4 text-center">
-              <div className="text-4xl">{errors.length === 0 ? '✨' : '⚠️'}</div>
+              <div className={`text-2xl font-bold ${errors.length === 0 ? 'text-green-600' : 'text-amber-600'}`}>{errors.length === 0 ? '✓' : '!'}</div>
               <p className="text-lg font-bold text-gray-900">
                 {succeeded} of {total} identified
               </p>
@@ -1706,7 +1708,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
                   <p className="text-xs text-red-500">{errors.join(', ')}</p>
                 </div>
               )}
-              <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">Done</button>
+              <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">{t('dict.done')}</button>
             </div>
           )}
         </div>
@@ -1795,6 +1797,7 @@ function parseBulkLine(line) {
 
 // ── Bulk import modal ─────────────────────────────────────────────────────
 function BulkImportModal({ onClose, onImport }) {
+  const { t } = useLanguage()
   const [text, setText] = useState('')
   const [preview, setPreview] = useState([])
   const [importing, setImporting] = useState(false)
@@ -1825,7 +1828,7 @@ function BulkImportModal({ onClose, onImport }) {
         <div className="text-4xl mb-3">🎉</div>
         <h2 className="text-xl font-bold text-gray-900 mb-1">{preview.length} words imported!</h2>
         <p className="text-sm text-gray-500 mb-6">Translations are empty — click any word to add them via AI.</p>
-        <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Done</button>
+        <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">{t('dict.done')}</button>
       </div>
     </div>
   )
@@ -1834,7 +1837,7 @@ function BulkImportModal({ onClose, onImport }) {
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-900">Bulk import words</h2>
+          <h2 className="text-lg font-bold text-gray-900">{t('dict.bulkImport')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
@@ -1898,6 +1901,7 @@ function BulkImportModal({ onClose, onImport }) {
 
 // ── Collections modal (manage + create with AI pre-select) ─────────────────
 function CollectionsModal({ collections, words, membershipByWord, countByCollection, targetLanguageName, onCreate, onRename, onDelete, onClose }) {
+  const { t } = useLanguage()
   const [mode, setMode]       = useState(collections.length ? 'list' : 'create') // list | create
   const [name, setName]       = useState('')
   const [color, setColor]     = useState(nextColor(collections))
@@ -1947,7 +1951,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
-          <h2 className="text-lg font-bold text-gray-900">{mode === 'create' ? 'New collection' : 'Collections'}</h2>
+          <h2 className="text-lg font-bold text-gray-900">{mode === 'create' ? t('dict.newCollectionTitle') : t('dict.collectionsTitle')}</h2>
           <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
@@ -1983,7 +1987,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
                     {confirmDelete === c.id ? (
                       <button onClick={() => { onDelete(c.id); setConfirmDelete(null) }} className="text-xs font-semibold text-red-500 hover:text-red-600">Delete?</button>
                     ) : (
-                      <button onClick={() => setConfirmDelete(c.id)} className="text-gray-300 hover:text-red-400 text-sm px-1" title="Delete">🗑</button>
+                      <button onClick={() => setConfirmDelete(c.id)} className="text-gray-400 hover:text-red-500 px-1 transition-colors" title={t('dict.deleteBtn')}><TrashIcon /></button>
                     )}
                   </div>
                 )
@@ -2016,7 +2020,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
 
               {/* Color picker */}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">Color</span>
+                <span className="text-xs text-gray-400">{t('dict.colorLabel')}</span>
                 {COLLECTION_COLOR_KEYS.map(k => (
                   <button
                     key={k}
@@ -2036,7 +2040,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
                   disabled={!name.trim() || suggesting || !words.length}
                   className="px-3 py-1.5 rounded-full text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
                 >
-                  {suggesting ? 'Finding…' : '✨ Suggest with AI'}
+                  {suggesting ? t('dict.finding') : t('dict.suggestWithAi')}
                 </button>
               </div>
 
@@ -2501,7 +2505,7 @@ export default function Dictionary() {
               className="border border-gray-200 hover:border-amber-300 hover:bg-amber-50 text-gray-600 hover:text-amber-700 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
               title="Identify all words missing translation or explanation"
             >
-              ✨ Identify all
+              {t('dict.identifyAll')}
             </button>
             <button
               onClick={() => setShowSortMode(true)}
@@ -2515,7 +2519,7 @@ export default function Dictionary() {
               className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors border ${selectionMode ? 'border-indigo-300 bg-indigo-50 text-indigo-600' : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600'}`}
               title="Select multiple words to delete"
             >
-              {selectionMode ? 'Cancel' : '☑ Select'}
+              {selectionMode ? t('dict.cancel') : t('dict.select')}
             </button>
             <button
               onClick={() => setShowAddModal(true)}
@@ -2628,7 +2632,7 @@ export default function Dictionary() {
               disabled={selectedIds.size === 0}
               className="px-4 py-1.5 rounded-xl text-sm font-semibold bg-red-500 hover:bg-red-600 disabled:bg-red-200 disabled:cursor-not-allowed text-white transition-colors"
             >
-              🗑 Delete {selectedIds.size > 0 ? selectedIds.size : ''}
+              <TrashIcon size={14} /> {t('dict.deleteBtn')} {selectedIds.size > 0 ? selectedIds.size : ''}
             </button>
           </div>
         )}
@@ -2749,12 +2753,12 @@ export default function Dictionary() {
       {confirmBulkDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={() => setConfirmBulkDelete(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
-            <div className="text-3xl mb-2">🗑</div>
+            <div className="mb-2 flex justify-center text-red-400"><TrashIcon size={28} /></div>
             <p className="font-semibold text-gray-900 mb-1">Delete {selectedIds.size} word{selectedIds.size !== 1 ? 's' : ''}?</p>
             <p className="text-sm text-gray-400 mb-6">This permanently removes them and all their senses, examples, and collection memberships. This can't be undone.</p>
             <div className="flex gap-3">
-              <button onClick={() => setConfirmBulkDelete(false)} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">Cancel</button>
-              <button onClick={handleBulkDelete} className="flex-1 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold">Delete</button>
+              <button onClick={() => setConfirmBulkDelete(false)} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">{t('dict.cancel')}</button>
+              <button onClick={handleBulkDelete} className="flex-1 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold">{t('dict.deleteBtn')}</button>
             </div>
           </div>
         </div>
