@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { identifyWord as identifyWordAI, suggestCollectionWords } from '../lib/claude'
 import { displayTranslation } from '../lib/senseDisplay'
-import { badgeForStage } from '../lib/srs'
+import { badgeForWord } from '../lib/srs'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import {
@@ -100,7 +100,7 @@ function dbToWord(row, legacyExamples = [], senses = []) {
     form: primary?.form ?? row.form,
     pos: primary?.pos ?? row.pos,
     translation: primary?.translation ?? row.translation,
-    status: badgeForStage(primary?.learningStage) ?? row.status,
+    status: badgeForWord(senses, row.status),
     dateAdded: row.date_added,
     source: row.source,
     lastReviewed: row.last_reviewed,
