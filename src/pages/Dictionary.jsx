@@ -2463,11 +2463,14 @@ export default function Dictionary() {
               <span className="text-xs text-indigo-600 font-medium">
                 {wordCount} {wordCount === 1 ? 'word' : 'words'} in <span className="font-semibold">{activeCol.name}</span>
               </span>
+              {/* Passive flip-through: nothing is graded and nothing is recorded.
+                  The graded session lives on the dashboard ("Test me"), so these two
+                  must not both read as "Practice". */}
               <button
                 onClick={() => navigate(`/flashcards?collectionId=${activeCol.id}&collectionName=${encodeURIComponent(activeCol.name)}`)}
                 className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl transition-colors"
               >
-                ▶ Practice
+                {t('dict.flipThrough')}
               </button>
             </div>
           )

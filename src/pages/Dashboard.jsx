@@ -458,13 +458,16 @@ export default function Dashboard() {
                           return (
                             <button
                               key={c.id}
-                              onClick={() => navigate(`/flashcards?collectionId=${c.id}&collectionName=${encodeURIComponent(c.name)}`)}
+                              // The dashboard is where you come to study, so this launches the
+                              // graded session. The dictionary's collection button stays a
+                              // passive flashcard flip — hence the two different labels.
+                              onClick={() => navigate(`/session?collectionId=${c.id}&collectionName=${encodeURIComponent(c.name)}`)}
                               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors text-left"
                             >
                               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.dot}`} />
                               <span className="text-sm font-medium text-gray-800">{c.name}</span>
                               <span className="ml-auto text-xs text-indigo-600 font-semibold">
-                                {lang === 'uk' ? 'Практикувати →' : 'Practice →'}
+                                {lang === 'uk' ? 'Перевір мене →' : 'Test me →'}
                               </span>
                             </button>
                           )

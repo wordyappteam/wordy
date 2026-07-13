@@ -48,6 +48,8 @@ const translations = {
       colTranslation:  'Translation',
       colStatus:       'Status',
       colLastReviewed: 'Last reviewed',
+      // Passive flip-through, as opposed to the dashboard's graded "Test me".
+      flipThrough:     '▶ Flip through',
       // status labels
       statusNew:       'new',
       statusLearning:  'learning',
@@ -166,6 +168,7 @@ const translations = {
       colTranslation:  'Переклад',
       colStatus:       'Статус',
       colLastReviewed: 'Останній огляд',
+      flipThrough:     '▶ Переглянути картки',
       // status labels
       statusNew:       'нове',
       statusLearning:  'вивчаю',

@@ -97,7 +97,21 @@ export function sentenceOutcome(review = {}) {
 //   state:   { interval_step, lapses, slipped }
 //   verdict: 'PASS' | 'HOLD' | 'FAIL'
 //   todayISO:'YYYY-MM-DD'
-export function applyVerdict(state, verdict, todayISO) {
+//   opts:    { practice } — the word was drilled in a collection session before it
+//            was due. Returns null (write nothing) unless the learner FAILED.
+//
+// Why a correct cram must write nothing: if a PASS on a not-yet-due word advanced
+// its interval, drilling a collection would push every word in it far into the
+// future and the learner would stop seeing them — cramming would quietly damage
+// retention. Not even last_reviewed may be written, because the FAIL path below
+// measures how overdue a word was (gapReview); a crammed word would look freshly
+// reviewed and a later genuine lapse would be misjudged.
+//
+// A FAILED cram is the opposite: real evidence that a word the learner believed
+// they knew is gone. That counts, exactly as it would in a normal session.
+export function applyVerdict(state, verdict, todayISO, { practice = false } = {}) {
+  if (practice && verdict !== 'FAIL') return null
+
   const step = clampStep(state.interval_step ?? 0)
   let lapses = state.lapses ?? 0
   let slipped = !!state.slipped
@@ -141,6 +155,21 @@ export function applyVerdict(state, verdict, todayISO) {
   }
 }
 
+// Order a collection's senses the way the planner would rank them, for the
+// "choose your words" list: what needs work first (due, then leeches, then new,
+// then weakest practice words), so the useful ones sit at the top of the list
+// rather than buried under words the learner already has.
+export function orderForPractice(senses, today = new Date().toISOString().split('T')[0]) {
+  const isNew = (s) => !s.last_reviewed && (s.interval_step ?? 0) === 0
+  const isDue = (s) => !isNew(s) && (!s.next_review_date || s.next_review_date <= today)
+  const rank = (s) => (isDue(s) ? 0 : isNew(s) ? 1 : 2)
+  return [...senses].sort((a, b) =>
+    rank(a) - rank(b) ||
+    (a.interval_step ?? 0) - (b.interval_step ?? 0) ||
+    String(a.word_form ?? '').localeCompare(String(b.word_form ?? ''))
+  )
+}
+
 // ── Session assembly (v2) ────────────────────────────────────────────────────
 // Pure planner. Given the learner's senses, produce an ordered list of steps.
 // Each step is one exercise on one sense; exactly ONE step per selected sense is
@@ -160,6 +189,10 @@ export function planSessionV2(senses, opts = {}) {
     blockSize = 4,
     leechCap = 2,
     antiClusterWindow = 2,
+    // Collection session: drill the WHOLE collection, not just what happens to be
+    // due. Words that are neither new nor due come along as practice — graded for
+    // feedback, but a correct answer on them writes nothing (see applyVerdict).
+    practiceAll = false,
   } = opts
 
   const isNew = (s) => !s.last_reviewed && (s.interval_step ?? 0) === 0
@@ -167,6 +200,14 @@ export function planSessionV2(senses, opts = {}) {
 
   const news    = shuffleArr(senses.filter(isNew)) // shuffle → a fresh, varied pack of new words each session
   const dueAll  = senses.filter(isDue)
+  // Weakest first: when a collection is bigger than one session, the words that
+  // survive the cap should be the ones that still need the work, not the ones
+  // already mastered.
+  const practice = practiceAll
+    ? senses.filter((s) => !isNew(s) && !isDue(s))
+        .sort((a, b) => (a.interval_step ?? 0) - (b.interval_step ?? 0))
+        .map((s) => ({ ...s, _practice: true }))
+    : []
   const leeches = dueAll.filter((s) => s.is_leech)
   const reviews = dueAll.filter((s) => !s.is_leech)
 
@@ -183,7 +224,11 @@ export function planSessionV2(senses, opts = {}) {
   const newBudget = behind ? 0 : Math.max(0, newPerDay - newToday) // per-DAY budget, 0 when behind
   const roomForNew = Math.max(0, cap - leechTake.length - reviewTake.length)
   const newTake = news.slice(0, Math.min(newBudget, roomForNew))
-  const selected = [...reviewTake, ...leechTake, ...newTake]
+  // Practice words fill whatever room is left — they never crowd out a word that
+  // is genuinely due, since cramming must not delay real reviews.
+  const roomForPractice = Math.max(0, cap - leechTake.length - reviewTake.length - newTake.length)
+  const practiceTake = practice.slice(0, roomForPractice)
+  const selected = [...reviewTake, ...leechTake, ...newTake, ...practiceTake]
   if (selected.length === 0) return []
 
   // Sequencing v2.1: stage packs -> balanced encode->test cycles -> type
@@ -197,7 +242,7 @@ export function planSessionV2(senses, opts = {}) {
       for (const s of chunk) {
         const step = s.interval_step ?? 0
         const remedial = !!s._remedial
-        const base = { senseId: s.id, wordId: s.word_id, pos: s.pos, examples: s.examples ?? [], remedial, direction: directionFor(step), stage: stageName(step), newIntake: isNew(s), ...display(s) }
+        const base = { senseId: s.id, wordId: s.word_id, pos: s.pos, examples: s.examples ?? [], remedial, practice: !!s._practice, direction: directionFor(step), stage: stageName(step), newIntake: isNew(s), ...display(s) }
         const scaffolds = remedial ? ['flashcard'] : scaffoldFor(step)
         if (scaffolds.includes('flashcard')) flash.push({ ...base, exercise: 'flashcard', graded: false })
         if (scaffolds.includes('fill_blank')) ctx.push({ ...base, exercise: 'fill_blank', graded: false })
