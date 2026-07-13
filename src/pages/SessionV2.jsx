@@ -592,14 +592,22 @@ export default function SessionV2() {
   const step = steps[idx]
   const graded = steps.filter((s) => s.graded).length
   const gradedSoFar = Object.keys(outcomes).length
+  const pct = steps.length ? Math.round(((idx + 1) / steps.length) * 100) : 0
   return wrap(
     <>
       <div className="w-full max-w-md mb-5">
         {collectionName && (
           <p className="text-xs font-semibold text-indigo-500 uppercase tracking-wide mb-1.5">{collectionName}</p>
         )}
-        <div className="flex justify-between text-xs text-gray-400 mb-1.5"><span>Step {idx + 1} / {steps.length}</span><span>{gradedSoFar} / {graded} graded</span></div>
-        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${((idx + 1) / steps.length) * 100}%` }} /></div>
+        {/* Percent, not "Step 3 / 66". A session of 24 words expands into ~66 steps
+            (each word gets scaffolds before its graded test), and that raw count reads
+            as a wall of work rather than the ~20 minutes it actually is. The word
+            count on the right is the honest, meaningful unit. */}
+        <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+          <span>{pct}%</span>
+          <span>{gradedSoFar} / {graded} {uk ? 'слів' : 'words'}</span>
+        </div>
+        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${pct}%` }} /></div>
       </div>
       <StepCard
         key={idx}

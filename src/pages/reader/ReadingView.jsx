@@ -188,7 +188,7 @@ export default function ReadingView({ book, onClose }) {
           pos: s.pos, word_form: s.wordForm || result.word,
           aspect: s.aspect ?? null, gender: s.gender ?? null,
           translation: s.translation, form: s.form || null,
-          grammar_note: s.grammarNote || null, explanation: s.explanation || null,
+          grammar_note: s.grammarNote || null, usage_note: s.usageNote || null, explanation: s.explanation || null,
           is_exception: s.isException || false, register: s.register || 'neutral',
           cefr: s.cefr || null, conjugation: s.conjugation || null,
           examples: s.examples || [], learning_stage: 'new', correct_recall_count: 0,

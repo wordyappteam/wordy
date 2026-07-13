@@ -61,7 +61,6 @@ export default function Dashboard() {
   const [savingName,   setSavingName]   = useState(false)
   const [collections,  setCollections]  = useState([])
   const [showCollectionPicker, setShowCollectionPicker] = useState(false)
-  const [showExtra,    setShowExtra]    = useState(false)
   const [goalDraft,    setGoalDraft]    = useState(null) // optimistic daily-goal value
   const nameRef    = useRef(null)
   const profileRef = useRef(null)
@@ -399,23 +398,11 @@ export default function Dashboard() {
                 </div>
               )}
 
-              <button
-                onClick={() => setShowExtra(v => !v)}
-                className="w-full flex items-center justify-between mb-4 group"
-              >
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide group-hover:text-indigo-600 transition-colors">
-                  {lang === 'uk' ? 'Додаткова практика' : 'Extra practice'}
-                </h2>
-                <span className="text-xs font-medium text-gray-400 group-hover:text-indigo-600 transition-colors flex items-center gap-1">
-                  {showExtra
-                    ? (lang === 'uk' ? 'Згорнути' : 'Hide')
-                    : (lang === 'uk' ? 'Показати' : 'Show')}
-                  <span className={`transition-transform ${showExtra ? 'rotate-180' : ''}`}>▾</span>
-                </span>
-              </button>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+                {lang === 'uk' ? 'Додаткова практика' : 'Extra practice'}
+              </h2>
 
-              {showExtra && (
-                <>
+              <>
                   <div className="grid grid-cols-2 gap-3">
                     {exercises.map((ex, i) => (
                       <button
@@ -475,8 +462,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                   )}
-                </>
-              )}
+              </>
             </div>
           </div>
 
