@@ -154,7 +154,7 @@ export default function ActiveRecall() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex flex-col">
         <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-          <div className="text-xl font-bold text-indigo-600">wordy</div>
+          <div className="text-xl font-bold text-indigo-600">verba</div>
           <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">← Dashboard</button>
         </nav>
         <div className="flex-1 flex flex-col items-center justify-center px-4">
@@ -207,7 +207,7 @@ export default function ActiveRecall() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex flex-col">
         <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-          <div className="text-xl font-bold text-indigo-600">wordy</div>
+          <div className="text-xl font-bold text-indigo-600">verba</div>
           <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-900">← Dashboard</button>
         </nav>
         <div className="flex-1 flex items-center justify-center">
@@ -228,7 +228,7 @@ export default function ActiveRecall() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex flex-col">
         <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-          <div className="text-xl font-bold text-indigo-600">wordy</div>
+          <div className="text-xl font-bold text-indigo-600">verba</div>
           <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">← Dashboard</button>
         </nav>
         <div className="flex-1 overflow-y-auto px-4 py-8">
@@ -311,7 +311,7 @@ export default function ActiveRecall() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex flex-col">
       {/* Nav */}
       <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-        <div className="text-xl font-bold text-indigo-600">wordy</div>
+        <div className="text-xl font-bold text-indigo-600">verba</div>
         <div className="text-sm text-gray-500">{index + 1} / {cards.length}</div>
         <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-400 hover:text-gray-700 transition-colors">
           ✕ {lang === 'uk' ? 'Завершити' : 'End session'}

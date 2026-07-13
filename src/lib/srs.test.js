@@ -1,7 +1,7 @@
 // Pure-core SRS v2 tests. Run with: node --test src/lib/srs.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { badgeForStage, planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn, balancedChunks, packSenses } from './srs.js'
+import { badgeForStage, badgeForWord, orderForPractice, planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn, balancedChunks, packSenses } from './srs.js'
 
 // ── Bug #1: fill_blank scaffold must carry the sense's examples ───────────────
 // The UI renders a context fill-blank from step.examples[0].target. If the
@@ -413,4 +413,153 @@ test('badgeForStage maps sense text stages to the four pill values', () => {
   assert.equal(badgeForStage('mastered'), 'mastered')
   assert.equal(badgeForStage(undefined), null, 'no sense stage -> null so callers can fall back')
   assert.equal(badgeForStage('bogus'), null)
+})
+
+// ── Bug: dashboard showed every word as "new" ────────────────────────────────
+// The dashboard bucketed words by the legacy words.status column, which is
+// written once at insert ('new') and never again — so a word the learner had
+// pushed to 'late' in the SRS still read as "new" there, while the dictionary
+// (which derives from the primary sense) read "learning". One helper now backs
+// both, so the two views cannot drift apart again.
+test('badgeForWord derives a word badge from its primary sense', () => {
+  const senses = [
+    { learning_stage: 'late' },  // primary = first, senses come created_at asc
+    { learning_stage: 'new' },
+  ]
+  assert.equal(badgeForWord(senses, 'new'), 'learning',
+    'a word whose primary sense is mid-SRS reads as learning, not the stale legacy status')
+  assert.equal(badgeForWord([{ learning_stage: 'mastered' }], 'new'), 'mastered')
+  assert.equal(badgeForWord([{ learning_stage: 'new' }], 'new'), 'new')
+})
+
+test('badgeForWord falls back to legacy status when a word has no senses', () => {
+  assert.equal(badgeForWord([], 'learning'), 'learning', 'pre-cutover row keeps its hand-set status')
+  assert.equal(badgeForWord(undefined, 'known'), 'known')
+  assert.equal(badgeForWord([], undefined), 'new', 'no senses and no legacy status -> new')
+})
+
+// ── Fill-in-context reveal needs the SENTENCE's meaning, not just the word's ──
+// Revealing the answer restored the sentence but only ever translated the target
+// word, so the learner met a full sentence of context they couldn't read. The
+// example's own translation is in the data; the fill-in must carry it through.
+test('buildFillBlank carries the example translation through to the card', () => {
+  const example = {
+    target: 'Ich trinke jeden Morgen Wasser.',
+    translation: 'I drink water every morning.',
+    blank: 'Wasser',
+  }
+  const fb = buildFillBlank(example, 'Wasser')
+  assert.equal(fb.sentence, 'Ich trinke jeden Morgen ____.')
+  assert.equal(fb.answer, 'Wasser')
+  assert.equal(fb.target, 'Ich trinke jeden Morgen Wasser.')
+  assert.equal(fb.translation, 'I drink water every morning.',
+    'the sentence translation must survive so the reveal can show it')
+})
+
+test('buildFillBlank tolerates an example with no translation', () => {
+  const fb = buildFillBlank({ target: 'Ich trinke Wasser.', blank: 'Wasser' }, 'Wasser')
+  assert.equal(fb.translation, null, 'absent translation -> null, so the UI can just omit the line')
+})
+
+test('firstFillBlank keeps the translation of whichever example it settles on', () => {
+  const examples = [
+    { target: 'Kein Treffer hier.', translation: 'No hit here.' },           // unblankable
+    { target: 'Ich trinke Wasser.', translation: 'I drink water.', blank: 'Wasser' },
+  ]
+  const fb = firstFillBlank(examples, 'Wasser', 0)
+  assert.equal(fb.translation, 'I drink water.',
+    'the translation must belong to the example actually shown, not the skipped one')
+})
+
+// ── Collection sessions: practise a collection without wrecking its schedule ──
+// A collection session drills every member, including words that are not due yet.
+// If a correct answer on a not-yet-due word advanced its interval, drilling
+// "my colours" would push all of them far into the future and the learner would
+// stop seeing them — cramming would quietly damage retention. So a correct cram
+// writes NOTHING, while a failed cram still counts (it is real evidence that the
+// word is not known).
+
+const practiceState = { interval_step: 4, lapses: 0, slipped: false, next_review_date: '2026-08-01' }
+
+test('applyVerdict: a correct answer on a not-due practice word changes nothing', () => {
+  assert.equal(applyVerdict(practiceState, 'PASS', '2026-07-13', { practice: true }), null,
+    'PASS while cramming must not advance the interval — nothing to persist')
+})
+
+test('applyVerdict: an "almost" on a practice word changes nothing', () => {
+  assert.equal(applyVerdict(practiceState, 'HOLD', '2026-07-13', { practice: true }), null,
+    'HOLD reschedules normally; while cramming it must not touch the schedule at all')
+})
+
+test('applyVerdict: FAILING a practice word still pulls it back', () => {
+  const crammed = applyVerdict(practiceState, 'FAIL', '2026-07-13', { practice: true })
+  const normal  = applyVerdict(practiceState, 'FAIL', '2026-07-13')
+  assert.deepEqual(crammed, normal,
+    'failing a word you thought you knew is real signal — treat it exactly like a normal fail')
+  assert.equal(crammed.next_review_date, '2026-07-14', 'and bring it back tomorrow')
+})
+
+test('applyVerdict: without the practice flag, behaviour is unchanged', () => {
+  const r = applyVerdict(practiceState, 'PASS', '2026-07-13')
+  assert.equal(r.interval_step, 5, 'a normal PASS still advances')
+  assert.notEqual(r, null)
+})
+
+// ── Planner: practiceAll ─────────────────────────────────────────────────────
+const dueSense      = { id: 'due',  word_id: 'w1', interval_step: 3, last_reviewed: '2026-07-01', next_review_date: '2026-07-10', word_form: 'rot',   translation: 'red' }
+const newSense      = { id: 'new',  word_id: 'w2', interval_step: 0, last_reviewed: null,          next_review_date: null,         word_form: 'blau',  translation: 'blue' }
+const notDueSense   = { id: 'ndue', word_id: 'w3', interval_step: 4, last_reviewed: '2026-07-12', next_review_date: '2026-08-01', word_form: 'grün',  translation: 'green' }
+
+test('planSessionV2: without practiceAll, a not-due word is left out (unchanged)', () => {
+  const steps = planSessionV2([dueSense, notDueSense], { today: '2026-07-13', newPerDay: 5, newToday: 0 })
+  const ids = new Set(steps.map(s => s.senseId))
+  assert.ok(ids.has('due'), 'the due word is still selected')
+  assert.ok(!ids.has('ndue'), 'a word that is not due yet is not part of the daily session')
+})
+
+test('planSessionV2: practiceAll pulls in not-due words and marks them practice', () => {
+  const steps = planSessionV2([dueSense, notDueSense], { today: '2026-07-13', practiceAll: true, newPerDay: 5, newToday: 0 })
+  const graded = steps.filter(s => s.graded)
+  const byId = Object.fromEntries(graded.map(s => [s.senseId, s]))
+  assert.ok(byId.ndue, 'the whole collection is practised, not only what is due')
+  assert.equal(byId.ndue.practice, true, 'the not-due word is flagged practice, so a correct answer will not advance it')
+  assert.ok(!byId.due.practice, 'a word that WAS due is graded for real — it earned its verdict')
+})
+
+test('planSessionV2: practiceAll still respects the daily new-word budget', () => {
+  const steps = planSessionV2([newSense, notDueSense], { today: '2026-07-13', practiceAll: true, newPerDay: 0, newToday: 0 })
+  const ids = new Set(steps.map(s => s.senseId))
+  assert.ok(!ids.has('new'), 'a new word must not sneak past the daily cap just because it sits in a collection')
+  assert.ok(ids.has('ndue'), 'practice words are not new intake, so they are unaffected by the budget')
+})
+
+test('planSessionV2: practice words come weakest-first, so a big collection spends its session where it counts', () => {
+  const mk = (id, step) => ({ id, word_id: id, interval_step: step, last_reviewed: '2026-07-12', next_review_date: '2026-08-01', word_form: id, translation: id })
+  const senses = [mk('known', 7), mk('early', 1), mk('mid', 4)]
+  const steps = planSessionV2(senses, { today: '2026-07-13', practiceAll: true, gradedCap: 2, newPerDay: 5, newToday: 0 })
+  const ids = new Set(steps.map(s => s.senseId))
+  assert.ok(ids.has('early') && ids.has('mid'), 'the two weakest words survive the cap')
+  assert.ok(!ids.has('known'), 'the strongest word is the one dropped when the collection is bigger than a session')
+})
+
+test('planSessionV2: due words outrank practice words when the collection exceeds the cap', () => {
+  const mk = (id, step) => ({ id, word_id: id, interval_step: step, last_reviewed: '2026-07-12', next_review_date: '2026-08-01', word_form: id, translation: id })
+  const senses = [mk('p1', 1), mk('p2', 1), dueSense]
+  const steps = planSessionV2(senses, { today: '2026-07-13', practiceAll: true, gradedCap: 1, newPerDay: 5, newToday: 0 })
+  const ids = new Set(steps.map(s => s.senseId))
+  assert.ok(ids.has('due'), 'a genuinely due word must never be crowded out by cramming')
+})
+
+// The chooser list must put what needs work at the top — a learner scanning a
+// 60-word collection should not have to hunt for the words they're shaky on.
+test('orderForPractice ranks due first, then new, then weakest practice words', () => {
+  const senses = [
+    { id: 'strong',  interval_step: 7, last_reviewed: '2026-07-12', next_review_date: '2026-09-01', word_form: 'a' },
+    { id: 'weak',    interval_step: 1, last_reviewed: '2026-07-12', next_review_date: '2026-08-01', word_form: 'b' },
+    { id: 'new',     interval_step: 0, last_reviewed: null,          next_review_date: null,         word_form: 'c' },
+    { id: 'due',     interval_step: 5, last_reviewed: '2026-07-01', next_review_date: '2026-07-10', word_form: 'd' },
+  ]
+  const ordered = orderForPractice(senses, '2026-07-13').map(s => s.id)
+  assert.deepEqual(ordered, ['due', 'new', 'weak', 'strong'],
+    'due word first, then new intake, then not-due words weakest-first')
 })

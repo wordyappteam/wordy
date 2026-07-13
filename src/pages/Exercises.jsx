@@ -5,6 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import NavBar from '../components/NavBar'
+import { badgeForWord } from '../lib/srs'
 import {
   FlashcardsIcon, PrepositionsIcon, FillBlankIcon,
   WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
@@ -24,22 +25,38 @@ export default function Exercises() {
 
   useEffect(() => {
     if (!user) return
-    supabase
-      .from('words')
-      .select('id, status, pos, word')
-      .eq('user_id', user.id)
-      .eq('target_language', targetLang)
-      .then(({ data }) => { setWords(data ?? []); setLoading(false) })
-    supabase
-      .from('word_senses')
-      .select('id, learning_stage')
-      .eq('user_id', user.id)
-      .eq('target_language', targetLang)
-      .then(({ data }) => {
-        const n = (data ?? []).filter(s => ['mid','late','known','mastered'].includes(s.learning_stage)).length
-        setBlankable(n)
-      })
-  }, [user])
+    // A word's progress lives on its senses, not on the legacy words.status column
+    // (which is written once at insert and never again). Derive the badge here the
+    // same way the dashboard and the dictionary do, or every count below reads 0.
+    Promise.all([
+      supabase
+        .from('words')
+        .select('id, status, pos, word')
+        .eq('user_id', user.id)
+        .eq('target_language', targetLang),
+      supabase
+        .from('word_senses')
+        .select('word_id, learning_stage')
+        .eq('user_id', user.id)
+        .eq('target_language', targetLang)
+        .order('created_at', { ascending: true }),
+    ]).then(([wordsRes, sensesRes]) => {
+      const senses = sensesRes.data ?? []
+
+      const sensesByWord = new Map()
+      for (const s of senses) {
+        if (!sensesByWord.has(s.word_id)) sensesByWord.set(s.word_id, [])
+        sensesByWord.get(s.word_id).push(s)
+      }
+      setWords((wordsRes.data ?? []).map((w) => ({
+        ...w,
+        status: badgeForWord(sensesByWord.get(w.id), w.status),
+      })))
+
+      setBlankable(senses.filter(s => ['mid','late','known','mastered'].includes(s.learning_stage)).length)
+      setLoading(false)
+    })
+  }, [user, targetLang])
 
   // ── Derived counts ──────────────────────────────────────────────────────
   const total       = words.length

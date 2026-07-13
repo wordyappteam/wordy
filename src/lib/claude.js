@@ -1,4 +1,5 @@
 import { parseSentenceSet } from './sentenceSet'
+import { cleanGrammarNote, cleanUsageNote } from './senseNotes'
 
 // Transient statuses worth an automatic retry: rate-limit, overload, gateway blips.
 const RETRYABLE = [429, 500, 502, 503, 504, 529]
@@ -85,10 +86,16 @@ export async function identifyWord(input, targetLanguage = 'German', interfaceLa
 
   const isGerman = targetLanguage === 'German'
   const isUkrainian = targetLanguage === 'Ukrainian'
+  // The INTERFACE language (what explanations are written in) — distinct from the
+  // target language above. Haiku drifts into Russian when asked for Ukrainian
+  // explanatory prose, which for these learners is not a cosmetic slip, so the
+  // Ukrainian interface gets an explicit guard.
+  const isUkrainianIface = interfaceLanguage === 'Ukrainian'
 
   const system = `You are a language expert specialising in ${targetLanguage}.
 Return ONLY valid JSON — no markdown, no code blocks, no explanation outside the JSON.
-Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.${isUkrainian ? `\nAll Ukrainian words, word forms, and example sentences must be written in Ukrainian Cyrillic script.\nCRITICAL: Ukrainian past-tense predicate forms ending in -ло, -ла, -ли (e.g. остогидло, набридло, минуло, болить) are VERBS — their pos MUST be "verb". Return the infinitive as the base form (остогидло → остогидіти, набридло → набридіти, минуло → минути). Never classify these as adverb or adjective.\nCRITICAL: Stress marking — place the acute accent (´) directly ON the stressed vowel. The character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я). Never place the accent after a consonant.` : ''}${topicsSection}`
+Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.${isUkrainianIface ? `
+The interface language is Ukrainian: explanatory text must be Ukrainian, never Russian. Watch the near-misses — жіночий рід (not женский род), потребує (not требует), використовується (not используется), множина (not множественное число).` : ''}${isUkrainian ? `\nAll Ukrainian words, word forms, and example sentences must be written in Ukrainian Cyrillic script.\nCRITICAL: Ukrainian past-tense predicate forms ending in -ло, -ла, -ли (e.g. остогидло, набридло, минуло, болить) are VERBS — their pos MUST be "verb". Return the infinitive as the base form (остогидло → остогидіти, набридло → набридіти, минуло → минути). Never classify these as adverb or adjective.\nCRITICAL: Stress marking — place the acute accent (´) directly ON the stressed vowel. The character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я). Never place the accent after a consonant.` : ''}${topicsSection}`
 
   const formNote = isGerman
     ? "for nouns: plural WITHOUT article e.g. 'Häuser'; if no plural write '–'; for verbs: 'macht / machte / gemacht'"
@@ -117,6 +124,16 @@ Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.
   - perfective sense:   { "future":  {"я":"...","ти":"...","він/вона":"...","ми":"...","ви":"...","вони":"..."}, "past": {"ч":"...","ж":"...","с":"...","мн":"..."} }
 - For regular verb senses (isException false) and all non-verbs, leave "conjugation" as null` : `
 - Always leave "conjugation" as null`
+
+  // German speakers use the Perfekt to talk about the past; the Präteritum is
+  // mostly written narrative. Left to itself the model reaches for "Er nahm das
+  // Buch", which the learner will hear and say far less often than "Er hat das
+  // Buch genommen". sein/haben/modals are the genuine exceptions — "war",
+  // "hatte", "konnte" ARE the everyday forms, and forcing Perfekt on them
+  // ("ist gewesen") produces stilted German.
+  const germanPastRule = isGerman
+    ? `\n- When a VERB example is past, it MUST use the Perfekt (hat/ist + Partizip II) — that is how German speakers actually talk about the past — NOT the Präteritum. Exception: sein, haben and the modals (können, müssen, wollen, sollen, dürfen, mögen) use the Präteritum (war, hatte, konnte …), because those are their everyday past forms`
+    : ''
 
   const nounArticleRule = isGerman
     ? '- In "wordForm": include the definite article for nouns (e.g. die Entscheidung). For verbs whose meaning depends on a reflexive pronoun and/or governed preposition, include those parts in BOTH "word" and "wordForm", ordered reflexive-verb-preposition (e.g. "sich erinnern an", "sich kümmern um", "warten auf"), never reversed. Attach only the parts THIS sense requires; keep a self-standing verb sense plain.'
@@ -161,8 +178,9 @@ Return ONLY this JSON:
       "wordForm": "${wordFormNote}",
       "translation": "concise ${ifaceLang} translation for THIS sense only",
       "form": "${formNote}",
-      "grammarNote": "one key grammar rule, under 15 words",
-      "explanation": "2-3 sentences on usage and nuance, under 60 words",
+      "grammarNote": "how to BUILD with THIS word — or null. Telegraphic: under 12 words, no sentences, parts separated by ' · '. The test is whether the fact is specific to this word. NULL if it is true of the whole word class (every masculine noun takes den in the accusative; most verbs take haben) or already visible on the card (the article is in the headword, the plural is in \\"form\\", irregularity is in the conjugation table). WORTH SAYING, and belongs HERE rather than in usageNote: a governed preposition and its case — ALWAYS include this when the verb has one, it is the single most useful thing you can say (bestehen aus + Dativ · sich freuen auf + Akk · warten auf + Akk); an object case that is not the default; a separable prefix; auxiliary sein; an obligatory reflexive; uncountable or plural-only. NEVER write the word haben: haben is the default auxiliary and saying so is noise — mention an auxiliary ONLY when it is sein. Write it in ${ifaceLang}${isUkrainianIface ? ' — Ukrainian, NEVER Russian' : ''}, but keep German grammatical terms and forms in German (Akkusativ, Dativ, auf + Dat.)",
+      "explanation": "WRITTEN IN ${ifaceLang.toUpperCase()} — every word of it. Not in ${targetLanguage}, not in English${isUkrainianIface ? ', and never in Russian' : ''}. A definition, and nothing else: say what the word MEANS, precisely, for an A2-B1 learner. No usage advice here (that is usageNote). Define it with words SIMPLER than the headword — never explain a word using harder words. Under 40 words.",
+      "usageNote": "the ONE thing that trips a learner up on this word — or null. Null is the normal answer: most words have no trap, and inventing one is worse than leaving it out. A real trap is: a false friend, a fixed collocation, a register restriction, or a confusion with a near-synonym (bekommen vs erhalten). NOT grammar — a governed preposition, a case, a prefix or an auxiliary belongs in grammarNote, never here. It must not restate anything already in grammarNote: if the only thing you could say is already there, return null. Under 25 words, ${ifaceLang}${isUkrainianIface ? ', Ukrainian NEVER Russian' : ''}",
       "isException": true or false,
       "register": "neutral|formal|informal|colloquial|slang|archaic|vulgar",
       "cefr": "A1|A2|B1|B2|C1|C2",
@@ -183,7 +201,7 @@ ${nounArticleRule}
 - Always include exactly 3 example sentences per sense
 - For each example, "blank" must be the single target word copied verbatim from "target", in the exact inflected form used there (e.g. target "Sie isst ein Ei" → blank "isst"; for nouns include no article, e.g. blank "Hund" not "den Hund")
 - Keep example sentences positive and everyday — avoid war, death, violence, illness, accidents, or tragedy unless the word itself specifically relates to such topics
-- For verbs: present, past, one varied — set "tense" accordingly. For nouns/adj/other: "tense": null
+- Example tense: for VERBS only, make one example present, one past, one varied, and set "tense" accordingly. For nouns, adjectives, adverbs and every other part of speech, ALL examples are "tense": null — a noun has no tense, so never tag a noun example "past" merely because its sentence refers to the past${germanPastRule}
 - register: language register for this specific sense. Use "neutral" for everyday vocabulary with no special register
 - cefr: CEFR level for this specific sense based on standard vocabulary lists. When between two levels, pick the more common/lower one
 ${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і́) on every multi-syllable Ukrainian word form, example sentence word, and conjugation form. The accent must sit on the stressed vowel itself — the character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я); never place the accent after a consonant\n- Ukrainian past-tense forms (ending in -в, -ла, -ло, -ли) that function as predicates are VERBS — classify them as pos:"verb" and return the infinitive as the base form (e.g. остогидло → остогидіти, минуло → минути, набридло → набридіти)\n' : ''}${conjugationRules}`
@@ -203,6 +221,16 @@ ${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і
   const match = clean.match(/\{[\s\S]*\}/)
   if (!match) throw new Error('No JSON object found in response')
   const parsed = JSON.parse(match[0])
+
+  // Enforce the note rules in code. The prompt asks for all of this, but Haiku
+  // keeps emitting "auxiliary haben" (the default — no information) and usage
+  // notes that just restate the grammar note. A section that says nothing must be
+  // null so the card can hide it, rather than showing the learner filler.
+  for (const sense of parsed.senses ?? []) {
+    sense.grammarNote = cleanGrammarNote(sense.grammarNote)
+    sense.usageNote   = cleanUsageNote(sense.usageNote, sense.grammarNote)
+  }
+
   return isUkrainian ? deepFixStress(parsed) : parsed
 }
 

@@ -107,7 +107,7 @@ export async function completeSessionV2(sessionId, userId, senseResults, todayIS
     .update({ completed_at: new Date().toISOString() })
     .eq('id', sessionId)
 
-  for (const { senseId, outcome } of senseResults) {
+  for (const { senseId, outcome, practice } of senseResults) {
     const { data: sense } = await supabase
       .from('word_senses')
       .select('interval_step, lapses, slipped, next_review_date')
@@ -116,7 +116,10 @@ export async function completeSessionV2(sessionId, userId, senseResults, todayIS
       .single()
     if (!sense) continue
 
-    const next = applyVerdict(sense, gradeRetrieval(outcome), todayISO)
+    const next = applyVerdict(sense, gradeRetrieval(outcome), todayISO, { practice })
+    // null = a word crammed in a collection session before it was due, answered
+    // correctly. Nothing is written: cramming must not push its interval out.
+    if (!next) continue
 
     await supabase
       .from('word_senses')

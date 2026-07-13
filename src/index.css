@@ -1,23 +1,64 @@
 @import "tailwindcss";
 
+/* ── Verba · "Willow & Paper" design system ──────────────────────────────
+   Recolor is token-level: the app uses indigo-* (brand), gray-* (neutrals)
+   and yellow/amber (accents) utility classes throughout, so repointing those
+   scales here restyles the whole app with no component edits.
+   Light theme only for now; dark theme is a follow-up.
+   Fonts: Poppins kept for Latin; Ukrainian Cyrillic falls back to system
+   (Fixel self-host is a planned follow-up).
+   ──────────────────────────────────────────────────────────────────────── */
 @theme {
-  /* Brand fonts */
-  --font-sans: 'Poppins', system-ui, sans-serif;
+  --font-sans: 'Poppins', system-ui, 'Segoe UI', sans-serif;
 
-  /* Brand colors */
-  --color-brand-blue:        #4338CA;
-  --color-brand-blue-mid:    #5B52D6;
-  --color-brand-blue-light:  #EEF2FF;
-  --color-brand-yellow:      #FBBF24;
-  --color-brand-yellow-light:#FEF9C3;
-  --color-brand-yellow-pale: #FFFBEB;
+  /* Brand tokens (rarely used directly; kept in sync) */
+  --color-brand-blue:        #2F6B4E;  /* now verba green */
+  --color-brand-blue-mid:    #3B8060;
+  --color-brand-blue-light:  #E9F1EB;
+  --color-brand-yellow:      #E5B04C;  /* now wheat */
+  --color-brand-yellow-light:#F7EBD5;
+  --color-brand-yellow-pale: #FBF3E2;
 
-  /* Override indigo to match brand blue */
-  --color-indigo-600: #4338CA;
-  --color-indigo-700: #3730A3;
-  --color-indigo-500: #5B52D6;
-  --color-indigo-100: #E0E7FF;
-  --color-indigo-50:  #EEF2FF;
+  /* Brand accent → Verba green (was indigo) */
+  --color-indigo-50:  #E9F1EB;
+  --color-indigo-100: #D6E7DC;
+  --color-indigo-200: #BED8C8;
+  --color-indigo-300: #9CC3AC;
+  --color-indigo-400: #6BA588;
+  --color-indigo-500: #3B8060;
+  --color-indigo-600: #2F6B4E;   /* verba — primary buttons, links */
+  --color-indigo-700: #275C42;   /* verba-strong — hover/pressed */
+  --color-indigo-800: #1F4A36;
+  --color-indigo-900: #17382A;
+
+  /* Neutrals → warm grounds + cool ink (Willow & Paper) */
+  --color-gray-50:  #FAF7F2;   /* paper */
+  --color-gray-100: #F1ECE3;
+  --color-gray-200: #E7E1D6;   /* borders */
+  --color-gray-300: #D8D0C4;
+  --color-gray-400: #94908A;
+  --color-gray-500: #5B6167;   /* ink-muted — secondary text */
+  --color-gray-600: #4A5157;
+  --color-gray-700: #363D43;
+  --color-gray-800: #2A3137;
+  --color-gray-900: #232A2F;   /* ink — primary text */
+
+  /* Accents → wheat (was yellow/amber) */
+  --color-yellow-50:  #F7EBD5;
+  --color-yellow-100: #F1DFC0;
+  --color-yellow-200: #ECD3A3;
+  --color-yellow-300: #E5B04C;
+  --color-yellow-400: #E0A93E;
+  --color-yellow-500: #C98F2A;
+  --color-yellow-600: #B4761B;   /* wheat */
+  --color-yellow-700: #94610F;
+  --color-amber-50:  #F9EFD8;
+  --color-amber-100: #F0DEB8;
+  --color-amber-200: #E9CE97;
+  --color-amber-600: #B4761B;
+  --color-amber-700: #94610F;
+  /* semantic green (success/PASS) and red (danger) keep Tailwind defaults —
+     Tailwind green-600 stays distinct from the deeper brand verba. */
 }
 
 :root {
@@ -30,7 +71,8 @@
 body {
   margin: 0;
   font-family: 'Poppins', system-ui, 'Segoe UI', sans-serif;
-  background-color: #FAFAFA;
+  background-color: #FAF7F2;  /* paper */
+  color: #232A2F;             /* ink */
 }
 
 /* Smooth transitions globally */

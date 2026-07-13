@@ -945,6 +945,7 @@ export default function Chat() {
           translation: s.translation,
           form: s.form || null,
           grammar_note: s.grammarNote || null,
+          usage_note: s.usageNote || null,
           explanation: s.explanation || null,
           is_exception: s.isException || false,
           register: s.register || 'neutral',

@@ -314,7 +314,7 @@ export default function PrepExercise() {
     <div className="min-h-screen bg-gray-50">
       {/* Nav */}
       <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-        <div className="text-xl font-bold text-indigo-600">wordy</div>
+        <div className="text-xl font-bold text-indigo-600">verba</div>
         <div className="flex items-center gap-6 text-sm font-medium text-gray-500">
           <button onClick={() => navigate('/dashboard')}  className="hover:text-gray-900 transition-colors">{t('nav.dashboard')}</button>
           <button onClick={() => navigate('/dictionary')} className="hover:text-gray-900 transition-colors">{t('nav.dictionary')}</button>

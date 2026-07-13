@@ -38,7 +38,7 @@ export default function NavBar({ slot, className = '' }) {
     { path: '/dashboard',  label: t('nav.dashboard')  },
     { path: '/dictionary', label: t('nav.dictionary') },
     { path: '/exercises',  label: t('nav.exercises')  },
-    { path: '/reader',     label: 'Reader'            },
+    { path: '/reader',     label: t('nav.reader')     },
     { path: '/chat',       label: t('nav.chat')       },
   ]
 
@@ -73,9 +73,15 @@ export default function NavBar({ slot, className = '' }) {
   return (
     <nav className={`bg-white border-b border-gray-100 px-4 sm:px-6 py-4 shadow-sm ${className}`}>
       <div className="flex items-center justify-between gap-3">
-        <div className="text-xl font-bold tracking-tight shrink-0">
-          <span className="text-indigo-600">word</span><span className="text-brand-yellow">y</span>
-        </div>
+        {/* The palette was already repointed to Willow & Paper; the wordmark was the
+            last thing still saying "wordy". Same two-tone split: verba green + wheat. */}
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="text-xl font-bold tracking-tight shrink-0"
+          aria-label="Verba"
+        >
+          <span className="text-indigo-600">verba</span>
+        </button>
 
         {/* Desktop links */}
         <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-400">

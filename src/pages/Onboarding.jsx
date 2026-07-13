@@ -182,6 +182,7 @@ export default function Onboarding() {
             translation:          srcChunk[j].translation,
             form:                 srcChunk[j].form || null,
             grammar_note:         srcChunk[j].grammarNote || null,
+            usage_note:           srcChunk[j].usageNote || null,
             is_exception:         false,
             register:             'neutral',
             learning_stage:       stageMap[srcChunk[j].status] ?? 'new',

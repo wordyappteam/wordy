@@ -582,7 +582,7 @@ export default function PrepSession() {
   // ── Nav ──
   const nav = (
     <nav className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-      <div className="text-xl font-bold text-indigo-600">wordy</div>
+      <div className="text-xl font-bold text-indigo-600">verba</div>
       {!['loading', 'error', 'results'].includes(phase) && <PhaseBar phase={phase} />}
       <button onClick={() => navigate('/prepositions')}
         className="text-sm text-gray-400 hover:text-gray-700 transition-colors">

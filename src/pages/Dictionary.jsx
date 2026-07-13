@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { identifyWord as identifyWordAI, suggestCollectionWords } from '../lib/claude'
 import { displayTranslation } from '../lib/senseDisplay'
-import { badgeForStage } from '../lib/srs'
+import { badgeForWord } from '../lib/srs'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import {
@@ -70,6 +70,7 @@ function dbSenseToFrontend(s) {
     translation: s.translation,
     form: s.form,
     grammarNote: s.grammar_note,
+    usageNote: s.usage_note,
     explanation: s.explanation,
     isException: s.is_exception,
     register: s.register ?? 'neutral',
@@ -100,7 +101,7 @@ function dbToWord(row, legacyExamples = [], senses = []) {
     form: primary?.form ?? row.form,
     pos: primary?.pos ?? row.pos,
     translation: primary?.translation ?? row.translation,
-    status: badgeForStage(primary?.learningStage) ?? row.status,
+    status: badgeForWord(senses, row.status),
     dateAdded: row.date_added,
     source: row.source,
     lastReviewed: row.last_reviewed,
@@ -418,6 +419,35 @@ const POS_STYLES = {
   preposition: { label: 'prep.',className: 'bg-gray-100 text-gray-600 border border-gray-200' },
 }
 
+// The badges were the last English left inside a Ukrainian card. A learner reading
+// "нове" in the header and "new" two lines below it is looking at the same fact
+// twice, in two languages.
+const POS_LABELS_UK = {
+  verb: 'дієсл.', noun: 'ім.', adjective: 'прикм.',
+  adverb: 'присл.', conjunction: 'спол.', preposition: 'прийм.',
+}
+const STAGE_LABELS_UK = {
+  new: 'нове', early: 'початок', mid: 'вивчаю',
+  late: 'майже', known: 'знаю', mastered: 'засвоєно',
+}
+function posLabel(pos, lang) {
+  const fallback = POS_STYLES[pos] || POS_STYLES.preposition
+  return (lang === 'uk' && POS_LABELS_UK[pos]) || fallback.label
+}
+function stageLabel(stage, lang) {
+  const s = stage || 'new'
+  return (lang === 'uk' && STAGE_LABELS_UK[s]) || s
+}
+
+const ENTRY_LABELS_UK = {
+  phrase: 'фраза', idiom: 'ідіома', 'phrasal-verb': 'фразове дієсл.',
+}
+function entryLabel(entryType, lang) {
+  const e = ENTRY_TYPE_STYLES[entryType]
+  if (!e) return null
+  return (lang === 'uk' && ENTRY_LABELS_UK[entryType]) || e.label
+}
+
 const ENTRY_TYPE_STYLES = {
   word:          null, // no extra badge — POS badge is enough
   phrase:        { label: 'phrase',        className: 'bg-indigo-50 text-indigo-700 border border-indigo-200' },
@@ -432,9 +462,18 @@ const STATUS_COLORS = {
   mastered: 'bg-indigo-50 text-indigo-700',
 }
 
+// A tense tag annotates the sentence; it does not compete with it. The old blue and
+// purple pills read as badges and pulled the eye away from the German. Quiet grey
+// text, and in the interface language like everything else on the card.
 const TENSE_LABELS = {
-  present: { label: 'present', className: 'bg-blue-50 text-blue-600 border border-blue-100' },
-  past:    { label: 'past',    className: 'bg-purple-50 text-purple-600 border border-purple-100' },
+  present: { en: 'present', uk: 'теперішній' },
+  past:    { en: 'past',    uk: 'минулий' },
+}
+const TENSE_CLASS = 'text-[10px] uppercase tracking-wide text-gray-400 font-medium'
+function tenseLabel(tense, lang) {
+  const entry = TENSE_LABELS[tense]
+  if (!entry) return null
+  return lang === 'uk' ? entry.uk : entry.en
 }
 
 function getDefaultColumns(t) {
@@ -456,7 +495,7 @@ function speak(text, lang = 'de-DE') {
   window.speechSynthesis.speak(u)
 }
 
-function renderCell(colId, w, t) {
+function renderCell(colId, w, t, lang) {
   const pos       = POS_STYLES[w.pos] || POS_STYLES.preposition
   const entryBadge = ENTRY_TYPE_STYLES[w.entryType]
   switch (colId) {
@@ -478,8 +517,8 @@ function renderCell(colId, w, t) {
     }
     case 'entryType':
       return entryBadge
-        ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
-        : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{pos.label}</span>
+        ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryLabel(w.entryType, lang)}</span>
+        : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{posLabel(w.pos, lang)}</span>
     case 'form': {
       const formText = w.pos !== 'noun' ? (w.form || '—') : '—'
       return (
@@ -521,7 +560,7 @@ const TRANSLATE_LANGS = [
 ]
 
 function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 'German', topics = [] }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [input, setInput]           = useState('')
   const [stage, setStage]           = useState('idle') // idle | loading | result
   const [result, setResult]         = useState(null)
@@ -587,7 +626,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
             </button>
           </div>
           <div className="flex items-center gap-2 mb-4">
-            <span className="text-xs text-gray-400">Translate to</span>
+            <span className="text-xs text-gray-400">{t('dict.translateTo')}</span>
             <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs font-semibold">
               {TRANSLATE_LANGS.map(({ code, label }) => (
                 <button
@@ -618,7 +657,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-sm font-semibold text-gray-900">{result.word}</span>
                 {entryBadge && (
-                  <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
+                  <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryLabel(result.entryType, lang)}</span>
                 )}
                 {(result.senses || []).length > 1 && (
                   <span className="text-xs text-gray-400 ml-auto">{(result.senses || []).length} senses — uncheck any you don't want</span>
@@ -639,7 +678,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
                       }`}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posBadge.label}</span>
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posLabel(sense.pos, lang)}</span>
                         {sense.aspect && (
                           <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">{sense.aspect === 'imperfective' ? 'impf.' : 'pf.'}</span>
                         )}
@@ -682,7 +721,29 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
 }
 
 // ── Per-sense image slot ──────────────────────────────────────────────────
+// Stroke icon rather than the 🔈 emoji: emoji render differently on every platform
+// and read as decoration. This is a control.
+function SpeakerIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  )
+}
+
+function TrashIcon({ size = 13 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a1 1 0 01-1 1H7a1 1 0 01-1-1L5 6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  )
+}
+
 function SenseImage({ sense, userId, onChange }) {
+  const { t } = useLanguage()
   const fileRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -727,8 +788,8 @@ function SenseImage({ sense, userId, onChange }) {
         <div className="relative group rounded-xl overflow-hidden border border-gray-100">
           <img src={sense.imageUrl} alt="" className="w-full max-h-52 object-cover" />
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-            <button onClick={() => fileRef.current?.click()} disabled={busy} className="text-xs font-semibold bg-white/90 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-white">Replace</button>
-            <button onClick={handleRemove} disabled={busy} className="text-xs font-semibold bg-red-500/90 text-white px-3 py-1.5 rounded-lg hover:bg-red-600">Remove</button>
+            <button onClick={() => fileRef.current?.click()} disabled={busy} className="text-xs font-semibold bg-white/90 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-white">{t('dict.replaceImage')}</button>
+            <button onClick={handleRemove} disabled={busy} className="text-xs font-semibold bg-red-500/90 text-white px-3 py-1.5 rounded-lg hover:bg-red-600">{t('dict.removeImage')}</button>
           </div>
           {busy && <div className="absolute inset-0 bg-white/60 flex items-center justify-center text-xs text-gray-500">Working…</div>}
         </div>
@@ -736,9 +797,9 @@ function SenseImage({ sense, userId, onChange }) {
         <button
           onClick={() => fileRef.current?.click()}
           disabled={busy}
-          className="w-full py-3 border-2 border-dashed border-gray-200 hover:border-indigo-300 rounded-xl text-xs text-gray-400 hover:text-indigo-500 transition-colors flex items-center justify-center gap-1.5"
+          className="w-full py-2.5 border border-dashed border-gray-200 hover:border-indigo-300 rounded-xl text-xs text-gray-400 hover:text-indigo-500 transition-colors flex items-center justify-center gap-1.5"
         >
-          {busy ? 'Uploading…' : '🖼 Add image'}
+          {busy ? t('dict.uploading') : t('dict.addImage')}
         </button>
       )}
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
@@ -747,8 +808,32 @@ function SenseImage({ sense, userId, onChange }) {
 }
 
 // ── Word Panel ────────────────────────────────────────────────────────────
+// A collapsible note section. Collapsed by default — the translation and examples
+// are what you came for; the notes are there when you want to go deeper.
+function Section({ id, label, open, onToggle, accent = false, children }) {
+  const isOpen = open.has(id)
+  return (
+    <div>
+      <button
+        onClick={() => onToggle(id)}
+        className={`w-full flex items-center justify-between py-2 text-xs font-semibold transition-colors ${
+          isOpen ? (accent ? 'text-amber-700' : 'text-indigo-700') : 'text-gray-400 hover:text-gray-600'
+        }`}
+      >
+        <span>{label}</span>
+        <span className={`transition-transform text-[10px] ${isOpen ? 'rotate-90' : ''}`}>▸</span>
+      </button>
+      {isOpen && (
+        <div className={`rounded-xl px-3 py-2.5 mb-2 ${accent ? 'bg-amber-50' : 'bg-gray-50'}`}>
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange, topics = [] }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [editing, setEditing]             = useState(false)
   const [draft, setDraft]                 = useState(word)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -761,6 +846,19 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
   useEffect(() => { setActiveSenseIdx(0) }, [word.id]) // reset pager when a different word opens
   const [confirmDeleteSense, setConfirmDeleteSense] = useState(false)
   useEffect(() => { setConfirmDeleteSense(false) }, [word.id, activeSenseIdx]) // close confirm on word/sense change
+
+  // Note sections (Значення / Граматика / Варто знати), collapsed by default.
+  // Keys are namespaced by sense id, so no reset is needed when another word or
+  // sense opens — it simply has different keys, and returning to a sense you had
+  // expanded finds it still expanded.
+  const [openSections, setOpenSections] = useState(new Set())
+  function toggleSection(key) {
+    setOpenSections(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   function toggleConjugation(key) {
     setExpandedConjugation(prev => {
@@ -833,8 +931,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
           <div>
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               {entryBadge
-                ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
-                : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{pos.label}</span>
+                ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryLabel(word.entryType, lang)}</span>
+                : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{posLabel(word.pos, lang)}</span>
               }
               {!editing && (
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[word.status]}`}>
@@ -848,7 +946,21 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                 <span className="text-xs text-indigo-500 font-medium">{t('dict.editingLabel')}</span>
               )}
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">{aspectPairTitle || word.word}</h2>
+            {/* Pronounce belongs ON the word, not on a row of its own below it —
+                it's an attribute of the headword, so it reads as one thing. */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-2xl font-bold text-gray-900">{aspectPairTitle || word.word}</h2>
+              {!editing && (
+                <button
+                  onClick={() => speak(word.word, speechLocale)}
+                  aria-label={t('dict.pronounce')}
+                  title={t('dict.pronounce')}
+                  className="w-7 h-7 rounded-full border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-200 transition-colors flex items-center justify-center shrink-0"
+                >
+                  <SpeakerIcon />
+                </button>
+              )}
+            </div>
             {!aspectPairTitle && word.form && <p className="text-sm text-gray-400 italic mt-0.5">{cleanForm(word.form, word.word)}</p>}
           </div>
           <button onClick={editing ? cancelEdit : onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none mt-1">×</button>
@@ -857,94 +969,28 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
         {/* ── View mode ── */}
         {!editing && (
           <div className="px-6 py-5 flex flex-col gap-5">
-            {/* Pronounce button */}
-            <div className="flex justify-end">
-              <button
-                onClick={() => speak(word.word, speechLocale)}
-                className="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-sm text-gray-400 hover:text-indigo-600 hover:border-indigo-200 transition-colors"
-              >
-                {t('dict.pronounce')}
-              </button>
-            </div>
-
-            {/* Collections */}
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Collections</p>
-              <div className="flex flex-wrap gap-2 items-center">
-                {collections.map((c) => {
-                  const isMember = wordCollectionIds?.has(c.id)
-                  const col = collectionColor(c.color)
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => onToggleCollection?.(word.id, c.id)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors flex items-center gap-1.5 ${isMember ? col.active : `${col.chip} opacity-70 hover:opacity-100`}`}
-                    >
-                      {!isMember && <span className={`w-2 h-2 rounded-full ${col.dot}`} />}
-                      {isMember && <span>✓</span>}
-                      {c.name}
-                    </button>
-                  )
-                })}
-
-                {creatingCollection ? (
-                  <input
-                    autoFocus
-                    value={newCollectionName}
-                    onChange={(e) => setNewCollectionName(e.target.value)}
-                    onKeyDown={async (e) => {
-                      if (e.key === 'Enter' && newCollectionName.trim()) {
-                        await onQuickCreateCollection?.(newCollectionName.trim(), word.id)
-                        setNewCollectionName(''); setCreatingCollection(false)
-                      }
-                      if (e.key === 'Escape') { setNewCollectionName(''); setCreatingCollection(false) }
-                    }}
-                    onBlur={() => { setNewCollectionName(''); setCreatingCollection(false) }}
-                    placeholder="Name…"
-                    className="px-3 py-1 rounded-full text-xs border border-indigo-300 focus:outline-none focus:border-indigo-500 w-24"
-                  />
-                ) : (
-                  <button
-                    onClick={() => setCreatingCollection(true)}
-                    className="px-3 py-1 rounded-full text-xs font-medium border border-dashed border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors"
-                  >
-                    + New
-                  </button>
-                )}
-              </div>
-            </div>
-
             {/* ── Sense-based display ── */}
             {word.hasSenses ? (
               <div className="flex flex-col gap-4">
-                {/* ── Senses carousel bar (only when >1 sense) ── */}
+                {/* Senses are TABS, not a carousel: each tab is labelled with its own
+                    meaning, so you can jump straight to the sense you want instead of
+                    stepping through anonymous dots hunting for it. */}
                 {word.senses.length > 1 && (
-                  <div className="flex items-center justify-center gap-4">
-                    <button
-                      onClick={() => setActiveSenseIdx(i => Math.max(0, i - 1))}
-                      disabled={activeSenseIdx === 0}
-                      aria-label="Previous sense"
-                      className="w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:border-indigo-300 disabled:opacity-30 flex items-center justify-center text-lg leading-none"
-                    >‹</button>
-                    <div className="flex flex-col items-center gap-1.5">
-                      <span className="text-xs font-medium text-gray-500">{activeSenseIdx + 1} / {word.senses.length}</span>
-                      <div className="flex gap-1.5">
-                        {word.senses.map((_, i) => (
-                          <button
-                            key={i}
-                            onClick={() => setActiveSenseIdx(i)}
-                            aria-label={`Sense ${i + 1}`}
-                            className={`w-2 h-2 rounded-full transition-colors ${i === activeSenseIdx ? 'bg-indigo-600' : 'bg-gray-300 hover:bg-gray-400'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setActiveSenseIdx(i => Math.min(word.senses.length - 1, i + 1))}
-                      disabled={activeSenseIdx >= word.senses.length - 1}
-                      aria-label="Next sense"
-                      className="w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:border-indigo-300 disabled:opacity-30 flex items-center justify-center text-lg leading-none"
-                    >›</button>
+                  <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5">
+                    {word.senses.map((s, i) => (
+                      <button
+                        key={s.id || i}
+                        onClick={() => setActiveSenseIdx(i)}
+                        title={displayTranslation(s.translation, true)}
+                        className={`shrink-0 max-w-[9rem] truncate px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                          i === activeSenseIdx
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {displayTranslation(s.translation, true)}
+                      </button>
+                    ))}
                   </div>
                 )}
                 {(() => {
@@ -955,9 +1001,11 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                   const stageColor = STAGE_COLORS[sense.learningStage] || STAGE_COLORS.new
                   return (
                     <div key={sense.id || si} className="border border-gray-100 rounded-2xl overflow-hidden">
-                      {/* Sense header */}
+                      {/* Meta row: what KIND of word this is. Part of speech, level and
+                          register are metadata — they belong up here with the headword,
+                          not competing for attention with the definition below. */}
                       <div className="bg-gray-50 px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
-                        <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posBadge.label}</span>
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posLabel(sense.pos, lang)}</span>
                         {sense.aspect && (
                           <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">
                             {sense.aspect === 'imperfective' ? 'impf.' : 'pf.'}
@@ -968,23 +1016,24 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                             {{ m: 'ч', f: 'ж', n: 'с' }[sense.gender] || sense.gender}
                           </span>
                         )}
-                        <span className="text-sm font-semibold text-gray-800">{sense.wordForm}</span>
-                        {sense.form && <span className="text-xs text-gray-400 italic">({sense.form})</span>}
                         {sense.cefr && (
                           <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-600 text-white">{sense.cefr}</span>
                         )}
+                        {/* Register only when it is NOT neutral — "neutral" on every
+                            everyday word is a badge that says nothing. */}
                         {sense.register && sense.register !== 'neutral' && (
                           <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 capitalize">{sense.register}</span>
                         )}
-                        <span className={`ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}>{sense.learningStage || 'new'}</span>
-                        <button
-                          onClick={() => setConfirmDeleteSense(true)}
-                          aria-label="Delete sense"
-                          title={t('dict.deleteSenseConfirm')}
-                          className="text-gray-300 hover:text-red-500 text-sm leading-none transition-colors"
-                        >🗑</button>
+                        <span className={`ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}>{stageLabel(sense.learningStage, lang)}</span>
                       </div>
+
                       <div className="px-4 py-3 flex flex-col gap-3">
+                        {/* Headword + its key form (plural / principal parts) */}
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="text-lg font-bold text-gray-900">{sense.wordForm}</span>
+                          {sense.form && <span className="text-xs text-gray-400 italic">({sense.form})</span>}
+                        </div>
+
                         {confirmDeleteSense && (
                           /* In-place sense confirm — last sense deletes the whole word */
                           <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
@@ -1015,19 +1064,35 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                             </div>
                           </div>
                         )}
-                        <SenseImage sense={sense} userId={userId} onChange={onSenseImageChange} />
+                        {/* The translation — the answer to "what does this mean". Biggest thing on the card. */}
                         <p className="text-base font-medium text-gray-800">{displayTranslation(sense.translation, word.senses.length > 1)}</p>
-                        {sense.grammarNote && !/^(countable|uncountable) noun/i.test(sense.grammarNote) && (
-                          <div className={`rounded-xl px-3 py-2 text-xs font-medium flex items-start gap-2 ${
-                            sense.isException ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
-                          }`}>
-                            <span>{sense.isException ? '⚠️' : 'ℹ️'}</span>
-                            <span>{sense.grammarNote}</span>
+
+                        {/* Three notes, three jobs, each allowed to be silent:
+                              Значення    — the definition. Always there.
+                              Граматика   — how to build with it. Null for most nouns.
+                              Варто знати — the trap. Null for most words.
+                            A section with nothing to say does not render at all: an empty
+                            "Граматика ▸" on `der Tisch` would be worse than no section. */}
+                        {(sense.explanation || sense.grammarNote || sense.usageNote) && (
+                          <div className="border-y border-gray-100 divide-y divide-gray-50">
+                            {sense.explanation && (
+                              <Section id={`${sense.id}-mean`} label={t('dict.meaning')} open={openSections} onToggle={toggleSection}>
+                                <p className="text-sm text-gray-600 leading-relaxed">{sense.explanation}</p>
+                              </Section>
+                            )}
+                            {sense.grammarNote && (
+                              <Section id={`${sense.id}-gram`} label={t('dict.grammar')} open={openSections} onToggle={toggleSection} accent={sense.isException}>
+                                <p className="text-sm text-gray-700 font-medium">{sense.grammarNote}</p>
+                              </Section>
+                            )}
+                            {sense.usageNote && (
+                              <Section id={`${sense.id}-use`} label={t('dict.goodToKnow')} open={openSections} onToggle={toggleSection} accent>
+                                <p className="text-sm text-amber-900 leading-relaxed">{sense.usageNote}</p>
+                              </Section>
+                            )}
                           </div>
                         )}
-                        {sense.explanation && (
-                          <p className="text-sm text-gray-600 leading-relaxed">{sense.explanation}</p>
-                        )}
+
                         {sense.examples?.length > 0 && (
                           <div className="flex flex-col gap-2">
                             {sense.examples.map((ex, i) => (
@@ -1035,10 +1100,10 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                                 <div className="flex items-start justify-between gap-2 mb-1">
                                   <p className="text-sm font-medium text-gray-800 leading-snug">{ex.target}</p>
                                   <div className="flex items-center gap-1.5 shrink-0">
-                                    {ex.tense && TENSE_LABELS[ex.tense] && (
-                                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TENSE_LABELS[ex.tense].className}`}>{TENSE_LABELS[ex.tense].label}</span>
+                                    {tenseLabel(ex.tense, lang) && (
+                                      <span className={TENSE_CLASS}>{tenseLabel(ex.tense, lang)}</span>
                                     )}
-                                    <button onClick={() => speak(ex.target, speechLocale)} className="text-gray-300 hover:text-indigo-500 transition-colors text-base">🔈</button>
+                                    <button onClick={() => speak(ex.target, speechLocale)} aria-label="Pronounce" className="text-gray-300 hover:text-indigo-500 transition-colors"><SpeakerIcon /></button>
                                   </div>
                                 </div>
                                 <p className="text-xs text-gray-400 italic">{ex.translation}</p>
@@ -1124,6 +1189,30 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                             </div>
                           </div>
                         )}
+
+                        {/* The image is an aid, not the point — it sits after the examples,
+                            and when there is none it is a quiet invitation, not an empty
+                            box demanding to be filled. */}
+                        <SenseImage sense={sense} userId={userId} onChange={onSenseImageChange} />
+
+                        {/* Destructive actions live down here, as quiet text. Deleting a
+                            sense used to be a 🗑 sitting inline with the content, one
+                            mis-tap from losing a word you have been learning for weeks. */}
+                        {/* Only when there is more than one sense. On a single-sense word
+                            "delete this sense" IS "delete the word" — and the word-level
+                            button below already says so. Showing both was the same
+                            destructive action twice, one card apart. */}
+                        {word.senses.length > 1 && (
+                          <div className="pt-2 mt-1 border-t border-gray-100 flex justify-end">
+                            <button
+                              onClick={() => setConfirmDeleteSense(true)}
+                              className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-red-600 transition-colors px-2 py-1 -mr-2 rounded-lg hover:bg-red-50"
+                            >
+                              <TrashIcon />
+                              {t('dict.deleteSense')}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
@@ -1161,10 +1250,10 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                           <div className="flex items-start justify-between gap-2 mb-1.5">
                             <p className="text-sm font-medium text-gray-800 leading-snug">{ex.target}</p>
                             <div className="flex items-center gap-1.5 shrink-0">
-                              {ex.tense && TENSE_LABELS[ex.tense] && (
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TENSE_LABELS[ex.tense].className}`}>{TENSE_LABELS[ex.tense].label}</span>
+                              {tenseLabel(ex.tense, lang) && (
+                                <span className={TENSE_CLASS}>{tenseLabel(ex.tense, lang)}</span>
                               )}
-                              <button onClick={() => speak(ex.target, speechLocale)} className="text-gray-300 hover:text-indigo-500 transition-colors text-base">🔈</button>
+                              <button onClick={() => speak(ex.target, speechLocale)} aria-label="Pronounce" className="text-gray-300 hover:text-indigo-500 transition-colors"><SpeakerIcon /></button>
                             </div>
                           </div>
                           <p className="text-xs text-gray-400 italic">{ex.translation}</p>
@@ -1208,6 +1297,53 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
               </>
             )}
 
+            {/* Collections: filing a word away is something you do AFTER reading it,
+                so this sits below the senses rather than above them. */}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{t('dict.collectionsTitle')}</p>
+              <div className="flex flex-wrap gap-2 items-center">
+                {collections.map((c) => {
+                  const isMember = wordCollectionIds?.has(c.id)
+                  const col = collectionColor(c.color)
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => onToggleCollection?.(word.id, c.id)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors flex items-center gap-1.5 ${isMember ? col.active : `${col.chip} opacity-70 hover:opacity-100`}`}
+                    >
+                      {!isMember && <span className={`w-2 h-2 rounded-full ${col.dot}`} />}
+                      {isMember && <span>✓</span>}
+                      {c.name}
+                    </button>
+                  )
+                })}
+                {creatingCollection ? (
+                  <input
+                    autoFocus
+                    value={newCollectionName}
+                    onChange={(e) => setNewCollectionName(e.target.value)}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter' && newCollectionName.trim()) {
+                        await onQuickCreateCollection?.(newCollectionName.trim(), word.id)
+                        setNewCollectionName(''); setCreatingCollection(false)
+                      }
+                      if (e.key === 'Escape') { setNewCollectionName(''); setCreatingCollection(false) }
+                    }}
+                    onBlur={() => { setNewCollectionName(''); setCreatingCollection(false) }}
+                    placeholder="Name…"
+                    className="px-3 py-1 rounded-full text-xs border border-indigo-300 focus:outline-none focus:border-indigo-500 w-24"
+                  />
+                ) : (
+                  <button
+                    onClick={() => setCreatingCollection(true)}
+                    className="px-3 py-1 rounded-full text-xs font-medium border border-dashed border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors"
+                  >
+                    {t('dict.newCollection')}
+                  </button>
+                )}
+              </div>
+            </div>
+
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => handleIdentify()}
@@ -1217,12 +1353,12 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                 {identifying ? (
                   <>
                     <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    Identifying…
+                    {t('dict.identifying')}
                   </>
-                ) : '✨ Identify with AI'}
+                ) : t('dict.identifyWithAi')}
               </button>
               <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
-                <span>Re-identify in</span>
+                <span>{t('dict.reidentifyIn')}</span>
                 <button onClick={() => handleIdentify('English')} disabled={identifying} className="px-2 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 text-gray-600 disabled:opacity-50">🇬🇧 EN</button>
                 <button onClick={() => handleIdentify('Ukrainian')} disabled={identifying} className="px-2 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 text-gray-600 disabled:opacity-50">🇺🇦 UA</button>
               </div>
@@ -1232,20 +1368,23 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
             <div className="flex gap-2 pt-1">
               {!confirmDelete ? (
                 <>
-                  <button className="flex-1 py-2.5 rounded-xl border border-indigo-200 text-indigo-600 text-sm font-medium hover:bg-indigo-50 transition-colors">
-                    {t('dict.practiceWord')}
-                  </button>
+                  {/* "Practice this word" is gone — it had no onClick and never did
+                      anything. A button that does nothing is worse than no button. */}
                   <button
                     onClick={startEdit}
-                    className="py-2.5 px-4 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 hover:text-gray-700 transition-colors"
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 hover:text-gray-700 transition-colors"
                   >
                     {t('dict.edit')}
                   </button>
+                  {/* Legible, but not shouting. Grey with a real border so it can be
+                      found; red only on hover, when you are actually on it. An
+                      invisible destructive action isn't safe — it's just confusing. */}
                   <button
                     onClick={() => setConfirmDelete(true)}
-                    className="py-2.5 px-3 rounded-xl border border-red-100 text-red-400 text-sm font-medium hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                    className="py-2.5 px-4 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors flex items-center gap-1.5"
                   >
-                    🗑
+                    <TrashIcon size={14} />
+                    {t('dict.deleteWord')}
                   </button>
                 </>
               ) : (
@@ -1356,6 +1495,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
 
 // ── Quick Sort mode ───────────────────────────────────────────────────────
 function QuickSortMode({ words, onClose, onStatusChange }) {
+  const { t, lang } = useLanguage()
   const [index, setIndex]   = useState(0)
   const [saving, setSaving] = useState(false)
   const [done, setDone]     = useState(false)
@@ -1391,7 +1531,7 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
             </div>
           ))}
         </div>
-        <button onClick={onClose} className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Done</button>
+        <button onClick={onClose} className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-semibold text-sm">{t('dict.done')}</button>
       </div>
     )
   }
@@ -1419,8 +1559,8 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
         <div className="bg-white rounded-3xl shadow-md border border-gray-100 w-full max-w-sm px-8 py-10 flex flex-col items-center text-center gap-4">
           <div className="flex gap-1.5 flex-wrap justify-center">
             {eType
-              ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${eType.className}`}>{eType.label}</span>
-              : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{pos.label}</span>
+              ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${eType.className}`}>{entryLabel(current.entryType, lang)}</span>
+              : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{posLabel(current.pos, lang)}</span>
             }
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[current.status]}`}>{current.status}</span>
           </div>
@@ -1430,7 +1570,7 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
           )}
           {current.translation
             ? <p className="text-lg text-gray-600">{displayTranslation(current.translation)}</p>
-            : <p className="text-sm text-gray-300 italic">No translation yet</p>
+            : <p className="text-sm text-gray-300 italic">{t('dict.noTranslation')}</p>
           }
           {current.grammarNote && (
             <p className="text-xs text-gray-400 border-t border-gray-100 pt-3 w-full">{current.grammarNote}</p>
@@ -1470,6 +1610,7 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
 
 // ── Bulk Identify modal ───────────────────────────────────────────────────
 function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage, targetLanguageName = 'German', topics = [] }) {
+  const { t } = useLanguage()
   const unidentified = words.filter(w => !w.translation || !w.explanation)
   const [running, setRunning]     = useState(false)
   const [index, setIndex]         = useState(0)
@@ -1515,7 +1656,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
 
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
-            <h3 className="text-lg font-bold text-gray-900">Identify unidentified words</h3>
+            <h3 className="text-lg font-bold text-gray-900">{t('dict.identifyUnidentified')}</h3>
             {!running && <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none">×</button>}
           </div>
 
@@ -1526,10 +1667,10 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
                 Claude will identify them one by one.
               </p>
               {total === 0
-                ? <p className="text-sm text-green-600 bg-green-50 rounded-xl px-4 py-3 mb-5">✓ All words are already identified!</p>
+                ? <p className="text-sm text-green-600 bg-green-50 rounded-xl px-4 py-3 mb-5">✓ {t('dict.allIdentified')}</p>
                 : (
                   <div className="bg-gray-50 rounded-2xl px-4 py-3 mb-5 max-h-48 overflow-y-auto">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Words to identify</p>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">{t('dict.wordsToIdentify')}</p>
                     <div className="flex flex-wrap gap-1.5">
                       {unidentified.map(w => (
                         <span key={w.id} className="px-2.5 py-1 bg-white border border-gray-200 rounded-full text-xs text-gray-600">{w.word}</span>
@@ -1539,7 +1680,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
                 )
               }
               <div className="flex gap-2">
-                <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50">Cancel</button>
+                <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50">{t('dict.cancel')}</button>
                 {total > 0 && (
                   <button onClick={handleStart} className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
                     Identify all {total}
@@ -1566,7 +1707,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
 
           {done && (
             <div className="flex flex-col items-center py-4 gap-4 text-center">
-              <div className="text-4xl">{errors.length === 0 ? '✨' : '⚠️'}</div>
+              <div className={`text-2xl font-bold ${errors.length === 0 ? 'text-green-600' : 'text-amber-600'}`}>{errors.length === 0 ? '✓' : '!'}</div>
               <p className="text-lg font-bold text-gray-900">
                 {succeeded} of {total} identified
               </p>
@@ -1576,7 +1717,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
                   <p className="text-xs text-red-500">{errors.join(', ')}</p>
                 </div>
               )}
-              <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">Done</button>
+              <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">{t('dict.done')}</button>
             </div>
           )}
         </div>
@@ -1665,6 +1806,7 @@ function parseBulkLine(line) {
 
 // ── Bulk import modal ─────────────────────────────────────────────────────
 function BulkImportModal({ onClose, onImport }) {
+  const { t } = useLanguage()
   const [text, setText] = useState('')
   const [preview, setPreview] = useState([])
   const [importing, setImporting] = useState(false)
@@ -1695,7 +1837,7 @@ function BulkImportModal({ onClose, onImport }) {
         <div className="text-4xl mb-3">🎉</div>
         <h2 className="text-xl font-bold text-gray-900 mb-1">{preview.length} words imported!</h2>
         <p className="text-sm text-gray-500 mb-6">Translations are empty — click any word to add them via AI.</p>
-        <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Done</button>
+        <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">{t('dict.done')}</button>
       </div>
     </div>
   )
@@ -1704,7 +1846,7 @@ function BulkImportModal({ onClose, onImport }) {
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-900">Bulk import words</h2>
+          <h2 className="text-lg font-bold text-gray-900">{t('dict.bulkImport')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
@@ -1768,6 +1910,7 @@ function BulkImportModal({ onClose, onImport }) {
 
 // ── Collections modal (manage + create with AI pre-select) ─────────────────
 function CollectionsModal({ collections, words, membershipByWord, countByCollection, targetLanguageName, onCreate, onRename, onDelete, onClose }) {
+  const { t } = useLanguage()
   const [mode, setMode]       = useState(collections.length ? 'list' : 'create') // list | create
   const [name, setName]       = useState('')
   const [color, setColor]     = useState(nextColor(collections))
@@ -1817,7 +1960,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
-          <h2 className="text-lg font-bold text-gray-900">{mode === 'create' ? 'New collection' : 'Collections'}</h2>
+          <h2 className="text-lg font-bold text-gray-900">{mode === 'create' ? t('dict.newCollectionTitle') : t('dict.collectionsTitle')}</h2>
           <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
@@ -1853,7 +1996,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
                     {confirmDelete === c.id ? (
                       <button onClick={() => { onDelete(c.id); setConfirmDelete(null) }} className="text-xs font-semibold text-red-500 hover:text-red-600">Delete?</button>
                     ) : (
-                      <button onClick={() => setConfirmDelete(c.id)} className="text-gray-300 hover:text-red-400 text-sm px-1" title="Delete">🗑</button>
+                      <button onClick={() => setConfirmDelete(c.id)} className="text-gray-400 hover:text-red-500 px-1 transition-colors" title={t('dict.deleteBtn')}><TrashIcon /></button>
                     )}
                   </div>
                 )
@@ -1864,7 +2007,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
                 onClick={() => { setMode('create'); setName(''); setColor(nextColor(collections)); setChecked(new Set()) }}
                 className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-semibold transition-colors"
               >
-                + New collection
+                {t('dict.newCollectionTitle')}
               </button>
             </div>
           </>
@@ -1886,7 +2029,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
 
               {/* Color picker */}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">Color</span>
+                <span className="text-xs text-gray-400">{t('dict.colorLabel')}</span>
                 {COLLECTION_COLOR_KEYS.map(k => (
                   <button
                     key={k}
@@ -1906,7 +2049,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
                   disabled={!name.trim() || suggesting || !words.length}
                   className="px-3 py-1.5 rounded-full text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
                 >
-                  {suggesting ? 'Finding…' : '✨ Suggest with AI'}
+                  {suggesting ? t('dict.finding') : t('dict.suggestWithAi')}
                 </button>
               </div>
 
@@ -1981,7 +2124,15 @@ export default function Dictionary() {
     return getDefaultColumns(t)
   })
   const [dragOver, setDragOver]         = useState(null)
-  const [selectedWord, setSelectedWord] = useState(null)
+  // Hold the selected word's ID, not a copy of the word. The panel then always
+  // renders whatever is currently in `words` — so a re-identify (which refetches
+  // the list) shows its new examples immediately. Holding a snapshot meant the open
+  // panel kept rendering the stale copy until you closed it or reloaded the page.
+  const [selectedId, setSelectedId] = useState(null)
+  const selectedWord = useMemo(
+    () => (selectedId == null ? null : words.find((w) => String(w.id) === String(selectedId)) ?? null),
+    [words, selectedId],
+  )
   const [showAddModal, setShowAddModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
   const [showSortMode, setShowSortMode]   = useState(false)
@@ -2170,6 +2321,7 @@ export default function Dictionary() {
           translation: s.translation,
           form: s.form || null,
           grammar_note: s.grammarNote || null,
+          usage_note: s.usageNote || null,
           explanation: s.explanation || null,
           is_exception: s.isException || false,
           register: s.register || 'neutral',
@@ -2192,7 +2344,7 @@ export default function Dictionary() {
     await supabase.from('examples').delete().eq('word_id', wordId)
     await supabase.from('words').delete().eq('id', wordId).eq('user_id', user.id)
     setWords((prev) => prev.filter((w) => w.id !== wordId))
-    setSelectedWord(null)
+    setSelectedId(null)
   }
 
   // Delete ONE sense directly by id. Deliberately NOT routed through handleUpdate,
@@ -2208,7 +2360,6 @@ export default function Dictionary() {
     const remaining = (w.senses || []).filter((s) => s.id !== senseId)
     const updatedWord = { ...w, senses: remaining, hasSenses: remaining.length > 0 }
     setWords((prev) => prev.map((x) => (x.id === wordId ? updatedWord : x)))
-    setSelectedWord(updatedWord)
   }
 
   async function handleUpdate(updated) {
@@ -2244,6 +2395,7 @@ export default function Dictionary() {
           translation: s.translation,
           form: s.form || null,
           grammar_note: s.grammarNote || null,
+          usage_note: s.usageNote || null,
           explanation: s.explanation || null,
           is_exception: s.isException || false,
           register: s.register || 'neutral',
@@ -2273,7 +2425,6 @@ export default function Dictionary() {
   function handleSenseImageChange(senseId, imageUrl) {
     const patchSenses = (w) => ({ ...w, senses: w.senses?.map(s => s.id === senseId ? { ...s, imageUrl } : s) })
     setWords(prev => prev.map(w => w.senses?.some(s => s.id === senseId) ? patchSenses(w) : w))
-    setSelectedWord(prev => prev && prev.senses?.some(s => s.id === senseId) ? patchSenses(prev) : prev)
   }
 
   async function handleQuickStatusChange(wordId, newStatus) {
@@ -2317,7 +2468,7 @@ export default function Dictionary() {
     await supabase.from('words').delete().in('id', ids).eq('user_id', user.id)
     setWords(prev => prev.filter(w => !idStr.has(String(w.id))))
     setMemberships(prev => prev.filter(r => !idStr.has(String(r.word_id))))
-    if (selectedWord && idStr.has(String(selectedWord.id))) setSelectedWord(null)
+    if (selectedWord && idStr.has(String(selectedWord.id))) setSelectedId(null)
     exitSelection()
   }
 
@@ -2349,35 +2500,35 @@ export default function Dictionary() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{t('dict.title')}</h1>
-            <p className="text-sm text-gray-500 mt-0.5">{loadingWords ? '…' : `${words.length} ${t('dict.entries')}`} · {targetLanguageName}</p>
+            <p className="text-sm text-gray-500 mt-0.5">{loadingWords ? '…' : `${words.length} ${t('dict.entries')}`} · {t(`dict.lang${targetLanguageName}`)}</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setShowBulkModal(true)}
               className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
             >
-              Import list
+              {t('dict.importList')}
             </button>
             <button
               onClick={() => setShowBulkIdentify(true)}
               className="border border-gray-200 hover:border-amber-300 hover:bg-amber-50 text-gray-600 hover:text-amber-700 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
               title="Identify all words missing translation or explanation"
             >
-              ✨ Identify all
+              {t('dict.identifyAll')}
             </button>
             <button
               onClick={() => setShowSortMode(true)}
               className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
               title="Go through all words and assign status levels"
             >
-              🗂 Sort words
+              {t('dict.sortWords')}
             </button>
             <button
               onClick={() => selectionMode ? exitSelection() : setSelectionMode(true)}
               className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors border ${selectionMode ? 'border-indigo-300 bg-indigo-50 text-indigo-600' : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600'}`}
               title="Select multiple words to delete"
             >
-              {selectionMode ? 'Cancel' : '☑ Select'}
+              {selectionMode ? t('dict.cancel') : t('dict.select')}
             </button>
             <button
               onClick={() => setShowAddModal(true)}
@@ -2428,7 +2579,7 @@ export default function Dictionary() {
             onClick={() => setFilterCollection('all')}
             className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${filterCollection === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}
           >
-            All words
+            {t('dict.allWords')}
           </button>
           {collections.map((c) => {
             const col = collectionColor(c.color)
@@ -2449,7 +2600,7 @@ export default function Dictionary() {
             onClick={() => setShowCollectionsModal(true)}
             className="px-3 py-1.5 rounded-full text-xs font-semibold border border-dashed border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors"
           >
-            {collections.length ? '⚙ Manage' : '+ New collection'}
+            {collections.length ? t('dict.manage') : t('dict.newCollectionTitle')}
           </button>
         </div>
 
@@ -2463,11 +2614,14 @@ export default function Dictionary() {
               <span className="text-xs text-indigo-600 font-medium">
                 {wordCount} {wordCount === 1 ? 'word' : 'words'} in <span className="font-semibold">{activeCol.name}</span>
               </span>
+              {/* Passive flip-through: nothing is graded and nothing is recorded.
+                  The graded session lives on the dashboard ("Test me"), so these two
+                  must not both read as "Practice". */}
               <button
                 onClick={() => navigate(`/flashcards?collectionId=${activeCol.id}&collectionName=${encodeURIComponent(activeCol.name)}`)}
                 className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl transition-colors"
               >
-                ▶ Practice
+                {t('dict.flipThrough')}
               </button>
             </div>
           )
@@ -2487,7 +2641,7 @@ export default function Dictionary() {
               disabled={selectedIds.size === 0}
               className="px-4 py-1.5 rounded-xl text-sm font-semibold bg-red-500 hover:bg-red-600 disabled:bg-red-200 disabled:cursor-not-allowed text-white transition-colors"
             >
-              🗑 Delete {selectedIds.size > 0 ? selectedIds.size : ''}
+              <TrashIcon size={14} /> {t('dict.deleteBtn')} {selectedIds.size > 0 ? selectedIds.size : ''}
             </button>
           </div>
         )}
@@ -2533,7 +2687,7 @@ export default function Dictionary() {
               {filtered.map((w, i) => {
                 const isSelected = selectedIds.has(w.id)
                 return (
-                <tr key={w.id} onClick={() => selectionMode ? toggleSelect(w.id) : setSelectedWord(w)}
+                <tr key={w.id} onClick={() => selectionMode ? toggleSelect(w.id) : setSelectedId(w.id)}
                   className={`cursor-pointer transition-colors ${
                     i !== filtered.length - 1 ? 'border-b border-gray-50' : ''
                   } ${isSelected ? 'bg-indigo-50' : selectedWord?.id === w.id ? 'bg-indigo-50/60' : 'hover:bg-indigo-50/40'}`}
@@ -2547,7 +2701,7 @@ export default function Dictionary() {
                   )}
                   {columns.map((col) => (
                     <td key={col.id} className="px-5 py-3.5 whitespace-nowrap">
-                      {renderCell(col.id, w, t)}
+                      {renderCell(col.id, w, t, lang)}
                     </td>
                   ))}
                 </tr>
@@ -2565,7 +2719,7 @@ export default function Dictionary() {
             return (
               <div
                 key={w.id}
-                onClick={() => selectionMode ? toggleSelect(w.id) : setSelectedWord(w)}
+                onClick={() => selectionMode ? toggleSelect(w.id) : setSelectedId(w.id)}
                 className={`bg-white rounded-2xl border p-4 flex items-start gap-3 transition-colors ${isSelected ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100'}`}
               >
                 {selectionMode && (
@@ -2602,18 +2756,18 @@ export default function Dictionary() {
         )}
       </main>
 
-      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedWord(null)} onUpdate={handleUpdate} onDelete={handleDelete} onDeleteSense={handleDeleteSense} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale} topics={topics}
+      {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedId(null)} onUpdate={handleUpdate} onDelete={handleDelete} onDeleteSense={handleDeleteSense} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale} topics={topics}
         collections={collections} wordCollectionIds={membershipByWord[selectedWord.id]} onToggleCollection={toggleWordCollection} onQuickCreateCollection={handleQuickCreateCollection}
         userId={user.id} onSenseImageChange={handleSenseImageChange} />}
       {confirmBulkDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={() => setConfirmBulkDelete(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
-            <div className="text-3xl mb-2">🗑</div>
+            <div className="mb-2 flex justify-center text-red-400"><TrashIcon size={28} /></div>
             <p className="font-semibold text-gray-900 mb-1">Delete {selectedIds.size} word{selectedIds.size !== 1 ? 's' : ''}?</p>
             <p className="text-sm text-gray-400 mb-6">This permanently removes them and all their senses, examples, and collection memberships. This can't be undone.</p>
             <div className="flex gap-3">
-              <button onClick={() => setConfirmBulkDelete(false)} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">Cancel</button>
-              <button onClick={handleBulkDelete} className="flex-1 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold">Delete</button>
+              <button onClick={() => setConfirmBulkDelete(false)} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">{t('dict.cancel')}</button>
+              <button onClick={handleBulkDelete} className="flex-1 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold">{t('dict.deleteBtn')}</button>
             </div>
           </div>
         </div>

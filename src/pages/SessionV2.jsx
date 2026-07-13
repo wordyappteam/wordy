@@ -3,16 +3,20 @@
 // grades ONE outcome per sense, then calls completeSessionV2. Deliberately not
 // wired into the live session flow — this is for validating the v2 loop.
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { useLanguage } from '../lib/i18n'
 import { reviewSentence } from '../lib/claude'
-import { planSessionV2, sentenceOutcome, firstFillBlank, gradeFillIn } from '../lib/srs'
+import { planSessionV2, orderForPractice, sentenceOutcome, firstFillBlank, gradeFillIn } from '../lib/srs'
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
-import { getNewToday, addNewToday, NEW_PER_DAY } from '../lib/dailyNew'
+import { getNewToday, addNewToday, DEFAULT_NEW_PER_DAY } from '../lib/dailyNew'
+
+// One session's worth of graded words. Also the ceiling on a manual pick from a
+// collection — a bigger collection means a second session, not a marathon.
+const GRADED_CAP = 24
 
 // ── grading helpers ──────────────────────────────────────────────────────────
 const norm = (s) => (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -111,6 +115,12 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
           <>
             <p className="text-xl text-gray-800 text-center">{revealed ? fillBlank.target : fillBlank.sentence}</p>
             <p className="text-sm text-gray-400 text-center mt-1">{cleanTr}</p>
+            {/* On reveal, translate the whole sentence — not just the target word.
+                The card is a sentence of context, so a lone word gloss leaves most
+                of what the learner is reading unexplained. */}
+            {revealed && fillBlank.translation && (
+              <p className="text-base text-gray-600 text-center mt-3 italic">{fillBlank.translation}</p>
+            )}
           </>
         )}
         {!revealed ? (
@@ -302,12 +312,21 @@ function NextBtn({ outcome, onClick }) {
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function SessionV2() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const { targetLang, targetLanguageName, speechLocale } = useTargetLang()
   const { lang } = useLanguage()
   const ifaceLang = lang === 'uk' ? 'Ukrainian' : 'English'
 
-  const [phase, setPhase] = useState('loading') // loading | running | saving | done | empty | error
+  // Collection session: /session?collectionId=…&collectionName=… — practise ONE
+  // collection instead of what happens to be due today. Same param convention the
+  // flashcard collection route already uses.
+  const [searchParams] = useSearchParams()
+  const collectionId   = searchParams.get('collectionId')
+  const collectionName = searchParams.get('collectionName') ?? ''
+
+  const [phase, setPhase] = useState('loading') // loading | choosing | running | saving | done | empty | error
+  const [collectionSenses, setCollectionSenses] = useState([]) // for the chooser
+  const [picked, setPicked] = useState(() => new Set())        // manual pick, capped at GRADED_CAP
   const [pool, setPool] = useState([])
   const [steps, setSteps] = useState([])
   const [idx, setIdx] = useState(0)
@@ -320,20 +339,48 @@ export default function SessionV2() {
   // ever fires twice for the same session (reset whenever a fresh session loads).
   const countedRef = useRef(false)
 
+  // Every sense the learner has in this language, or — in a collection session —
+  // only the senses belonging to that collection's words.
+  async function fetchSenses() {
+    const { data, error } = await supabase.from('word_senses').select('*').eq('user_id', user.id).eq('target_language', targetLang)
+    if (error) { console.error('[v2] load error:', error.message); return { error } }
+    let senses = (data ?? []).filter((s) => s.translation?.trim() && s.word_form?.trim())
+
+    if (collectionId) {
+      const { data: members } = await supabase
+        .from('word_collections')
+        .select('word_id')
+        .eq('user_id', user.id)
+        .eq('collection_id', collectionId)
+      const wordIds = new Set((members ?? []).map((m) => m.word_id))
+      senses = senses.filter((s) => wordIds.has(s.word_id))
+    }
+    return { senses }
+  }
+
   // Fresh DB read + plan — never the stale in-memory `pool`/`steps`. Senses that
   // were just reviewed get a future next_review_date, so only a re-query knows
   // what's still actually due right now.
-  async function fetchDuePlan() {
-    const { data, error } = await supabase.from('word_senses').select('*').eq('user_id', user.id).eq('target_language', targetLang)
-    if (error) { console.error('[v2] load error:', error.message); return { error } }
-    const senses = (data ?? []).filter((s) => s.translation?.trim() && s.word_form?.trim())
+  //
+  // `onlySenseIds` is the learner's manual pick from the chooser; null = plan the
+  // whole (collection) pool.
+  async function fetchDuePlan(onlySenseIds = null) {
+    const { error, senses: all } = await fetchSenses()
+    if (error) return { error }
+    const senses = onlySenseIds ? all.filter((s) => onlySenseIds.includes(s.id)) : all
     const todayISO = new Date().toISOString().split('T')[0]
     const plan = planSessionV2(senses, {
       today: todayISO,
-      gradedCap: 24,
+      gradedCap: GRADED_CAP,
       blockSize: 4,
-      newPerDay: NEW_PER_DAY,
+      // The learner's own pacing goal. Must be the same value the Dashboard CTA
+      // used to offer this session, or we plan fewer new words than it promised.
+      newPerDay: profile?.daily_new_words ?? DEFAULT_NEW_PER_DAY,
       newToday: getNewToday(todayISO),
+      // A collection session drills the whole collection, including words that
+      // aren't due yet. Those come back flagged `practice` — graded for feedback,
+      // but a correct answer on them writes nothing (see applyVerdict).
+      practiceAll: !!collectionId,
     })
     return { senses, plan }
   }
@@ -341,8 +388,8 @@ export default function SessionV2() {
   // Shared by the initial mount and "Keep going": re-query, re-plan, start a
   // fresh session row, and drop the runner into 'running'. `isCancelled` guards
   // against setting state after the owning effect has been cleaned up.
-  async function loadAndPlan(isCancelled) {
-    const { error, senses, plan } = await fetchDuePlan()
+  async function loadAndPlan(isCancelled, onlySenseIds = null) {
+    const { error, senses, plan } = await fetchDuePlan(onlySenseIds)
     if (isCancelled?.()) return
     if (error) { setPhase('error'); return }
     if (!plan.length) { setPhase('empty'); return }
@@ -353,13 +400,28 @@ export default function SessionV2() {
     setPool(senses); setSteps(plan); setSessionId(id); setPhase('running')
   }
 
+  // A collection bigger than one session means something gets left out — so the
+  // learner picks what. A collection that fits is just practised, no questions.
+  async function loadCollectionOrChoose(isCancelled) {
+    const { error, senses } = await fetchSenses()
+    if (isCancelled?.()) return
+    if (error) { setPhase('error'); return }
+    if (senses.length > GRADED_CAP) {
+      setCollectionSenses(orderForPractice(senses))
+      setPhase('choosing')
+      return
+    }
+    loadAndPlan(isCancelled)
+  }
+
   useEffect(() => {
     if (!user) return
     let cancelled = false
     setPhase('loading'); setIdx(0); setOutcomes({}); setSummary([]); setRemainingDue(0)
-    loadAndPlan(() => cancelled)
+    if (collectionId) loadCollectionOrChoose(() => cancelled)
+    else loadAndPlan(() => cancelled)
     return () => { cancelled = true }
-  }, [user, targetLang]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, targetLang, collectionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // "Keep going": reset the runner state and re-run the load+plan path so the
   // next batch is capped fresh (new words still throttled by the updated newToday).
@@ -376,7 +438,12 @@ export default function SessionV2() {
 
     setPhase('saving')
     const todayISO = new Date().toISOString().split('T')[0]
-    const results = Object.entries(nextOutcomes).map(([senseId, o]) => ({ senseId, outcome: o }))
+    // Carry the practice flag through: a not-yet-due word drilled in a collection
+    // session must not have a correct answer written back (see applyVerdict).
+    const practiceBySense = new Map(steps.filter((s) => s.graded).map((s) => [s.senseId, !!s.practice]))
+    const results = Object.entries(nextOutcomes).map(([senseId, o]) => ({
+      senseId, outcome: o, practice: practiceBySense.get(senseId) ?? false,
+    }))
     await completeSessionV2(sessionId, user.id, results, todayISO)
     if (!countedRef.current) {
       countedRef.current = true
@@ -391,8 +458,12 @@ export default function SessionV2() {
 
     // Fresh re-query for what's still due — the senses above were just rescheduled
     // to a future next_review_date, so they must not count toward "remaining due".
+    // Practice words are excluded on purpose: a correct answer on them writes
+    // nothing, so they stay "not due" and would be re-planned forever — "Keep
+    // going" would offer the same collection back endlessly. Only genuinely due
+    // words count as remaining work.
     const { plan: nextPlan } = await fetchDuePlan()
-    setRemainingDue(new Set((nextPlan ?? []).filter((s) => s.graded).map((s) => s.senseId)).size)
+    setRemainingDue(new Set((nextPlan ?? []).filter((s) => s.graded && !s.practice).map((s) => s.senseId)).size)
 
     setPhase('done')
   }
@@ -410,6 +481,83 @@ export default function SessionV2() {
     return wrap(<div className="text-center"><p className="text-red-500 text-sm mb-4">Couldn't load senses. Has migration 0008 been applied?</p><button onClick={() => navigate('/dashboard')} className="btn-primary max-w-xs">Back</button></div>)
   if (phase === 'empty')
     return wrap(<div className="text-center"><p className="text-gray-500 text-sm mb-4">Nothing due today. Add words, or come back later.</p><button onClick={() => navigate('/dashboard')} className="btn-primary max-w-xs">Back to dashboard</button></div>)
+
+  // The collection is bigger than one session, so something gets left out — the
+  // learner decides what: let the planner pick (due + weakest first), or hand-pick.
+  if (phase === 'choosing') {
+    const atCap = picked.size >= GRADED_CAP
+    return wrap(
+      <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-6 w-full max-w-md">
+        {collectionName && (
+          <p className="text-xs font-semibold text-indigo-500 uppercase tracking-wide mb-1">{collectionName}</p>
+        )}
+        <h2 className="text-lg font-bold text-gray-900 mb-1">
+          {uk ? `${collectionSenses.length} слів — на сесію вміщається ${GRADED_CAP}` : `${collectionSenses.length} words — one session fits ${GRADED_CAP}`}
+        </h2>
+        <p className="text-xs text-gray-400 mb-5">
+          {uk ? 'Оберіть, що практикувати зараз.' : 'Choose what to practise now.'}
+        </p>
+
+        <button onClick={() => { setPhase('loading'); loadAndPlan() }} className="btn-primary mb-3">
+          {uk ? 'Обрати за мене (спочатку до повторення та найслабші)' : 'Pick for me (due & weakest first)'}
+        </button>
+
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-600">{uk ? 'Або оберіть самі' : 'Or choose yourself'}</span>
+            <span className={`text-xs font-semibold ${atCap ? 'text-indigo-600' : 'text-gray-400'}`}>{picked.size} / {GRADED_CAP}</span>
+          </div>
+
+          <div className="max-h-64 overflow-y-auto divide-y divide-gray-50 border border-gray-100 rounded-xl">
+            {collectionSenses.map((s) => {
+              const on = picked.has(s.id)
+              const locked = !on && atCap  // at the cap, unchecked boxes stop accepting
+              return (
+                <label
+                  key={s.id}
+                  className={`flex items-center gap-3 px-3 py-2 text-sm ${locked ? 'opacity-40' : 'hover:bg-indigo-50 cursor-pointer'}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={locked}
+                    onChange={() => setPicked((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(s.id)) next.delete(s.id)
+                      else if (next.size < GRADED_CAP) next.add(s.id)
+                      return next
+                    })}
+                    className="accent-indigo-600"
+                  />
+                  <span className="font-medium text-gray-800">{s.word_form}</span>
+                  <span className="text-xs text-gray-400 truncate">{displayTranslation(s.translation)}</span>
+                  <span className="ml-auto text-[10px] uppercase tracking-wide text-gray-400 shrink-0">{s.learning_stage}</span>
+                </label>
+              )
+            })}
+          </div>
+
+          <p className="text-[11px] text-gray-400 mt-2">
+            {atCap
+              ? (uk ? `${GRADED_CAP} максимум — одна сесія` : `${GRADED_CAP} max — one session`)
+              : (uk ? 'Спочатку — те, що потребує роботи' : 'What needs work is listed first')}
+          </p>
+
+          <button
+            onClick={() => { setPhase('loading'); loadAndPlan(null, [...picked]) }}
+            disabled={picked.size === 0}
+            className="btn-secondary mt-3 disabled:opacity-40"
+          >
+            {uk ? `Почати з ${picked.size}` : `Start with ${picked.size}`}
+          </button>
+        </div>
+
+        <button onClick={() => navigate('/dashboard')} className="w-full text-xs text-gray-400 hover:text-gray-600 mt-4">
+          {uk ? 'Скасувати' : 'Cancel'}
+        </button>
+      </div>
+    )
+  }
 
   if (phase === 'done') {
     return wrap(
@@ -444,11 +592,22 @@ export default function SessionV2() {
   const step = steps[idx]
   const graded = steps.filter((s) => s.graded).length
   const gradedSoFar = Object.keys(outcomes).length
+  const pct = steps.length ? Math.round(((idx + 1) / steps.length) * 100) : 0
   return wrap(
     <>
       <div className="w-full max-w-md mb-5">
-        <div className="flex justify-between text-xs text-gray-400 mb-1.5"><span>Step {idx + 1} / {steps.length}</span><span>{gradedSoFar} / {graded} graded</span></div>
-        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${((idx + 1) / steps.length) * 100}%` }} /></div>
+        {collectionName && (
+          <p className="text-xs font-semibold text-indigo-500 uppercase tracking-wide mb-1.5">{collectionName}</p>
+        )}
+        {/* Percent, not "Step 3 / 66". A session of 24 words expands into ~66 steps
+            (each word gets scaffolds before its graded test), and that raw count reads
+            as a wall of work rather than the ~20 minutes it actually is. The word
+            count on the right is the honest, meaningful unit. */}
+        <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+          <span>{pct}%</span>
+          <span>{gradedSoFar} / {graded} {uk ? 'слів' : 'words'}</span>
+        </div>
+        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${pct}%` }} /></div>
       </div>
       <StepCard
         key={idx}

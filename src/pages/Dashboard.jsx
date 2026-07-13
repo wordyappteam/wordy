@@ -10,7 +10,8 @@ import {
   WordOrderIcon, ActiveRecallIcon, SentenceWritingIcon, GrammarChatIcon
 } from '../components/ExerciseIcons'
 import { collectionColor } from '../lib/collections'
-import { remainingNewToday } from '../lib/dailyNew'
+import { remainingNewToday, DEFAULT_NEW_PER_DAY } from '../lib/dailyNew'
+import { badgeForWord } from '../lib/srs'
 
 function CollectionIcon({ size = 20 }) {
   return (
@@ -36,6 +37,11 @@ const STATUS_BAR_COLORS = {
   mastered: 'bg-indigo-600',
 }
 
+// Daily new-word goal notches: 5 · 10 · 15 · 20 · 25 · 30.
+const GOAL_MIN  = 5
+const GOAL_MAX  = 30
+const GOAL_STEP = 5
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user, profile, updateProfile, signOut, deleteAccount } = useAuth()
@@ -55,22 +61,41 @@ export default function Dashboard() {
   const [savingName,   setSavingName]   = useState(false)
   const [collections,  setCollections]  = useState([])
   const [showCollectionPicker, setShowCollectionPicker] = useState(false)
-  const [showExtra,    setShowExtra]    = useState(false)
+  const [goalDraft,    setGoalDraft]    = useState(null) // optimistic daily-goal value
   const nameRef    = useRef(null)
   const profileRef = useRef(null)
 
   useEffect(() => {
     if (!user) return
-    supabase
-      .from('words')
-      .select('id, word, translation, status, date_added, pos')
-      .eq('user_id', user.id)
-      .eq('target_language', targetLang)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setWords(data ?? [])
-        setLoading(false)
-      })
+    // Words carry a legacy `status` column that nothing has written to since the
+    // sense cutover, so a word's real progress lives on its senses. Pull both and
+    // derive the badge the same way the dictionary does (badgeForWord), or the
+    // two views disagree and everything here reads as "new".
+    Promise.all([
+      supabase
+        .from('words')
+        .select('id, word, translation, status, date_added, pos')
+        .eq('user_id', user.id)
+        .eq('target_language', targetLang)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('word_senses')
+        .select('word_id, learning_stage')
+        .eq('user_id', user.id)
+        .eq('target_language', targetLang)
+        .order('created_at', { ascending: true }),
+    ]).then(([wordsRes, sensesRes]) => {
+      const sensesByWord = new Map()
+      for (const s of sensesRes.data ?? []) {
+        if (!sensesByWord.has(s.word_id)) sensesByWord.set(s.word_id, [])
+        sensesByWord.get(s.word_id).push(s)
+      }
+      setWords((wordsRes.data ?? []).map((w) => ({
+        ...w,
+        status: badgeForWord(sensesByWord.get(w.id), w.status),
+      })))
+      setLoading(false)
+    })
   }, [user, targetLang])
 
   useEffect(() => {
@@ -168,6 +193,17 @@ export default function Dashboard() {
     setProfileOpen(false)
   }
 
+  // ── Daily new-word goal ────────────────────────────────────────────────────
+  // Coarse notches: every step is a real pacing decision, and a floor of 5 keeps
+  // a session worth starting. `goalDraft` is optimistic so the stepper and the
+  // "learn N new" CTA both move the instant it's clicked, before the write lands.
+  async function changeGoal(delta) {
+    const next = Math.min(GOAL_MAX, Math.max(GOAL_MIN, dailyGoal + delta))
+    if (next === dailyGoal) return
+    setGoalDraft(next)
+    await updateProfile({ daily_new_words: next })
+  }
+
   // Close dropdown on outside click
   useEffect(() => {
     function handleClick(e) {
@@ -222,7 +258,8 @@ export default function Dashboard() {
 
   // What the "learn N new?" CTA may honestly offer: capped by the same per-day
   // budget the session planner enforces, so the button never opens an empty session.
-  const newOffer = Math.min(newAvailable, remainingNewToday(new Date().toISOString().split('T')[0]))
+  const dailyGoal = goalDraft ?? profile?.daily_new_words ?? DEFAULT_NEW_PER_DAY
+  const newOffer = Math.min(newAvailable, remainingNewToday(new Date().toISOString().split('T')[0], dailyGoal))
 
   return (
     <div className="min-h-screen bg-[#F7F7FB]">
@@ -264,6 +301,31 @@ export default function Dashboard() {
                   {lang === 'uk' ? 'Скасувати' : 'Cancel'}
                 </button>
               </div>
+              <div className="border-t border-gray-100 mt-4 pt-3">
+                <p className="text-xs font-medium text-gray-600 mb-2">
+                  {lang === 'uk' ? 'Нових слів на день' : 'New words per day'}
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => changeGoal(-GOAL_STEP)}
+                    disabled={dailyGoal <= GOAL_MIN}
+                    aria-label={lang === 'uk' ? 'Менше' : 'Fewer'}
+                    className="w-7 h-7 rounded-lg border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+                  >
+                    −
+                  </button>
+                  <span className="text-sm font-semibold text-gray-800 w-6 text-center tabular-nums">{dailyGoal}</span>
+                  <button
+                    onClick={() => changeGoal(GOAL_STEP)}
+                    disabled={dailyGoal >= GOAL_MAX}
+                    aria-label={lang === 'uk' ? 'Більше' : 'More'}
+                    className="w-7 h-7 rounded-lg border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
               <div className="border-t border-gray-100 mt-4 pt-3 flex flex-col gap-2">
                 <button
                   onClick={() => signOut()}
@@ -336,23 +398,11 @@ export default function Dashboard() {
                 </div>
               )}
 
-              <button
-                onClick={() => setShowExtra(v => !v)}
-                className="w-full flex items-center justify-between mb-4 group"
-              >
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide group-hover:text-indigo-600 transition-colors">
-                  {lang === 'uk' ? 'Додаткова практика' : 'Extra practice'}
-                </h2>
-                <span className="text-xs font-medium text-gray-400 group-hover:text-indigo-600 transition-colors flex items-center gap-1">
-                  {showExtra
-                    ? (lang === 'uk' ? 'Згорнути' : 'Hide')
-                    : (lang === 'uk' ? 'Показати' : 'Show')}
-                  <span className={`transition-transform ${showExtra ? 'rotate-180' : ''}`}>▾</span>
-                </span>
-              </button>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+                {lang === 'uk' ? 'Додаткова практика' : 'Extra practice'}
+              </h2>
 
-              {showExtra && (
-                <>
+              <>
                   <div className="grid grid-cols-2 gap-3">
                     {exercises.map((ex, i) => (
                       <button
@@ -395,13 +445,16 @@ export default function Dashboard() {
                           return (
                             <button
                               key={c.id}
-                              onClick={() => navigate(`/flashcards?collectionId=${c.id}&collectionName=${encodeURIComponent(c.name)}`)}
+                              // The dashboard is where you come to study, so this launches the
+                              // graded session. The dictionary's collection button stays a
+                              // passive flashcard flip — hence the two different labels.
+                              onClick={() => navigate(`/session?collectionId=${c.id}&collectionName=${encodeURIComponent(c.name)}`)}
                               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors text-left"
                             >
                               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.dot}`} />
                               <span className="text-sm font-medium text-gray-800">{c.name}</span>
                               <span className="ml-auto text-xs text-indigo-600 font-semibold">
-                                {lang === 'uk' ? 'Практикувати →' : 'Practice →'}
+                                {lang === 'uk' ? 'Перевір мене →' : 'Test me →'}
                               </span>
                             </button>
                           )
@@ -409,8 +462,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                   )}
-                </>
-              )}
+              </>
             </div>
           </div>
 
@@ -421,7 +473,7 @@ export default function Dashboard() {
                 per-day new budget the session planner enforces (dailyNew) —
                 otherwise it offers a session the planner returns empty. */}
             <div className={dueToday > 0 || newOffer > 0
-              ? 'rounded-3xl p-5 bg-indigo-600 shadow-lg shadow-indigo-200'
+              ? ''
               : 'rounded-3xl p-6 bg-white border border-gray-100 shadow-sm'}
             >
               {!countsLoaded ? (
@@ -429,14 +481,14 @@ export default function Dashboard() {
               ) : dueToday > 0 ? (
                 <button
                   onClick={() => navigate('/session')}
-                  className="w-full bg-brand-yellow text-gray-900 text-sm font-bold py-3 rounded-xl hover:bg-yellow-300 transition-colors"
+                  className="w-full bg-indigo-600 text-white text-base font-bold py-4 rounded-2xl shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-colors"
                 >
                   {lang === 'uk' ? `Почати — ${Math.min(dueToday, 18)} сьогодні` : `Start — ${Math.min(dueToday, 18)} today`}
                 </button>
               ) : newOffer > 0 ? (
                 <button
                   onClick={() => navigate('/session')}
-                  className="w-full bg-brand-yellow text-gray-900 text-sm font-bold py-3 rounded-xl hover:bg-yellow-300 transition-colors"
+                  className="w-full bg-indigo-600 text-white text-base font-bold py-4 rounded-2xl shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-colors"
                 >
                   {lang === 'uk' ? `Ви все опрацювали — вивчити ${newOffer} нових?` : `You're caught up — learn ${newOffer} new?`}
                 </button>
