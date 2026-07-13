@@ -85,10 +85,16 @@ export async function identifyWord(input, targetLanguage = 'German', interfaceLa
 
   const isGerman = targetLanguage === 'German'
   const isUkrainian = targetLanguage === 'Ukrainian'
+  // The INTERFACE language (what explanations are written in) — distinct from the
+  // target language above. Haiku drifts into Russian when asked for Ukrainian
+  // explanatory prose, which for these learners is not a cosmetic slip, so the
+  // Ukrainian interface gets an explicit guard.
+  const isUkrainianIface = interfaceLanguage === 'Ukrainian'
 
   const system = `You are a language expert specialising in ${targetLanguage}.
 Return ONLY valid JSON — no markdown, no code blocks, no explanation outside the JSON.
-Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.${isUkrainian ? `\nAll Ukrainian words, word forms, and example sentences must be written in Ukrainian Cyrillic script.\nCRITICAL: Ukrainian past-tense predicate forms ending in -ло, -ла, -ли (e.g. остогидло, набридло, минуло, болить) are VERBS — their pos MUST be "verb". Return the infinitive as the base form (остогидло → остогидіти, набридло → набридіти, минуло → минути). Never classify these as adverb or adjective.\nCRITICAL: Stress marking — place the acute accent (´) directly ON the stressed vowel. The character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я). Never place the accent after a consonant.` : ''}${topicsSection}`
+Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.${isUkrainianIface ? `
+The interface language is Ukrainian: explanatory text must be Ukrainian, never Russian. Watch the near-misses — жіночий рід (not женский род), потребує (not требует), використовується (not используется), множина (not множественное число).` : ''}${isUkrainian ? `\nAll Ukrainian words, word forms, and example sentences must be written in Ukrainian Cyrillic script.\nCRITICAL: Ukrainian past-tense predicate forms ending in -ло, -ла, -ли (e.g. остогидло, набридло, минуло, болить) are VERBS — their pos MUST be "verb". Return the infinitive as the base form (остогидло → остогидіти, набридло → набридіти, минуло → минути). Never classify these as adverb or adjective.\nCRITICAL: Stress marking — place the acute accent (´) directly ON the stressed vowel. The character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я). Never place the accent after a consonant.` : ''}${topicsSection}`
 
   const formNote = isGerman
     ? "for nouns: plural WITHOUT article e.g. 'Häuser'; if no plural write '–'; for verbs: 'macht / machte / gemacht'"
@@ -117,6 +123,16 @@ Write all explanatory text (explanation and grammarNote fields) in ${ifaceLang}.
   - perfective sense:   { "future":  {"я":"...","ти":"...","він/вона":"...","ми":"...","ви":"...","вони":"..."}, "past": {"ч":"...","ж":"...","с":"...","мн":"..."} }
 - For regular verb senses (isException false) and all non-verbs, leave "conjugation" as null` : `
 - Always leave "conjugation" as null`
+
+  // German speakers use the Perfekt to talk about the past; the Präteritum is
+  // mostly written narrative. Left to itself the model reaches for "Er nahm das
+  // Buch", which the learner will hear and say far less often than "Er hat das
+  // Buch genommen". sein/haben/modals are the genuine exceptions — "war",
+  // "hatte", "konnte" ARE the everyday forms, and forcing Perfekt on them
+  // ("ist gewesen") produces stilted German.
+  const germanPastRule = isGerman
+    ? `\n- When a VERB example is past, it MUST use the Perfekt (hat/ist + Partizip II) — that is how German speakers actually talk about the past — NOT the Präteritum. Exception: sein, haben and the modals (können, müssen, wollen, sollen, dürfen, mögen) use the Präteritum (war, hatte, konnte …), because those are their everyday past forms`
+    : ''
 
   const nounArticleRule = isGerman
     ? '- In "wordForm": include the definite article for nouns (e.g. die Entscheidung). For verbs whose meaning depends on a reflexive pronoun and/or governed preposition, include those parts in BOTH "word" and "wordForm", ordered reflexive-verb-preposition (e.g. "sich erinnern an", "sich kümmern um", "warten auf"), never reversed. Attach only the parts THIS sense requires; keep a self-standing verb sense plain.'
@@ -161,8 +177,8 @@ Return ONLY this JSON:
       "wordForm": "${wordFormNote}",
       "translation": "concise ${ifaceLang} translation for THIS sense only",
       "form": "${formNote}",
-      "grammarNote": "one key grammar rule, under 15 words",
-      "explanation": "2-3 sentences on usage and nuance, under 60 words",
+      "grammarNote": "one key grammar rule for USING this word, under 15 words (case governance, separable prefix, plural, auxiliary, irregularity). Written in ${ifaceLang}${isUkrainianIface ? ' — Ukrainian, NEVER Russian: жіночий рід not женский род, потребує not требует' : ''}",
+      "explanation": "WRITTEN IN ${ifaceLang.toUpperCase()} — every word of it. Not in ${targetLanguage}, not in English${isUkrainianIface ? ', and never in Russian' : ''}. A precise definition for an A2-B1 learner: (1) say what the word MEANS — a definition, not a loose paraphrase; (2) then one short note on when it is actually used. Define it with words SIMPLER than the headword; never explain a word using harder words. Under 60 words.",
       "isException": true or false,
       "register": "neutral|formal|informal|colloquial|slang|archaic|vulgar",
       "cefr": "A1|A2|B1|B2|C1|C2",
@@ -183,7 +199,7 @@ ${nounArticleRule}
 - Always include exactly 3 example sentences per sense
 - For each example, "blank" must be the single target word copied verbatim from "target", in the exact inflected form used there (e.g. target "Sie isst ein Ei" → blank "isst"; for nouns include no article, e.g. blank "Hund" not "den Hund")
 - Keep example sentences positive and everyday — avoid war, death, violence, illness, accidents, or tragedy unless the word itself specifically relates to such topics
-- For verbs: present, past, one varied — set "tense" accordingly. For nouns/adj/other: "tense": null
+- Example tense: for VERBS only, make one example present, one past, one varied, and set "tense" accordingly. For nouns, adjectives, adverbs and every other part of speech, ALL examples are "tense": null — a noun has no tense, so never tag a noun example "past" merely because its sentence refers to the past${germanPastRule}
 - register: language register for this specific sense. Use "neutral" for everyday vocabulary with no special register
 - cefr: CEFR level for this specific sense based on standard vocabulary lists. When between two levels, pick the more common/lower one
 ${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і́) on every multi-syllable Ukrainian word form, example sentence word, and conjugation form. The accent must sit on the stressed vowel itself — the character immediately before the accent mark must always be a vowel (а е є и і ї о у ю я); never place the accent after a consonant\n- Ukrainian past-tense forms (ending in -в, -ла, -ло, -ли) that function as predicates are VERBS — classify them as pos:"verb" and return the infinitive as the base form (e.g. остогидло → остогидіти, минуло → минути, набридло → набридіти)\n' : ''}${conjugationRules}`
