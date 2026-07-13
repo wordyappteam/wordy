@@ -1,7 +1,7 @@
 // Pure-core SRS v2 tests. Run with: node --test src/lib/srs.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { badgeForStage, planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn, balancedChunks, packSenses } from './srs.js'
+import { badgeForStage, badgeForWord, planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn, balancedChunks, packSenses } from './srs.js'
 
 // ── Bug #1: fill_blank scaffold must carry the sense's examples ───────────────
 // The UI renders a context fill-blank from step.examples[0].target. If the
@@ -413,4 +413,60 @@ test('badgeForStage maps sense text stages to the four pill values', () => {
   assert.equal(badgeForStage('mastered'), 'mastered')
   assert.equal(badgeForStage(undefined), null, 'no sense stage -> null so callers can fall back')
   assert.equal(badgeForStage('bogus'), null)
+})
+
+// ── Bug: dashboard showed every word as "new" ────────────────────────────────
+// The dashboard bucketed words by the legacy words.status column, which is
+// written once at insert ('new') and never again — so a word the learner had
+// pushed to 'late' in the SRS still read as "new" there, while the dictionary
+// (which derives from the primary sense) read "learning". One helper now backs
+// both, so the two views cannot drift apart again.
+test('badgeForWord derives a word badge from its primary sense', () => {
+  const senses = [
+    { learning_stage: 'late' },  // primary = first, senses come created_at asc
+    { learning_stage: 'new' },
+  ]
+  assert.equal(badgeForWord(senses, 'new'), 'learning',
+    'a word whose primary sense is mid-SRS reads as learning, not the stale legacy status')
+  assert.equal(badgeForWord([{ learning_stage: 'mastered' }], 'new'), 'mastered')
+  assert.equal(badgeForWord([{ learning_stage: 'new' }], 'new'), 'new')
+})
+
+test('badgeForWord falls back to legacy status when a word has no senses', () => {
+  assert.equal(badgeForWord([], 'learning'), 'learning', 'pre-cutover row keeps its hand-set status')
+  assert.equal(badgeForWord(undefined, 'known'), 'known')
+  assert.equal(badgeForWord([], undefined), 'new', 'no senses and no legacy status -> new')
+})
+
+// ── Fill-in-context reveal needs the SENTENCE's meaning, not just the word's ──
+// Revealing the answer restored the sentence but only ever translated the target
+// word, so the learner met a full sentence of context they couldn't read. The
+// example's own translation is in the data; the fill-in must carry it through.
+test('buildFillBlank carries the example translation through to the card', () => {
+  const example = {
+    target: 'Ich trinke jeden Morgen Wasser.',
+    translation: 'I drink water every morning.',
+    blank: 'Wasser',
+  }
+  const fb = buildFillBlank(example, 'Wasser')
+  assert.equal(fb.sentence, 'Ich trinke jeden Morgen ____.')
+  assert.equal(fb.answer, 'Wasser')
+  assert.equal(fb.target, 'Ich trinke jeden Morgen Wasser.')
+  assert.equal(fb.translation, 'I drink water every morning.',
+    'the sentence translation must survive so the reveal can show it')
+})
+
+test('buildFillBlank tolerates an example with no translation', () => {
+  const fb = buildFillBlank({ target: 'Ich trinke Wasser.', blank: 'Wasser' }, 'Wasser')
+  assert.equal(fb.translation, null, 'absent translation -> null, so the UI can just omit the line')
+})
+
+test('firstFillBlank keeps the translation of whichever example it settles on', () => {
+  const examples = [
+    { target: 'Kein Treffer hier.', translation: 'No hit here.' },           // unblankable
+    { target: 'Ich trinke Wasser.', translation: 'I drink water.', blank: 'Wasser' },
+  ]
+  const fb = firstFillBlank(examples, 'Wasser', 0)
+  assert.equal(fb.translation, 'I drink water.',
+    'the translation must belong to the example actually shown, not the skipped one')
 })

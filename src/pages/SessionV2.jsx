@@ -12,7 +12,7 @@ import { reviewSentence } from '../lib/claude'
 import { planSessionV2, sentenceOutcome, firstFillBlank, gradeFillIn } from '../lib/srs'
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
-import { getNewToday, addNewToday, NEW_PER_DAY } from '../lib/dailyNew'
+import { getNewToday, addNewToday, DEFAULT_NEW_PER_DAY } from '../lib/dailyNew'
 
 // ── grading helpers ──────────────────────────────────────────────────────────
 const norm = (s) => (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -111,6 +111,12 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
           <>
             <p className="text-xl text-gray-800 text-center">{revealed ? fillBlank.target : fillBlank.sentence}</p>
             <p className="text-sm text-gray-400 text-center mt-1">{cleanTr}</p>
+            {/* On reveal, translate the whole sentence — not just the target word.
+                The card is a sentence of context, so a lone word gloss leaves most
+                of what the learner is reading unexplained. */}
+            {revealed && fillBlank.translation && (
+              <p className="text-base text-gray-600 text-center mt-3 italic">{fillBlank.translation}</p>
+            )}
           </>
         )}
         {!revealed ? (
@@ -302,7 +308,7 @@ function NextBtn({ outcome, onClick }) {
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function SessionV2() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const { targetLang, targetLanguageName, speechLocale } = useTargetLang()
   const { lang } = useLanguage()
   const ifaceLang = lang === 'uk' ? 'Ukrainian' : 'English'
@@ -332,7 +338,9 @@ export default function SessionV2() {
       today: todayISO,
       gradedCap: 24,
       blockSize: 4,
-      newPerDay: NEW_PER_DAY,
+      // The learner's own pacing goal. Must be the same value the Dashboard CTA
+      // used to offer this session, or we plan fewer new words than it promised.
+      newPerDay: profile?.daily_new_words ?? DEFAULT_NEW_PER_DAY,
       newToday: getNewToday(todayISO),
     })
     return { senses, plan }

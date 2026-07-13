@@ -147,7 +147,9 @@ export default function ReadingView({ book, onClose }) {
       const result = await identifyWord(word, readerLang.name, translationLang, sentence, { topics: profile?.topics ?? [] })
       if (!result.senses?.length) throw new Error('No senses returned')
       const { data: existing, error: existErr } = await supabase.from('words')
-        .select('id, word, status').eq('user_id', user.id)
+        // No `status`: the legacy column is dead. The real stage comes from the
+        // word's senses, queried just below.
+        .select('id, word').eq('user_id', user.id)
         .eq('target_language', readerLang.code).ilike('word', result.word).maybeSingle()
       if (existErr) console.warn("existing-word lookup failed:", existErr)
       const existingStage = existing

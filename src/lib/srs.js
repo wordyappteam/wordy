@@ -32,6 +32,15 @@ export function badgeForStage(stageText) {
   const i = STAGE_NAMES.indexOf(stageText)
   return i === -1 ? null : BADGE[i]
 }
+// A whole word's badge, for views that list words rather than senses (dictionary
+// list, dashboard breakdown). The word takes its primary sense's stage — senses
+// are fetched created_at ascending, so the primary sense is the first one.
+// Words predating the sense cutover have no senses; they keep words.status,
+// the legacy column that nothing writes to any more.
+export function badgeForWord(senses, legacyStatus = 'new') {
+  const primary = (senses ?? [])[0]
+  return badgeForStage(primary?.learning_stage) ?? legacyStatus
+}
 
 // ── Exercise plan per stage (research-aligned: TOPRA, productive, scaffold) ───
 // Direction flips to production (L1->L2) once form is established (mid+).
@@ -293,13 +302,17 @@ export function buildFillBlank(example, lemma) {
   if (!example || !example.target) return null
   const text = example.target
   const surface = example.blank
+  // The example's own translation rides along: on reveal the learner sees a full
+  // sentence of context, and translating only the target word leaves the rest of
+  // it unreadable. Null when the example has none, so the UI can omit the line.
+  const translation = example.translation ?? null
   if (surface && text.includes(surface)) {
-    return { sentence: text.replace(surface, "____"), answer: surface, target: text }
+    return { sentence: text.replace(surface, "____"), answer: surface, target: text, translation }
   }
   if (lemma) {
     const re = new RegExp(`\\b${escapeReSrs(lemma)}\\b`, "i")
     const m = text.match(re)
-    if (m) return { sentence: text.replace(re, "____"), answer: m[0], target: text }
+    if (m) return { sentence: text.replace(re, "____"), answer: m[0], target: text, translation }
   }
   return null
 }

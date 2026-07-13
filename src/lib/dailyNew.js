@@ -10,11 +10,15 @@ export function addNewToday(todayISO, n) {
   try { localStorage.setItem(key(todayISO), String(getNewToday(todayISO) + n)) } catch { /* no storage */ }
 }
 
-// The per-day new-word budget. Single source of truth: the session planner and
-// the Dashboard CTA must agree, or the CTA offers sessions the planner refuses.
-// Raised 7 -> 15 for hardcore exam-prep pacing (~15 new words/day intake target).
-export const NEW_PER_DAY = 15
+// The per-day new-word budget is the learner's own pacing choice, held on the
+// profile (profiles.daily_new_words) and passed in here — the count is local, the
+// budget is not. This value is only the fallback for when the profile has not
+// loaded yet, and the default for a fresh profile (it matches the DB default).
+export const DEFAULT_NEW_PER_DAY = 15
 
-export function remainingNewToday(todayISO) {
-  return Math.max(0, NEW_PER_DAY - getNewToday(todayISO))
+// Callers (the session planner and the Dashboard CTA) must pass the SAME limit,
+// or the CTA offers sessions the planner then refuses. Both read it off the
+// profile, which is what keeps them in agreement.
+export function remainingNewToday(todayISO, limit = DEFAULT_NEW_PER_DAY) {
+  return Math.max(0, limit - getNewToday(todayISO))
 }
