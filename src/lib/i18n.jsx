@@ -50,6 +50,22 @@ const translations = {
       colLastReviewed: 'Last reviewed',
       // Passive flip-through, as opposed to the dashboard's graded "Test me".
       flipThrough:     '▶ Flip through',
+      // The three sense notes. Each is allowed to be silent — grammar is null for
+      // most nouns, the usage note is null for most words.
+      // Card controls — these were left in English inside a Ukrainian card.
+      addImage:        '+ Add image',
+      uploading:       'Uploading…',
+      replaceImage:    'Replace',
+      removeImage:     'Remove',
+      newCollection:   '+ New',
+      identifyWithAi:  'Identify with AI',
+      identifying:     'Identifying…',
+      reidentifyIn:    'Re-identify in',
+      meaning:         'Meaning',
+      grammar:         'Grammar',
+      goodToKnow:      'Good to know',
+      deleteSense:     'Delete this sense',
+      deleteWord:      'Delete word',
       // status labels
       statusNew:       'new',
       statusLearning:  'learning',
@@ -169,6 +185,19 @@ const translations = {
       colStatus:       'Статус',
       colLastReviewed: 'Останній огляд',
       flipThrough:     '▶ Переглянути картки',
+      addImage:        '+ Додати зображення',
+      uploading:       'Завантаження…',
+      replaceImage:    'Замінити',
+      removeImage:     'Видалити',
+      newCollection:   '+ Нова',
+      identifyWithAi:  'Розпізнати з AI',
+      identifying:     'Розпізнаю…',
+      reidentifyIn:    'Перерозпізнати:',
+      meaning:         'Значення',
+      grammar:         'Граматика',
+      goodToKnow:      'Варто знати',
+      deleteSense:     'Видалити цей сенс',
+      deleteWord:      'Видалити слово',
       // status labels
       statusNew:       'нове',
       statusLearning:  'вивчаю',
