@@ -437,12 +437,81 @@ const TENSE_LABELS = {
   past:    { label: 'past',    className: 'bg-purple-50 text-purple-600 border border-purple-100' },
 }
 
+function getDefaultColumns(t) {
+  return [
+    { id: 'word',         label: t('dict.colWord') },
+    { id: 'entryType',   label: t('dict.colKind') },
+    { id: 'form',        label: t('dict.colForm') },
+    { id: 'translation', label: t('dict.colTranslation') },
+    { id: 'status',      label: t('dict.colStatus') },
+    { id: 'lastReviewed',label: t('dict.colLastReviewed') },
+  ]
+}
+
 function speak(text, lang = 'de-DE') {
   if (!window.speechSynthesis) return
   window.speechSynthesis.cancel()
   const u = new SpeechSynthesisUtterance(text)
   u.lang = lang; u.rate = 0.85
   window.speechSynthesis.speak(u)
+}
+
+function renderCell(colId, w, t) {
+  const pos       = POS_STYLES[w.pos] || POS_STYLES.preposition
+  const entryBadge = ENTRY_TYPE_STYLES[w.entryType]
+  switch (colId) {
+    case 'word': {
+      const caseBadge = extractCaseBadge(w)
+      return (
+        <span className="font-medium text-gray-900 flex items-center gap-1.5 flex-wrap">
+          <span>{w.word}</span>
+          {w.pos === 'noun' && w.form && (
+            <span className="text-gray-400 font-normal"> ({cleanForm(w.form, w.word)})</span>
+          )}
+          {caseBadge && (
+            <span className={`text-xs font-semibold px-1.5 py-0.5 rounded border ${caseBadge.cls}`}>
+              {caseBadge.label}
+            </span>
+          )}
+        </span>
+      )
+    }
+    case 'entryType':
+      return entryBadge
+        ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
+        : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{pos.label}</span>
+    case 'form': {
+      const formText = w.pos !== 'noun' ? (w.form || '—') : '—'
+      return (
+        <span className="text-gray-400 italic text-xs block max-w-[160px] truncate" title={formText}>
+          {formText}
+        </span>
+      )
+    }
+    case 'translation': {
+      const translations = w.senses?.length > 0
+        ? w.senses.map((s) => s.translation).filter(Boolean)
+        : [w.translation].filter(Boolean)
+      const shown   = translations.slice(0, 3)
+      const overflow = translations.length - shown.length
+      return (
+        <span className="flex flex-col gap-0.5">
+          {shown.map((t, i) => (
+            <span key={i} className="text-gray-500 text-sm leading-snug">{t}</span>
+          ))}
+          {overflow > 0 && (
+            <span className="text-xs text-gray-400 italic">+{overflow} more</span>
+          )}
+        </span>
+      )
+    }
+    case 'status': {
+      const statusLabel = { new: t('dict.statusNew'), learning: t('dict.statusLearning'), known: t('dict.statusKnown'), mastered: t('dict.statusMastered') }
+      return <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[w.status]}`}>{statusLabel[w.status] ?? w.status}</span>
+    }
+    case 'lastReviewed': return <span className="text-gray-400">{w.lastReviewed}</span>
+    default: return null
+  }
 }
 
 // ── Add Word Modal ────────────────────────────────────────────────────────
@@ -703,7 +772,6 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
 
   const pos        = POS_STYLES[word.pos] || POS_STYLES.preposition
   const entryBadge = ENTRY_TYPE_STYLES[word.entryType]
-  const caseBadge  = extractCaseBadge(word)
 
   // Ukrainian verbs are stored as two aspect senses — show the pair in the header.
   const aspectSenses = (word.senses || []).filter(s => s.aspect)
@@ -768,9 +836,6 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                 ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
                 : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{pos.label}</span>
               }
-              {!editing && caseBadge && (
-                <span className={`text-xs font-semibold px-1.5 py-0.5 rounded border ${caseBadge.cls}`}>{caseBadge.label}</span>
-              )}
               {!editing && (
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[word.status]}`}>
                   {{ new: t('dict.statusNew'), learning: t('dict.statusLearning'), known: t('dict.statusKnown'), mastered: t('dict.statusMastered') }[word.status] ?? word.status}
@@ -852,21 +917,34 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
             {/* ── Sense-based display ── */}
             {word.hasSenses ? (
               <div className="flex flex-col gap-4">
-                {/* ── Sense tabs (only when >1 sense) — jump directly instead of stepping through ── */}
+                {/* ── Senses carousel bar (only when >1 sense) ── */}
                 {word.senses.length > 1 && (
-                  <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1">
-                    {word.senses.map((s, i) => (
-                      <button
-                        key={s.id || i}
-                        onClick={() => setActiveSenseIdx(i)}
-                        className={`shrink-0 max-w-[140px] truncate px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                          i === activeSenseIdx ? 'bg-indigo-50 text-indigo-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-                        }`}
-                        title={s.translation}
-                      >
-                        {s.translation || `Sense ${i + 1}`}
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-center gap-4">
+                    <button
+                      onClick={() => setActiveSenseIdx(i => Math.max(0, i - 1))}
+                      disabled={activeSenseIdx === 0}
+                      aria-label="Previous sense"
+                      className="w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:border-indigo-300 disabled:opacity-30 flex items-center justify-center text-lg leading-none"
+                    >‹</button>
+                    <div className="flex flex-col items-center gap-1.5">
+                      <span className="text-xs font-medium text-gray-500">{activeSenseIdx + 1} / {word.senses.length}</span>
+                      <div className="flex gap-1.5">
+                        {word.senses.map((_, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setActiveSenseIdx(i)}
+                            aria-label={`Sense ${i + 1}`}
+                            className={`w-2 h-2 rounded-full transition-colors ${i === activeSenseIdx ? 'bg-indigo-600' : 'bg-gray-300 hover:bg-gray-400'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveSenseIdx(i => Math.min(word.senses.length - 1, i + 1))}
+                      disabled={activeSenseIdx >= word.senses.length - 1}
+                      aria-label="Next sense"
+                      className="w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:border-indigo-300 disabled:opacity-30 flex items-center justify-center text-lg leading-none"
+                    >›</button>
                   </div>
                 )}
                 {(() => {
@@ -1890,6 +1968,19 @@ export default function Dictionary() {
   const [sortBy, setSortBy]             = useState('dateAdded')
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterType, setFilterType]     = useState('all')
+  const [columns, setColumns]           = useState(() => {
+    try {
+      const saved = localStorage.getItem('wordy_col_order')
+      if (saved) {
+        const ids = JSON.parse(saved)
+        const map = Object.fromEntries(getDefaultColumns(t).map(c => [c.id, c]))
+        const restored = ids.map(id => map[id]).filter(Boolean)
+        if (restored.length === getDefaultColumns(t).length) return restored
+      }
+    } catch {}
+    return getDefaultColumns(t)
+  })
+  const [dragOver, setDragOver]         = useState(null)
   const [selectedWord, setSelectedWord] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
@@ -1902,6 +1993,13 @@ export default function Dictionary() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds]     = useState(() => new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const dragCol = useRef(null)
+
+  // Keep column labels in sync when language changes, but preserve current order
+  useEffect(() => {
+    const map = Object.fromEntries(getDefaultColumns(t).map(c => [c.id, c]))
+    setColumns(prev => prev.map(col => map[col.id] || col))
+  }, [lang])
 
   // ── Fetch words from Supabase ──────────────────────────────────────────
   useEffect(() => {
@@ -2016,6 +2114,21 @@ export default function Dictionary() {
       if (sortBy === 'dateAdded') return new Date(b.dateAdded) - new Date(a.dateAdded)
       return 0
     })
+
+  const onDragStart = (colId) => { dragCol.current = colId }
+  const onDragOver  = (e, colId) => { e.preventDefault(); setDragOver(colId) }
+  const onDragEnd   = () => { dragCol.current = null; setDragOver(null) }
+  const onDrop = (targetId) => {
+    if (!dragCol.current || dragCol.current === targetId) return
+    const from = columns.findIndex((c) => c.id === dragCol.current)
+    const to   = columns.findIndex((c) => c.id === targetId)
+    const next = [...columns]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    setColumns(next)
+    localStorage.setItem('wordy_col_order', JSON.stringify(next.map(c => c.id)))
+    setDragOver(null)
+  }
 
   async function handleAdd(entry) {
     if (!user) return
@@ -2379,19 +2492,72 @@ export default function Dictionary() {
           </div>
         )}
 
-        {/* Word list — single column, word + translation + status only. Tap a row to expand full detail. */}
-        <div className="flex flex-col gap-2 max-w-2xl">
-          {selectionMode && (
-            <button
-              onClick={toggleSelectAll}
-              className="self-start flex items-center gap-2 text-xs font-semibold text-gray-500 hover:text-indigo-600 mb-1"
-            >
-              <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${allFilteredSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}>
-                {allFilteredSelected && '✓'}
-              </span>
-              {allFilteredSelected ? 'Clear all' : 'Select all'}
-            </button>
-          )}
+        <p className="hidden md:flex text-xs text-gray-400 mb-4 items-center gap-1">
+          <span>⠿</span> {t('dict.dragHint')}
+        </p>
+
+        {/* Table (desktop) */}
+        <div className="hidden md:block bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 text-xs text-gray-400 uppercase tracking-wide">
+                {selectionMode && (
+                  <th className="pl-5 pr-1 py-3 w-8">
+                    <button
+                      onClick={toggleSelectAll}
+                      className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${allFilteredSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300 hover:border-indigo-400'}`}
+                    >
+                      {allFilteredSelected && '✓'}
+                    </button>
+                  </th>
+                )}
+                {columns.map((col) => (
+                  <th key={col.id} draggable
+                    onDragStart={() => onDragStart(col.id)}
+                    onDragOver={(e) => onDragOver(e, col.id)}
+                    onDrop={() => onDrop(col.id)}
+                    onDragEnd={onDragEnd}
+                    className={`text-left px-5 py-3 font-medium select-none cursor-grab active:cursor-grabbing transition-colors whitespace-nowrap ${
+                      dragOver === col.id ? 'bg-indigo-50 text-indigo-500' : 'hover:text-gray-600'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-gray-300 text-base leading-none">⠿</span>
+                      {col.label}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((w, i) => {
+                const isSelected = selectedIds.has(w.id)
+                return (
+                <tr key={w.id} onClick={() => selectionMode ? toggleSelect(w.id) : setSelectedWord(w)}
+                  className={`cursor-pointer transition-colors ${
+                    i !== filtered.length - 1 ? 'border-b border-gray-50' : ''
+                  } ${isSelected ? 'bg-indigo-50' : selectedWord?.id === w.id ? 'bg-indigo-50/60' : 'hover:bg-indigo-50/40'}`}
+                >
+                  {selectionMode && (
+                    <td className="pl-5 pr-1 py-3.5" onClick={(e) => { e.stopPropagation(); toggleSelect(w.id) }}>
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}>
+                        {isSelected && '✓'}
+                      </span>
+                    </td>
+                  )}
+                  {columns.map((col) => (
+                    <td key={col.id} className="px-5 py-3.5 whitespace-nowrap">
+                      {renderCell(col.id, w, t)}
+                    </td>
+                  ))}
+                </tr>
+              )})}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Cards (mobile) */}
+        <div className="md:hidden flex flex-col gap-2">
           {filtered.map((w) => {
             const isSelected = selectedIds.has(w.id)
             const memberColors = collections.filter(c => membershipByWord[w.id]?.has(c.id))
@@ -2400,28 +2566,23 @@ export default function Dictionary() {
               <div
                 key={w.id}
                 onClick={() => selectionMode ? toggleSelect(w.id) : setSelectedWord(w)}
-                className={`bg-white rounded-2xl border shadow-sm p-4 flex items-center gap-3 cursor-pointer transition-colors ${isSelected ? 'border-indigo-300 bg-indigo-50' : selectedWord?.id === w.id ? 'border-indigo-200 bg-indigo-50/50' : 'border-gray-100 hover:border-indigo-200 hover:bg-indigo-50/30'}`}
+                className={`bg-white rounded-2xl border p-4 flex items-start gap-3 transition-colors ${isSelected ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100'}`}
               >
                 {selectionMode && (
-                  <span
-                    onClick={(e) => { e.stopPropagation(); toggleSelect(w.id) }}
-                    className={`w-5 h-5 rounded border flex items-center justify-center text-[11px] shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}
-                  >
-                    {isSelected && '✓'}
-                  </span>
+                  <span className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center text-[11px] shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}>{isSelected && '✓'}</span>
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mb-0.5">
                     <span className="font-semibold text-gray-900 truncate">{w.word}</span>
-                    {w.translation && <span className="text-sm text-gray-500 truncate">{w.translation}</span>}
+                    <span className={`ml-auto shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[w.status] || 'bg-gray-100 text-gray-500'}`}>{statusLabel}</span>
                   </div>
+                  {w.translation && <p className="text-sm text-gray-500 truncate">{w.translation}</p>}
                   {memberColors.length > 0 && (
                     <div className="flex items-center gap-1 mt-1.5">
                       {memberColors.map(c => <span key={c.id} className={`w-2 h-2 rounded-full ${collectionColor(c.color).dot}`} />)}
                     </div>
                   )}
                 </div>
-                <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[w.status] || 'bg-gray-100 text-gray-500'}`}>{statusLabel}</span>
               </div>
             )
           })}
