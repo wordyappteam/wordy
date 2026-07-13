@@ -757,6 +757,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
   const [creatingCollection, setCreatingCollection] = useState(false)
   const [newCollectionName, setNewCollectionName]   = useState('')
   const [expandedConjugation, setExpandedConjugation] = useState(new Set())
+  const [expandedExplanation, setExpandedExplanation] = useState(new Set())
   const [activeSenseIdx, setActiveSenseIdx] = useState(0)
   useEffect(() => { setActiveSenseIdx(0) }, [word.id]) // reset pager when a different word opens
   const [confirmDeleteSense, setConfirmDeleteSense] = useState(false)
@@ -764,6 +765,14 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
 
   function toggleConjugation(key) {
     setExpandedConjugation(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
+  function toggleExplanation(key) {
+    setExpandedExplanation(prev => {
       const next = new Set(prev)
       next.has(key) ? next.delete(key) : next.add(key)
       return next
@@ -917,34 +926,21 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
             {/* ── Sense-based display ── */}
             {word.hasSenses ? (
               <div className="flex flex-col gap-4">
-                {/* ── Senses carousel bar (only when >1 sense) ── */}
+                {/* ── Sense tabs (only when >1 sense) — jump directly instead of stepping through ── */}
                 {word.senses.length > 1 && (
-                  <div className="flex items-center justify-center gap-4">
-                    <button
-                      onClick={() => setActiveSenseIdx(i => Math.max(0, i - 1))}
-                      disabled={activeSenseIdx === 0}
-                      aria-label="Previous sense"
-                      className="w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:border-indigo-300 disabled:opacity-30 flex items-center justify-center text-lg leading-none"
-                    >‹</button>
-                    <div className="flex flex-col items-center gap-1.5">
-                      <span className="text-xs font-medium text-gray-500">{activeSenseIdx + 1} / {word.senses.length}</span>
-                      <div className="flex gap-1.5">
-                        {word.senses.map((_, i) => (
-                          <button
-                            key={i}
-                            onClick={() => setActiveSenseIdx(i)}
-                            aria-label={`Sense ${i + 1}`}
-                            className={`w-2 h-2 rounded-full transition-colors ${i === activeSenseIdx ? 'bg-indigo-600' : 'bg-gray-300 hover:bg-gray-400'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setActiveSenseIdx(i => Math.min(word.senses.length - 1, i + 1))}
-                      disabled={activeSenseIdx >= word.senses.length - 1}
-                      aria-label="Next sense"
-                      className="w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:border-indigo-300 disabled:opacity-30 flex items-center justify-center text-lg leading-none"
-                    >›</button>
+                  <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1">
+                    {word.senses.map((s, i) => (
+                      <button
+                        key={s.id || i}
+                        onClick={() => setActiveSenseIdx(i)}
+                        className={`shrink-0 max-w-[140px] truncate px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                          i === activeSenseIdx ? 'bg-indigo-50 text-indigo-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                        }`}
+                        title={s.translation}
+                      >
+                        {s.translation || `Sense ${i + 1}`}
+                      </button>
+                    ))}
                   </div>
                 )}
                 {(() => {
@@ -1017,17 +1013,129 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                         )}
                         <SenseImage sense={sense} userId={userId} onChange={onSenseImageChange} />
                         <p className="text-base font-medium text-gray-800">{displayTranslation(sense.translation, word.senses.length > 1)}</p>
-                        {sense.grammarNote && !/^(countable|uncountable) noun/i.test(sense.grammarNote) && (
-                          <div className={`rounded-xl px-3 py-2 text-xs font-medium flex items-start gap-2 ${
-                            sense.isException ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
-                          }`}>
-                            <span>{sense.isException ? '⚠️' : 'ℹ️'}</span>
-                            <span>{sense.grammarNote}</span>
-                          </div>
-                        )}
-                        {sense.explanation && (
-                          <p className="text-sm text-gray-600 leading-relaxed">{sense.explanation}</p>
-                        )}
+
+                        {/* ── Пояснення / Відмінювання — collapsed by default, above examples ── */}
+                        {(() => {
+                          const hasGrammarNote = sense.grammarNote && !/^(countable|uncountable) noun/i.test(sense.grammarNote)
+                          const hasExplanation = Boolean(sense.explanation)
+                          const hasConjugation = Boolean(sense.conjugation)
+                          if (!hasGrammarNote && !hasExplanation && !hasConjugation) return null
+                          const key = sense.id || si
+                          const explanationOpen = expandedExplanation.has(key)
+                          const conjugationOpen = expandedConjugation.has(key)
+                          return (
+                            <div className="flex flex-col divide-y divide-gray-100 border-y border-gray-100">
+                              {(hasGrammarNote || hasExplanation) && (
+                                <div className="py-1.5">
+                                  <button
+                                    onClick={() => toggleExplanation(key)}
+                                    className={`text-xs font-semibold flex items-center gap-1.5 py-1 transition-colors ${explanationOpen ? 'text-amber-600' : 'text-indigo-600 hover:text-indigo-800'}`}
+                                  >
+                                    <span>{explanationOpen ? '▾' : '▸'}</span>
+                                    Пояснення
+                                  </button>
+                                  {explanationOpen && (
+                                    <div className="flex flex-col gap-2 pb-2">
+                                      {hasGrammarNote && (
+                                        <div className={`rounded-xl px-3 py-2 text-xs font-medium flex items-start gap-2 ${
+                                          sense.isException ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
+                                        }`}>
+                                          <span>{sense.isException ? '⚠️' : 'ℹ️'}</span>
+                                          <span>{sense.grammarNote}</span>
+                                        </div>
+                                      )}
+                                      {hasExplanation && (
+                                        <p className="text-sm text-gray-600 leading-relaxed">{sense.explanation}</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {hasConjugation && (
+                                <div className="py-1.5">
+                                  <button
+                                    onClick={() => toggleConjugation(key)}
+                                    className={`text-xs font-semibold flex items-center gap-1.5 py-1 transition-colors ${conjugationOpen ? 'text-amber-600' : 'text-indigo-600 hover:text-indigo-800'}`}
+                                  >
+                                    <span>{conjugationOpen ? '▾' : '▸'}</span>
+                                    Відмінювання
+                                  </button>
+                                  {conjugationOpen && (
+                                    <div className="pb-2">
+                                      {targetLanguageName === 'Ukrainian' && sense.isException ? (
+                                        <div className="rounded-2xl overflow-hidden border border-violet-100">
+                                          {(() => {
+                                            const tense = sense.conjugation.present
+                                              ? { label: 'Теперішній', data: sense.conjugation.present }
+                                              : sense.conjugation.future
+                                              ? { label: 'Майбутній', data: sense.conjugation.future }
+                                              : null
+                                            return (
+                                              <>
+                                                {tense && (
+                                                  <table className="w-full text-sm">
+                                                    <thead>
+                                                      <tr className="bg-violet-50 text-xs text-violet-700 uppercase tracking-wide">
+                                                        <th className="px-3 py-2 text-left font-medium w-1/2">займенник</th>
+                                                        <th className="px-3 py-2 text-left font-medium">{tense.label}</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {['я','ти','він/вона','ми','ви','вони'].map((p, i) => (
+                                                        <tr key={p} className={i % 2 === 0 ? 'bg-white' : 'bg-violet-50/30'}>
+                                                          <td className="px-3 py-1.5 text-gray-400 font-medium text-xs">{p}</td>
+                                                          <td className="px-3 py-1.5 text-gray-800 italic">{tense.data?.[p] || '—'}</td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                )}
+                                                {sense.conjugation.past && (
+                                                  <div className="bg-violet-50/50 px-3 py-2 border-t border-violet-100 text-xs text-violet-800 flex flex-wrap gap-x-4 gap-y-1 items-center">
+                                                    <span className="font-semibold uppercase tracking-wide">Минулий:</span>
+                                                    {['ч','ж','с','мн'].map((k) => sense.conjugation.past[k] && (
+                                                      <span key={k}><span className="text-violet-500">{k}:</span> <span className="italic">{sense.conjugation.past[k]}</span></span>
+                                                    ))}
+                                                  </div>
+                                                )}
+                                              </>
+                                            )
+                                          })()}
+                                        </div>
+                                      ) : targetLanguageName !== 'Ukrainian' && (
+                                        <div className="rounded-2xl overflow-hidden border border-amber-100">
+                                          <table className="w-full text-sm">
+                                            <thead>
+                                              <tr className="bg-amber-50 text-xs text-amber-700 uppercase tracking-wide">
+                                                <th className="px-3 py-2 text-left font-medium w-1/3">{t('dict.pronoun')}</th>
+                                                <th className="px-3 py-2 text-left font-medium">Präsens</th>
+                                                <th className="px-3 py-2 text-left font-medium">Präteritum</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {['ich','du','er/sie/es','wir','ihr','sie/Sie'].map((pronoun, i) => (
+                                                <tr key={pronoun} className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50/30'}>
+                                                  <td className="px-3 py-1.5 text-gray-400 font-medium text-xs">{pronoun}</td>
+                                                  <td className="px-3 py-1.5 text-gray-800 italic">{sense.conjugation.präsens?.[pronoun] || '—'}</td>
+                                                  <td className="px-3 py-1.5 text-gray-500 italic">{sense.conjugation.präteritum?.[pronoun] || '—'}</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                          <div className="bg-amber-50/50 px-3 py-2 flex items-center gap-4 border-t border-amber-100 text-xs text-amber-800">
+                                            <span><span className="font-semibold">Partizip II:</span> {sense.conjugation.partizip_ii}</span>
+                                            <span><span className="font-semibold">{t('dict.auxiliary')}:</span> {sense.conjugation.auxiliary}</span>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
+
                         {sense.examples?.length > 0 && (
                           <div className="flex flex-col gap-2">
                             {sense.examples.map((ex, i) => (
@@ -1044,84 +1152,6 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                                 <p className="text-xs text-gray-400 italic">{ex.translation}</p>
                               </div>
                             ))}
-                          </div>
-                        )}
-                        {/* Conjugation table */}
-                        {sense.conjugation && targetLanguageName === 'Ukrainian' && sense.isException ? (
-                          <div>
-                            <button
-                              onClick={() => toggleConjugation(sense.id || si)}
-                              className="text-xs text-violet-600 font-medium flex items-center gap-1.5 hover:text-violet-800 transition-colors"
-                            >
-                              <span>{expandedConjugation.has(sense.id || si) ? '▾' : '▸'}</span>
-                              {expandedConjugation.has(sense.id || si) ? 'Сховати відмінювання' : 'Відмінювання'}
-                            </button>
-                            {expandedConjugation.has(sense.id || si) && (
-                              <div className="rounded-2xl overflow-hidden border border-violet-100 mt-2">
-                                {(() => {
-                                  const tense = sense.conjugation.present
-                                    ? { label: 'Теперішній', data: sense.conjugation.present }
-                                    : sense.conjugation.future
-                                    ? { label: 'Майбутній', data: sense.conjugation.future }
-                                    : null
-                                  return (
-                                    <>
-                                      {tense && (
-                                        <table className="w-full text-sm">
-                                          <thead>
-                                            <tr className="bg-violet-50 text-xs text-violet-700 uppercase tracking-wide">
-                                              <th className="px-3 py-2 text-left font-medium w-1/2">займенник</th>
-                                              <th className="px-3 py-2 text-left font-medium">{tense.label}</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {['я','ти','він/вона','ми','ви','вони'].map((p, i) => (
-                                              <tr key={p} className={i % 2 === 0 ? 'bg-white' : 'bg-violet-50/30'}>
-                                                <td className="px-3 py-1.5 text-gray-400 font-medium text-xs">{p}</td>
-                                                <td className="px-3 py-1.5 text-gray-800 italic">{tense.data?.[p] || '—'}</td>
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                        </table>
-                                      )}
-                                      {sense.conjugation.past && (
-                                        <div className="bg-violet-50/50 px-3 py-2 border-t border-violet-100 text-xs text-violet-800 flex flex-wrap gap-x-4 gap-y-1 items-center">
-                                          <span className="font-semibold uppercase tracking-wide">Минулий:</span>
-                                          {['ч','ж','с','мн'].map((k) => sense.conjugation.past[k] && (
-                                            <span key={k}><span className="text-violet-500">{k}:</span> <span className="italic">{sense.conjugation.past[k]}</span></span>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </>
-                                  )
-                                })()}
-                              </div>
-                            )}
-                          </div>
-                        ) : sense.conjugation && targetLanguageName !== 'Ukrainian' && (
-                          <div className="rounded-2xl overflow-hidden border border-amber-100">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-amber-50 text-xs text-amber-700 uppercase tracking-wide">
-                                  <th className="px-3 py-2 text-left font-medium w-1/3">{t('dict.pronoun')}</th>
-                                  <th className="px-3 py-2 text-left font-medium">Präsens</th>
-                                  <th className="px-3 py-2 text-left font-medium">Präteritum</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {['ich','du','er/sie/es','wir','ihr','sie/Sie'].map((pronoun, i) => (
-                                  <tr key={pronoun} className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50/30'}>
-                                    <td className="px-3 py-1.5 text-gray-400 font-medium text-xs">{pronoun}</td>
-                                    <td className="px-3 py-1.5 text-gray-800 italic">{sense.conjugation.präsens?.[pronoun] || '—'}</td>
-                                    <td className="px-3 py-1.5 text-gray-500 italic">{sense.conjugation.präteritum?.[pronoun] || '—'}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                            <div className="bg-amber-50/50 px-3 py-2 flex items-center gap-4 border-t border-amber-100 text-xs text-amber-800">
-                              <span><span className="font-semibold">Partizip II:</span> {sense.conjugation.partizip_ii}</span>
-                              <span><span className="font-semibold">{t('dict.auxiliary')}:</span> {sense.conjugation.auxiliary}</span>
-                            </div>
                           </div>
                         )}
                       </div>
