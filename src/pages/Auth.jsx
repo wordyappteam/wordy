@@ -73,7 +73,7 @@ export default function Auth() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <nav className="bg-white border-b border-gray-100 px-6 py-4">
         <button onClick={() => navigate('/')} className="text-xl font-bold tracking-tight">
-          <span className="text-indigo-600">verb</span><span className="text-brand-yellow">a</span>
+          <span className="text-indigo-600">verba</span>
         </button>
       </nav>
 

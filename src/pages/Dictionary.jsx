@@ -439,6 +439,15 @@ function stageLabel(stage, lang) {
   return (lang === 'uk' && STAGE_LABELS_UK[s]) || s
 }
 
+const ENTRY_LABELS_UK = {
+  phrase: 'фраза', idiom: 'ідіома', 'phrasal-verb': 'фразове дієсл.',
+}
+function entryLabel(entryType, lang) {
+  const e = ENTRY_TYPE_STYLES[entryType]
+  if (!e) return null
+  return (lang === 'uk' && ENTRY_LABELS_UK[entryType]) || e.label
+}
+
 const ENTRY_TYPE_STYLES = {
   word:          null, // no extra badge — POS badge is enough
   phrase:        { label: 'phrase',        className: 'bg-indigo-50 text-indigo-700 border border-indigo-200' },
@@ -486,7 +495,7 @@ function speak(text, lang = 'de-DE') {
   window.speechSynthesis.speak(u)
 }
 
-function renderCell(colId, w, t) {
+function renderCell(colId, w, t, lang) {
   const pos       = POS_STYLES[w.pos] || POS_STYLES.preposition
   const entryBadge = ENTRY_TYPE_STYLES[w.entryType]
   switch (colId) {
@@ -508,8 +517,8 @@ function renderCell(colId, w, t) {
     }
     case 'entryType':
       return entryBadge
-        ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
-        : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{pos.label}</span>
+        ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryLabel(w.entryType, lang)}</span>
+        : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{posLabel(w.pos, lang)}</span>
     case 'form': {
       const formText = w.pos !== 'noun' ? (w.form || '—') : '—'
       return (
@@ -648,7 +657,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-sm font-semibold text-gray-900">{result.word}</span>
                 {entryBadge && (
-                  <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
+                  <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryLabel(result.entryType, lang)}</span>
                 )}
                 {(result.senses || []).length > 1 && (
                   <span className="text-xs text-gray-400 ml-auto">{(result.senses || []).length} senses — uncheck any you don't want</span>
@@ -922,7 +931,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
           <div>
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               {entryBadge
-                ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryBadge.label}</span>
+                ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryLabel(word.entryType, lang)}</span>
                 : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{posLabel(word.pos, lang)}</span>
               }
               {!editing && (
@@ -1486,7 +1495,7 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
 
 // ── Quick Sort mode ───────────────────────────────────────────────────────
 function QuickSortMode({ words, onClose, onStatusChange }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [index, setIndex]   = useState(0)
   const [saving, setSaving] = useState(false)
   const [done, setDone]     = useState(false)
@@ -1550,8 +1559,8 @@ function QuickSortMode({ words, onClose, onStatusChange }) {
         <div className="bg-white rounded-3xl shadow-md border border-gray-100 w-full max-w-sm px-8 py-10 flex flex-col items-center text-center gap-4">
           <div className="flex gap-1.5 flex-wrap justify-center">
             {eType
-              ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${eType.className}`}>{eType.label}</span>
-              : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{pos.label}</span>
+              ? <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${eType.className}`}>{entryLabel(current.entryType, lang)}</span>
+              : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${pos.className}`}>{posLabel(current.pos, lang)}</span>
             }
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[current.status]}`}>{current.status}</span>
           </div>
@@ -1658,7 +1667,7 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
                 Claude will identify them one by one.
               </p>
               {total === 0
-                ? <p className="text-sm text-green-600 bg-green-50 rounded-xl px-4 py-3 mb-5">✓ All words are already identified!</p>
+                ? <p className="text-sm text-green-600 bg-green-50 rounded-xl px-4 py-3 mb-5">✓ {t('dict.allIdentified')}</p>
                 : (
                   <div className="bg-gray-50 rounded-2xl px-4 py-3 mb-5 max-h-48 overflow-y-auto">
                     <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">{t('dict.wordsToIdentify')}</p>
@@ -1998,7 +2007,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
                 onClick={() => { setMode('create'); setName(''); setColor(nextColor(collections)); setChecked(new Set()) }}
                 className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-semibold transition-colors"
               >
-                + New collection
+                {t('dict.newCollectionTitle')}
               </button>
             </div>
           </>
@@ -2491,14 +2500,14 @@ export default function Dictionary() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{t('dict.title')}</h1>
-            <p className="text-sm text-gray-500 mt-0.5">{loadingWords ? '…' : `${words.length} ${t('dict.entries')}`} · {targetLanguageName}</p>
+            <p className="text-sm text-gray-500 mt-0.5">{loadingWords ? '…' : `${words.length} ${t('dict.entries')}`} · {t(`dict.lang${targetLanguageName}`)}</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setShowBulkModal(true)}
               className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
             >
-              Import list
+              {t('dict.importList')}
             </button>
             <button
               onClick={() => setShowBulkIdentify(true)}
@@ -2512,7 +2521,7 @@ export default function Dictionary() {
               className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
               title="Go through all words and assign status levels"
             >
-              🗂 Sort words
+              {t('dict.sortWords')}
             </button>
             <button
               onClick={() => selectionMode ? exitSelection() : setSelectionMode(true)}
@@ -2570,7 +2579,7 @@ export default function Dictionary() {
             onClick={() => setFilterCollection('all')}
             className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${filterCollection === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}
           >
-            All words
+            {t('dict.allWords')}
           </button>
           {collections.map((c) => {
             const col = collectionColor(c.color)
@@ -2591,7 +2600,7 @@ export default function Dictionary() {
             onClick={() => setShowCollectionsModal(true)}
             className="px-3 py-1.5 rounded-full text-xs font-semibold border border-dashed border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors"
           >
-            {collections.length ? '⚙ Manage' : '+ New collection'}
+            {collections.length ? t('dict.manage') : t('dict.newCollectionTitle')}
           </button>
         </div>
 
@@ -2692,7 +2701,7 @@ export default function Dictionary() {
                   )}
                   {columns.map((col) => (
                     <td key={col.id} className="px-5 py-3.5 whitespace-nowrap">
-                      {renderCell(col.id, w, t)}
+                      {renderCell(col.id, w, t, lang)}
                     </td>
                   ))}
                 </tr>

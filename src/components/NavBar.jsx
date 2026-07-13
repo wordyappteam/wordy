@@ -38,7 +38,7 @@ export default function NavBar({ slot, className = '' }) {
     { path: '/dashboard',  label: t('nav.dashboard')  },
     { path: '/dictionary', label: t('nav.dictionary') },
     { path: '/exercises',  label: t('nav.exercises')  },
-    { path: '/reader',     label: 'Reader'            },
+    { path: '/reader',     label: t('nav.reader')     },
     { path: '/chat',       label: t('nav.chat')       },
   ]
 
@@ -80,7 +80,7 @@ export default function NavBar({ slot, className = '' }) {
           className="text-xl font-bold tracking-tight shrink-0"
           aria-label="Verba"
         >
-          <span className="text-indigo-600">verb</span><span className="text-brand-yellow">a</span>
+          <span className="text-indigo-600">verba</span>
         </button>
 
         {/* Desktop links */}
