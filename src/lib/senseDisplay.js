@@ -15,3 +15,15 @@ export function displayTranslation(translation, disambiguate = false) {
     .trim()
   return stripped || translation.trim() // fall back if stripping left nothing
 }
+
+// The panel header already prints the entry — `aspectPairTitle || word.word`. The
+// sense body should print the sense's own form only when it says something the
+// header does not: a phrase sense ("eine Entscheidung treffen" under the entry
+// "die Entscheidung") or one half of a Ukrainian aspect pair. For an ordinary
+// single-sense word the two are the same string, and the card would open by
+// saying the same thing twice before reaching the meaning.
+export function showSenseForm(sense, headerTitle) {
+  const form = sense?.wordForm?.trim()
+  if (!form) return false
+  return form.toLowerCase() !== (headerTitle || '').trim().toLowerCase()
+}

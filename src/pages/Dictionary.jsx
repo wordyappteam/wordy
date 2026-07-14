@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { identifyWord as identifyWordAI, suggestCollectionWords } from '../lib/claude'
-import { displayTranslation } from '../lib/senseDisplay'
+import { displayTranslation, showSenseForm } from '../lib/senseDisplay'
 import { badgeForWord } from '../lib/srs'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
@@ -808,26 +808,25 @@ function SenseImage({ sense, userId, onChange }) {
 }
 
 // ── Word Panel ────────────────────────────────────────────────────────────
-// A collapsible note section. Collapsed by default — the translation and examples
-// are what you came for; the notes are there when you want to go deeper.
-function Section({ id, label, open, onToggle, accent = false, children }) {
-  const isOpen = open.has(id)
+// A note: a coloured left rule and no fill. The fill is what the examples get, so
+// the body reads as two kinds of thing — notes are ink, examples are cards — and
+// the rule colour lets you find the grammar note without reading a word.
+//
+// Three tones, one meaning each. `trap` is wheat and means exactly that: a trap.
+// Being irregular is a fact, not a trap, and it has its own badge in the header —
+// so the exception flag must never reach in here and tint the grammar note.
+const NOTE_TONES = {
+  meaning: { rule: 'border-indigo-600', label: 'text-indigo-700', body: 'text-[13.5px] text-gray-700' },
+  grammar: { rule: 'border-gray-300',   label: 'text-gray-500',   body: 'text-[12.5px] text-gray-600' },
+  trap:    { rule: 'border-amber-600',  label: 'text-amber-700',  body: 'text-[12.5px] text-gray-600' },
+}
+
+function Note({ label, tone, children }) {
+  const c = NOTE_TONES[tone]
   return (
-    <div>
-      <button
-        onClick={() => onToggle(id)}
-        className={`w-full flex items-center justify-between py-2 text-xs font-semibold transition-colors ${
-          isOpen ? (accent ? 'text-amber-700' : 'text-indigo-700') : 'text-gray-400 hover:text-gray-600'
-        }`}
-      >
-        <span>{label}</span>
-        <span className={`transition-transform text-[10px] ${isOpen ? 'rotate-90' : ''}`}>▸</span>
-      </button>
-      {isOpen && (
-        <div className={`rounded-xl px-3 py-2.5 mb-2 ${accent ? 'bg-amber-50' : 'bg-gray-50'}`}>
-          {children}
-        </div>
-      )}
+    <div className={`border-l-[3px] pl-3 py-0.5 ${c.rule}`}>
+      <p className={`text-[11px] font-semibold uppercase tracking-wide mb-0.5 ${c.label}`}>{label}</p>
+      <p className={`leading-relaxed ${c.body}`}>{children}</p>
     </div>
   )
 }
@@ -846,19 +845,6 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
   useEffect(() => { setActiveSenseIdx(0) }, [word.id]) // reset pager when a different word opens
   const [confirmDeleteSense, setConfirmDeleteSense] = useState(false)
   useEffect(() => { setConfirmDeleteSense(false) }, [word.id, activeSenseIdx]) // close confirm on word/sense change
-
-  // Note sections (Значення / Граматика / Варто знати), collapsed by default.
-  // Keys are namespaced by sense id, so no reset is needed when another word or
-  // sense opens — it simply has different keys, and returning to a sense you had
-  // expanded finds it still expanded.
-  const [openSections, setOpenSections] = useState(new Set())
-  function toggleSection(key) {
-    setOpenSections(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
-  }
 
   function toggleConjugation(key) {
     setExpandedConjugation(prev => {
@@ -1028,42 +1014,17 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                       </div>
 
                       <div className="px-4 py-3 flex flex-col gap-3">
-                        {/* Headword + its key form (plural / principal parts) */}
-                        <div className="flex items-baseline gap-2 flex-wrap">
-                          <span className="text-lg font-bold text-gray-900">{sense.wordForm}</span>
-                          {sense.form && <span className="text-xs text-gray-400 italic">({sense.form})</span>}
-                        </div>
-
-                        {confirmDeleteSense && (
-                          /* In-place sense confirm — last sense deletes the whole word */
-                          <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
-                            <p className="text-xs text-red-700 font-medium">
-                              {word.senses.length > 1 ? t('dict.deleteSenseConfirm') : t('dict.deleteConfirm')}
-                            </p>
-                            <div className="flex gap-2 shrink-0">
-                              <button
-                                onClick={() => setConfirmDeleteSense(false)}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white transition-colors"
-                              >
-                                {t('dict.cancel')}
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  setConfirmDeleteSense(false)
-                                  if (word.senses.length > 1) {
-                                    setActiveSenseIdx(i => Math.max(0, Math.min(i, word.senses.length - 2)))
-                                    await onDeleteSense(word.id, sense.id)
-                                  } else {
-                                    onDelete(word.id)
-                                  }
-                                }}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold transition-colors"
-                              >
-                                {t('dict.deleteConfirmBtn')}
-                              </button>
-                            </div>
+                        {/* The sense's own form — only when it is not already what the
+                            header says. A phrase sense or half an aspect pair earns this
+                            line; `bestehen` under the header `bestehen` does not, and
+                            `sense.form` rides along with it for the same reason. */}
+                        {showSenseForm(sense, aspectPairTitle || word.word) && (
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="text-lg font-bold text-gray-900">{sense.wordForm}</span>
+                            {sense.form && <span className="text-xs text-gray-400 italic">({sense.form})</span>}
                           </div>
                         )}
+
                         {/* The translation — the answer to "what does this mean". Biggest thing on the card. */}
                         <p className="text-base font-medium text-gray-800">{displayTranslation(sense.translation, word.senses.length > 1)}</p>
 
@@ -1071,24 +1032,20 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                               Значення    — the definition. Always there.
                               Граматика   — how to build with it. Null for most nouns.
                               Варто знати — the trap. Null for most words.
-                            A section with nothing to say does not render at all: an empty
-                            "Граматика ▸" on `der Tisch` would be worse than no section. */}
+                            A note with nothing to say does not render at all: an empty
+                            "Граматика" on `der Tisch` would be worse than no note.
+                            The trap sits before the examples on purpose — a warning read
+                            after the evidence is a warning read too late. */}
                         {(sense.explanation || sense.grammarNote || sense.usageNote) && (
-                          <div className="border-y border-gray-100 divide-y divide-gray-50">
+                          <div className="flex flex-col gap-2.5">
                             {sense.explanation && (
-                              <Section id={`${sense.id}-mean`} label={t('dict.meaning')} open={openSections} onToggle={toggleSection}>
-                                <p className="text-sm text-gray-600 leading-relaxed">{sense.explanation}</p>
-                              </Section>
+                              <Note label={t('dict.meaning')} tone="meaning">{sense.explanation}</Note>
                             )}
                             {sense.grammarNote && (
-                              <Section id={`${sense.id}-gram`} label={t('dict.grammar')} open={openSections} onToggle={toggleSection} accent={sense.isException}>
-                                <p className="text-sm text-gray-700 font-medium">{sense.grammarNote}</p>
-                              </Section>
+                              <Note label={t('dict.grammar')} tone="grammar">{sense.grammarNote}</Note>
                             )}
                             {sense.usageNote && (
-                              <Section id={`${sense.id}-use`} label={t('dict.goodToKnow')} open={openSections} onToggle={toggleSection} accent>
-                                <p className="text-sm text-amber-900 leading-relaxed">{sense.usageNote}</p>
-                              </Section>
+                              <Note label={t('dict.goodToKnow')} tone="trap">{sense.usageNote}</Note>
                             )}
                           </div>
                         )}
@@ -1202,15 +1159,41 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                             "delete this sense" IS "delete the word" — and the word-level
                             button below already says so. Showing both was the same
                             destructive action twice, one card apart. */}
+                        {/* The confirm takes the button's place rather than opening at the top
+                            of the card: a question about a click belongs where the click was. */}
                         {word.senses.length > 1 && (
                           <div className="pt-2 mt-1 border-t border-gray-100 flex justify-end">
-                            <button
-                              onClick={() => setConfirmDeleteSense(true)}
-                              className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-red-600 transition-colors px-2 py-1 -mr-2 rounded-lg hover:bg-red-50"
-                            >
-                              <TrashIcon />
-                              {t('dict.deleteSense')}
-                            </button>
+                            {confirmDeleteSense ? (
+                              <div className="w-full flex items-center justify-between gap-3 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                                <p className="text-xs text-red-700 font-medium">{t('dict.deleteSenseConfirm')}</p>
+                                <div className="flex gap-2 shrink-0">
+                                  <button
+                                    onClick={() => setConfirmDeleteSense(false)}
+                                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white transition-colors"
+                                  >
+                                    {t('dict.cancel')}
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      setConfirmDeleteSense(false)
+                                      setActiveSenseIdx(i => Math.max(0, Math.min(i, word.senses.length - 2)))
+                                      await onDeleteSense(word.id, sense.id)
+                                    }}
+                                    className="text-xs px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold transition-colors"
+                                  >
+                                    {t('dict.deleteConfirmBtn')}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDeleteSense(true)}
+                                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-red-600 transition-colors px-2 py-1 -mr-2 rounded-lg hover:bg-red-50"
+                              >
+                                <TrashIcon />
+                                {t('dict.deleteSense')}
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
