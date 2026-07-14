@@ -816,9 +816,9 @@ function SenseImage({ sense, userId, onChange }) {
 // Being irregular is a fact, not a trap, and it has its own badge in the header —
 // so the exception flag must never reach in here and tint the grammar note.
 const NOTE_TONES = {
-  meaning: { rule: 'border-indigo-600', label: 'text-indigo-700', body: 'text-[13.5px] text-gray-700' },
-  grammar: { rule: 'border-gray-300',   label: 'text-gray-500',   body: 'text-[12.5px] text-gray-600' },
-  trap:    { rule: 'border-amber-600',  label: 'text-amber-700',  body: 'text-[12.5px] text-gray-600' },
+  meaning: { rule: 'border-indigo-600', label: 'text-indigo-700', body: 'text-[15px] text-gray-700' },
+  grammar: { rule: 'border-gray-300',   label: 'text-gray-500',   body: 'text-[14px] text-gray-600' },
+  trap:    { rule: 'border-amber-600',  label: 'text-amber-700',  body: 'text-[14px] text-gray-600' },
 }
 
 function Note({ label, tone, children }) {
