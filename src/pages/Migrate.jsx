@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { identifyWord } from '../lib/claude'
+import { identifyWord, primaryEntry } from '../lib/claude'
 
 const LANG_NAME = { de: 'German', en: 'English' }
 
@@ -42,7 +42,7 @@ export default function Migrate() {
       setCurrent(w.word)
       try {
         const langName = LANG_NAME[w.target_language] ?? w.target_language
-        const result = await identifyWord(w.word, langName, translateTo)
+        const result = primaryEntry(await identifyWord(w.word, langName, translateTo)) ?? {}
         if (!result.senses?.length) throw new Error('no senses returned')
 
         // Delete existing senses for this word (idempotent re-run)

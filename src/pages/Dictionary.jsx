@@ -2,9 +2,10 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { identifyWord as identifyWordAI, suggestCollectionWords } from '../lib/claude'
+import { identifyWord as identifyWordAI, primaryEntry, suggestCollectionWords } from '../lib/claude'
 import { displayTranslation, showSenseForm } from '../lib/senseDisplay'
-import { badgeForWord } from '../lib/srs'
+import { listHeadword } from '../lib/senseFormat'
+import { badgeForWord, badgeForStage, manualStagePatch } from '../lib/srs'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import {
@@ -12,6 +13,7 @@ import {
   renameCollection, deleteCollection, addWordToCollection, removeWordFromCollection,
   COLLECTION_COLOR_KEYS,
 } from '../lib/collections'
+import { candidateToRows } from '../lib/identifyCandidates'
 import { uploadSenseImage, deleteSenseImageByUrl, setSenseImageUrl } from '../lib/senseImages'
 import NavBar from '../components/NavBar'
 
@@ -503,7 +505,7 @@ function renderCell(colId, w, t, lang) {
       const caseBadge = extractCaseBadge(w)
       return (
         <span className="font-medium text-gray-900 flex items-center gap-1.5 flex-wrap">
-          <span>{w.word}</span>
+          <span>{listHeadword(w)}</span>
           {w.pos === 'noun' && w.form && (
             <span className="text-gray-400 font-normal"> ({cleanForm(w.form, w.word)})</span>
           )}
@@ -564,7 +566,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
   const [input, setInput]           = useState('')
   const [stage, setStage]           = useState('idle') // idle | loading | result
   const [result, setResult]         = useState(null)
-  const [checkedSenses, setCheckedSenses] = useState([])
+  const [checked, setChecked]       = useState({}) // "ci.si" -> bool, default all true
   const [identifyError, setIdentifyError] = useState(null)
   const [translationLang, setTranslationLang] = useState(interfaceLanguage)
 
@@ -574,8 +576,11 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
     setIdentifyError(null)
     try {
       const data = await identifyWordAI(input, targetLanguageName, translationLang, null, { topics })
+      const init = {}
+      ;(data.candidates || []).forEach((c, ci) =>
+        (c.senses || []).forEach((_, si) => { init[`${ci}.${si}`] = true }))
+      setChecked(init)
       setResult(data)
-      setCheckedSenses((data.senses || []).map((_, i) => i)) // pre-check all
       setStage('result')
     } catch (e) {
       setIdentifyError(t(e?.overloaded ? 'dict.busyError' : 'dict.identifyError'))
@@ -583,18 +588,20 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
     }
   }
 
-  const toggleSense = (i) => setCheckedSenses(prev =>
-    prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]
-  )
+  const toggleSense = (key) => setChecked(prev => ({ ...prev, [key]: !prev[key] }))
 
   const handleAdd = () => {
     if (!result) return
-    const selectedSenses = (result.senses || []).filter((_, i) => checkedSenses.includes(i))
-    onAdd({ ...result, senses: selectedSenses, source: 'manual' })
+    const chosen = (result.candidates || [])
+      .map((c, ci) => ({
+        ...c,
+        senses: (c.senses || []).filter((_, si) => checked[`${ci}.${si}`]),
+      }))
+      .filter(c => c.senses.length > 0)
+    if (!chosen.length) return
+    onAdd({ candidates: chosen, source: 'manual' })
     onClose()
   }
-
-  const entryBadge = result ? ENTRY_TYPE_STYLES[result.entryType] : null
 
   return (
     <>
@@ -651,53 +658,64 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
             </div>
           )}
 
-          {/* Sense picker */}
+          {/* Candidate / sense picker */}
           {stage === 'result' && result && (
-            <div className="mb-5">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-sm font-semibold text-gray-900">{result.word}</span>
-                {entryBadge && (
-                  <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryLabel(result.entryType, lang)}</span>
-                )}
-                {(result.senses || []).length > 1 && (
-                  <span className="text-xs text-gray-400 ml-auto">{(result.senses || []).length} senses — uncheck any you don't want</span>
-                )}
-              </div>
-              <div className="flex flex-col gap-2">
-                {(result.senses || []).map((sense, i) => {
-                  const posBadge = POS_STYLES[sense.pos] || POS_STYLES.preposition
-                  const checked  = checkedSenses.includes(i)
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => toggleSense(i)}
-                      className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
-                        checked
-                          ? 'border-indigo-300 bg-indigo-50'
-                          : 'border-gray-200 bg-white opacity-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posLabel(sense.pos, lang)}</span>
-                        {sense.aspect && (
-                          <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">{sense.aspect === 'imperfective' ? 'impf.' : 'pf.'}</span>
-                        )}
-                        {sense.gender && (
-                          <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-100">{{ m: 'ч', f: 'ж', n: 'с' }[sense.gender] || sense.gender}</span>
-                        )}
-                        <span className="text-sm font-medium text-gray-900">{sense.wordForm}</span>
-                        <span className={`ml-auto w-4 h-4 rounded border flex items-center justify-center text-xs shrink-0 ${
-                          checked ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'
-                        }`}>{checked ? '✓' : ''}</span>
-                      </div>
-                      <p className="text-sm text-gray-600">{displayTranslation(sense.translation, (result.senses || []).length > 1)}</p>
-                      {sense.grammarNote && (
-                        <p className="text-xs text-gray-400 mt-1">{sense.grammarNote}</p>
+            <div className="mb-5 flex flex-col gap-5">
+              {(result.candidates || []).length > 1 && (
+                <p className="text-xs text-gray-400 -mb-2">{"These are different words — pick the ones to add."}</p>
+              )}
+              {(result.candidates || []).map((candidate, ci) => {
+                const entryBadge = ENTRY_TYPE_STYLES[candidate.entryType]
+                return (
+                  <div key={ci}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm font-semibold text-gray-900">{candidate.word}</span>
+                      {entryBadge && (
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${entryBadge.className}`}>{entryLabel(candidate.entryType, lang)}</span>
                       )}
-                    </button>
-                  )
-                })}
-              </div>
+                      {(candidate.senses || []).length > 1 && (
+                        <span className="text-xs text-gray-400 ml-auto">{(candidate.senses || []).length} senses — uncheck any you don't want</span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {(candidate.senses || []).map((sense, si) => {
+                        const posBadge = POS_STYLES[sense.pos] || POS_STYLES.preposition
+                        const key = `${ci}.${si}`
+                        const isChecked = checked[key]
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => toggleSense(key)}
+                            className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
+                              isChecked
+                                ? 'border-indigo-300 bg-indigo-50'
+                                : 'border-gray-200 bg-white opacity-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${posBadge.className}`}>{posLabel(sense.pos, lang)}</span>
+                              {sense.aspect && (
+                                <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">{sense.aspect === 'imperfective' ? 'impf.' : 'pf.'}</span>
+                              )}
+                              {sense.gender && (
+                                <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-100">{{ m: 'ч', f: 'ж', n: 'с' }[sense.gender] || sense.gender}</span>
+                              )}
+                              <span className="text-sm font-medium text-gray-900">{sense.wordForm}</span>
+                              <span className={`ml-auto w-4 h-4 rounded border flex items-center justify-center text-xs shrink-0 ${
+                                isChecked ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'
+                              }`}>{isChecked ? '✓' : ''}</span>
+                            </div>
+                            <p className="text-sm text-gray-600">{displayTranslation(sense.translation, (candidate.senses || []).length > 1)}</p>
+                            {sense.grammarNote && (
+                              <p className="text-xs text-gray-400 mt-1">{sense.grammarNote}</p>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
 
@@ -708,7 +726,7 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
             </button>
             <button
               onClick={handleAdd}
-              disabled={stage !== 'result' || checkedSenses.length === 0}
+              disabled={stage !== 'result' || Object.values(checked).every(v => !v)}
               className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors disabled:opacity-30"
             >
               {t('dict.addToDictBtn')}
@@ -831,7 +849,7 @@ function Note({ label, tone, children }) {
   )
 }
 
-function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange, topics = [] }) {
+function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange, onSenseStageChange, topics = [] }) {
   const { t, lang } = useLanguage()
   const [editing, setEditing]             = useState(false)
   const [draft, setDraft]                 = useState(word)
@@ -845,6 +863,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
   useEffect(() => { setActiveSenseIdx(0) }, [word.id]) // reset pager when a different word opens
   const [confirmDeleteSense, setConfirmDeleteSense] = useState(false)
   useEffect(() => { setConfirmDeleteSense(false) }, [word.id, activeSenseIdx]) // close confirm on word/sense change
+  const [stagePickerOpen, setStagePickerOpen] = useState(false)
+  useEffect(() => { setStagePickerOpen(false) }, [word.id, activeSenseIdx]) // close picker on word/sense change
 
   function toggleConjugation(key) {
     setExpandedConjugation(prev => {
@@ -869,7 +889,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
     setIdentifyError(null)
     try {
       const lang = reidentLang || interfaceLanguage || 'English'
-      const result = await identifyWordAI(word.word, targetLanguageName, lang, null, { topics })
+      const idResult = await identifyWordAI(word.word, targetLanguageName, lang, null, { topics })
+      const result = primaryEntry(idResult) ?? { senses: word.senses }
       const primary = result.senses?.[0]
       const updated = {
         ...word,
@@ -905,6 +926,16 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
   function saveEdit() {
     onUpdate(draft)
     setEditing(false)
+  }
+
+  // Set the learning stage for ONE sense — writes real SRS state to that
+  // sense's word_senses row only, so sibling senses of the same word are
+  // untouched. The word-level list badge stays derived (badgeForWord).
+  async function setSenseStage(senseId, level) {
+    setStagePickerOpen(false)
+    const patch = manualStagePatch(level, new Date().toISOString().slice(0, 10))
+    await supabase.from('word_senses').update(patch).eq('id', senseId).eq('user_id', userId)
+    onSenseStageChange?.(senseId, patch) // patch local state so the derived word badge refreshes
   }
 
   return (
@@ -1010,7 +1041,33 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                         {sense.register && sense.register !== 'neutral' && (
                           <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 capitalize">{sense.register}</span>
                         )}
-                        <span className={`ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}>{stageLabel(sense.learningStage, lang)}</span>
+                        <div className="ml-auto relative">
+                          <button
+                            type="button"
+                            onClick={() => setStagePickerOpen(o => !o)}
+                            className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}
+                          >
+                            {stageLabel(sense.learningStage, lang)}
+                          </button>
+                          {stagePickerOpen && (
+                            <div className="absolute right-0 top-full mt-1 z-10 bg-white border border-gray-100 rounded-xl shadow-lg p-1.5 flex gap-1">
+                              {['new', 'learning', 'known', 'mastered'].map((level) => (
+                                <button
+                                  key={level}
+                                  type="button"
+                                  onClick={() => setSenseStage(sense.id, level)}
+                                  className={`px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                                    badgeForStage(sense.learningStage) === level
+                                      ? 'bg-indigo-600 text-white'
+                                      : 'text-gray-500 hover:bg-indigo-50 hover:text-indigo-700'
+                                  }`}
+                                >
+                                  {stageLabel(level, lang)}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       <div className="px-4 py-3 flex flex-col gap-3">
@@ -1408,26 +1465,6 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
               />
             </div>
 
-            {/* Status */}
-            <div>
-              <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.colStatus')}</label>
-              <div className="flex gap-2">
-                {['new', 'learning', 'known', 'mastered'].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setDraft({ ...draft, status: s })}
-                    className={`flex-1 py-2 rounded-xl text-xs font-medium border transition-colors ${
-                      draft.status === s
-                        ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'border-gray-200 text-gray-500 hover:border-indigo-300 hover:bg-indigo-50'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Grammar note */}
             <div>
               <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.grammarNote')}</label>
@@ -1608,7 +1645,8 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
       setIndex(i)
       const w = unidentified[i]
       try {
-        const result = await identifyWordAI(w.word, targetLanguageName, interfaceLanguage, null, { topics })
+        const idResult = await identifyWordAI(w.word, targetLanguageName, interfaceLanguage, null, { topics })
+        const result = primaryEntry(idResult) ?? {}
         const updated = {
           ...w,
           translation: result.translation  || w.translation,
@@ -2264,59 +2302,17 @@ export default function Dictionary() {
     setDragOver(null)
   }
 
-  async function handleAdd(entry) {
+  async function handleAdd(payload) {
     if (!user) return
-    const primarySense = entry.senses?.[0]
-    const { data: newWord, error } = await supabase
-      .from('words')
-      .insert({
-        user_id: user.id,
-        word: entry.word,
-        entry_type: entry.entryType || 'word',
-        target_language: targetLang,
-        status: 'new',
-        source: entry.source || 'manual',
-        date_added: new Date().toISOString().slice(0, 10),
-        last_reviewed: '—',
-        // Keep legacy cols in sync for backward compat with exercise pages
-        translation: primarySense?.translation ?? entry.translation ?? '',
-        pos: primarySense?.pos ?? entry.pos ?? 'noun',
-        form: primarySense?.form ?? entry.form ?? null,
-        grammar_note: primarySense?.grammarNote ?? entry.grammarNote ?? null,
-        explanation: primarySense?.explanation ?? entry.explanation ?? null,
-        is_exception: primarySense?.isException ?? entry.isException ?? false,
-        conjugation: primarySense?.conjugation ?? entry.conjugation ?? null,
-      })
-      .select('id')
-      .single()
-    if (error || !newWord) return
-
-    if (entry.senses?.length > 0) {
-      await supabase.from('word_senses').insert(
-        entry.senses.map(s => ({
-          word_id: newWord.id,
-          user_id: user.id,
-          target_language: targetLang,
-          pos: s.pos,
-          word_form: s.wordForm || entry.word,
-          aspect: s.aspect ?? null,
-          gender: s.gender ?? null,
-          translation: s.translation,
-          form: s.form || null,
-          grammar_note: s.grammarNote || null,
-          usage_note: s.usageNote || null,
-          explanation: s.explanation || null,
-          is_exception: s.isException || false,
-          register: s.register || 'neutral',
-          cefr: s.cefr || null,
-          conjugation: s.conjugation || null,
-          examples: s.examples || [],
-          learning_stage: 'new',
-          correct_recall_count: 0,
-        }))
-      )
+    const candidates = payload.candidates ?? [payload] // tolerate a single entry
+    for (const c of candidates) {
+      const { wordRow, senseRows } = candidateToRows(c, { userId: user.id, targetLang, source: payload.source })
+      const { data: newWord, error } = await supabase.from('words').insert(wordRow).select('id').single()
+      if (error || !newWord) continue
+      if (senseRows.length) {
+        await supabase.from('word_senses').insert(senseRows.map(r => ({ ...r, word_id: newWord.id })))
+      }
     }
-
     fetchWords()
   }
 
@@ -2352,7 +2348,6 @@ export default function Dictionary() {
       .from('words')
       .update({
         translation: primarySense?.translation ?? updated.translation,
-        status: updated.status,
         grammar_note: primarySense?.grammarNote ?? updated.grammarNote,
         explanation: primarySense?.explanation ?? updated.explanation,
         form: primarySense?.form ?? updated.form ?? null,
@@ -2410,10 +2405,31 @@ export default function Dictionary() {
     setWords(prev => prev.map(w => w.senses?.some(s => s.id === senseId) ? patchSenses(w) : w))
   }
 
+  // The write itself happens in WordPanel (setSenseStage); this only patches
+  // local state so the derived word badge (badgeForWord) refreshes immediately.
+  function handleSenseStageChange(senseId, patch) {
+    setWords(prev => prev.map(w => {
+      if (!w.senses?.some(s => s.id === senseId)) return w
+      const senses = w.senses.map(s => s.id === senseId ? { ...s, learningStage: patch.learning_stage } : s)
+      const status = badgeForWord(senses.map(s => ({ learning_stage: s.learningStage })), w.status)
+      return { ...w, senses, status }
+    }))
+  }
+
+  // QuickSortMode sets the WORD's status, but the only real SRS state lives on
+  // its senses — so this writes the primary sense's stage (word_senses), not
+  // the dead words.status column. A word with no senses yet has nothing to
+  // write (it keeps the legacy fallback badgeForWord already handles).
   async function handleQuickStatusChange(wordId, newStatus) {
     if (!user) return
-    await supabase.from('words').update({ status: newStatus }).eq('id', wordId).eq('user_id', user.id)
-    setWords(prev => prev.map(w => w.id === wordId ? { ...w, status: newStatus } : w))
+    const w = words.find(x => x.id === wordId)
+    const primarySenseId = w?.senses?.[0]?.id
+    if (!primarySenseId) return
+    const patch = manualStagePatch(newStatus, new Date().toISOString().slice(0, 10))
+    await supabase.from('word_senses').update(patch).eq('id', primarySenseId).eq('user_id', user.id)
+    setWords(prev => prev.map(x => x.id === wordId
+      ? { ...x, status: newStatus, senses: x.senses.map((s, i) => i === 0 ? { ...s, learningStage: patch.learning_stage } : s) }
+      : x))
   }
 
   // ── Bulk selection + delete ──────────────────────────────────────────────
@@ -2741,7 +2757,7 @@ export default function Dictionary() {
 
       {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedId(null)} onUpdate={handleUpdate} onDelete={handleDelete} onDeleteSense={handleDeleteSense} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale} topics={topics}
         collections={collections} wordCollectionIds={membershipByWord[selectedWord.id]} onToggleCollection={toggleWordCollection} onQuickCreateCollection={handleQuickCreateCollection}
-        userId={user.id} onSenseImageChange={handleSenseImageChange} />}
+        userId={user.id} onSenseImageChange={handleSenseImageChange} onSenseStageChange={handleSenseStageChange} />}
       {confirmBulkDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={() => setConfirmBulkDelete(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>

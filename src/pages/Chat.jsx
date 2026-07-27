@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { chatWithTutor, generateSessionMemory, identifyWord, extractVocabFromChat } from '../lib/claude'
+import { chatWithTutor, generateSessionMemory, identifyWord, extractVocabFromChat, primaryEntry } from '../lib/claude'
 import { useLanguage, targetGenitiveUk } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { useAuth } from '../lib/AuthContext'
@@ -883,10 +883,10 @@ export default function Chat() {
       const item = chosen[i]
       setAddPanel(p => ({ ...p, progress: { done: i, total: chosen.length, current: item.word } }))
       try {
-        const result = await identifyWord(
+        const result = primaryEntry(await identifyWord(
           item.word, targetLanguageName, panel.translationLang || interfaceLanguage, null,
           { singleSense: panel.singleSense !== false, themeHint: themeName || null, topics: profile?.topics ?? [] }
-        )
+        )) ?? {}
         const wordId = await addIdentifiedWord(result)
         if (wordId) {
           if (collectionId) {

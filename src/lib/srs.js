@@ -42,6 +42,18 @@ export function badgeForWord(senses, legacyStatus = 'new') {
   return badgeForStage(primary?.learning_stage) ?? legacyStatus
 }
 
+// ── Manual stage set (per-sense) ──────────────────────────────────────────
+// A learner can mark a single sense's stage directly (e.g. "known") from the
+// UI. Map the four coarse levels to a concrete interval_step so the write is
+// real SRS state — not a status label — and the sense schedules like any
+// other reviewed sense from here on.
+const MANUAL_STEP = { new: 0, learning: 3, known: 6, mastered: MAX_STEP }
+export function manualStagePatch(level, todayISO) {
+  const step = MANUAL_STEP[level] ?? 0
+  const next = step === 0 ? todayISO : addDays(todayISO, INTERVALS[step])
+  return { interval_step: step, learning_stage: stageName(step), next_review_date: next }
+}
+
 // ── Exercise plan per stage (research-aligned: TOPRA, productive, scaffold) ───
 // Direction flips to production (L1->L2) once form is established (mid+).
 export function directionFor(step) {
