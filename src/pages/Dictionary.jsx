@@ -429,7 +429,7 @@ const POS_LABELS_UK = {
   adverb: 'присл.', conjunction: 'спол.', preposition: 'прийм.',
 }
 const STAGE_LABELS_UK = {
-  new: 'нове', early: 'початок', mid: 'вивчаю',
+  new: 'нове', early: 'початок', mid: 'вивчаю', learning: 'вивчаю',
   late: 'майже', known: 'знаю', mastered: 'засвоєно',
 }
 function posLabel(pos, lang) {
