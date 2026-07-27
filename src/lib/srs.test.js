@@ -1,7 +1,7 @@
 // Pure-core SRS v2 tests. Run with: node --test src/lib/srs.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { badgeForStage, badgeForWord, orderForPractice, planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn, balancedChunks, packSenses } from './srs.js'
+import { badgeForStage, badgeForWord, orderForPractice, planSessionV2, applyVerdict, sentenceOutcome, gradedExerciseFor, nextExampleIndex, buildFillBlank, firstFillBlank, gradeFillIn, balancedChunks, packSenses, manualStagePatch } from './srs.js'
 
 // ── Bug #1: fill_blank scaffold must carry the sense's examples ───────────────
 // The UI renders a context fill-blank from step.examples[0].target. If the
@@ -562,4 +562,21 @@ test('orderForPractice ranks due first, then new, then weakest practice words', 
   const ordered = orderForPractice(senses, '2026-07-13').map(s => s.id)
   assert.deepEqual(ordered, ['due', 'new', 'weak', 'strong'],
     'due word first, then new intake, then not-due words weakest-first')
+})
+
+// ── Manual per-sense stage set ────────────────────────────────────────────
+test('manualStagePatch maps levels to interval steps and stage names', () => {
+  const p = manualStagePatch('known', '2026-07-27')
+  assert.equal(p.interval_step, 6)
+  assert.equal(p.learning_stage, 'known')
+  assert.equal(p.next_review_date, '2026-08-31') // +35 days (INTERVALS[6])
+})
+test('manualStagePatch: new is due today', () => {
+  const p = manualStagePatch('new', '2026-07-27')
+  assert.equal(p.interval_step, 0)
+  assert.equal(p.learning_stage, 'new')
+  assert.equal(p.next_review_date, '2026-07-27')
+})
+test('manualStagePatch: mastered is the max step', () => {
+  assert.equal(manualStagePatch('mastered', '2026-07-27').interval_step, 8)
 })

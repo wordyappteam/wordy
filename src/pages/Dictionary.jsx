@@ -5,7 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import { identifyWord as identifyWordAI, primaryEntry, suggestCollectionWords } from '../lib/claude'
 import { displayTranslation, showSenseForm } from '../lib/senseDisplay'
 import { listHeadword } from '../lib/senseFormat'
-import { badgeForWord } from '../lib/srs'
+import { badgeForWord, badgeForStage, manualStagePatch } from '../lib/srs'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import {
@@ -849,7 +849,7 @@ function Note({ label, tone, children }) {
   )
 }
 
-function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange, topics = [] }) {
+function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interfaceLanguage, targetLanguageName = 'German', speechLocale = 'de-DE', collections = [], wordCollectionIds, onToggleCollection, onQuickCreateCollection, userId, onSenseImageChange, onSenseStageChange, topics = [] }) {
   const { t, lang } = useLanguage()
   const [editing, setEditing]             = useState(false)
   const [draft, setDraft]                 = useState(word)
@@ -863,6 +863,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
   useEffect(() => { setActiveSenseIdx(0) }, [word.id]) // reset pager when a different word opens
   const [confirmDeleteSense, setConfirmDeleteSense] = useState(false)
   useEffect(() => { setConfirmDeleteSense(false) }, [word.id, activeSenseIdx]) // close confirm on word/sense change
+  const [stagePickerOpen, setStagePickerOpen] = useState(false)
+  useEffect(() => { setStagePickerOpen(false) }, [word.id, activeSenseIdx]) // close picker on word/sense change
 
   function toggleConjugation(key) {
     setExpandedConjugation(prev => {
@@ -924,6 +926,16 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
   function saveEdit() {
     onUpdate(draft)
     setEditing(false)
+  }
+
+  // Set the learning stage for ONE sense — writes real SRS state to that
+  // sense's word_senses row only, so sibling senses of the same word are
+  // untouched. The word-level list badge stays derived (badgeForWord).
+  async function setSenseStage(senseId, level) {
+    setStagePickerOpen(false)
+    const patch = manualStagePatch(level, new Date().toISOString().slice(0, 10))
+    await supabase.from('word_senses').update(patch).eq('id', senseId).eq('user_id', userId)
+    onSenseStageChange?.(senseId, patch) // patch local state so the derived word badge refreshes
   }
 
   return (
@@ -1029,7 +1041,33 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                         {sense.register && sense.register !== 'neutral' && (
                           <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500 capitalize">{sense.register}</span>
                         )}
-                        <span className={`ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}>{stageLabel(sense.learningStage, lang)}</span>
+                        <div className="ml-auto relative">
+                          <button
+                            type="button"
+                            onClick={() => setStagePickerOpen(o => !o)}
+                            className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${stageColor}`}
+                          >
+                            {stageLabel(sense.learningStage, lang)}
+                          </button>
+                          {stagePickerOpen && (
+                            <div className="absolute right-0 top-full mt-1 z-10 bg-white border border-gray-100 rounded-xl shadow-lg p-1.5 flex gap-1">
+                              {['new', 'learning', 'known', 'mastered'].map((level) => (
+                                <button
+                                  key={level}
+                                  type="button"
+                                  onClick={() => setSenseStage(sense.id, level)}
+                                  className={`px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                                    badgeForStage(sense.learningStage) === level
+                                      ? 'bg-indigo-600 text-white'
+                                      : 'text-gray-500 hover:bg-indigo-50 hover:text-indigo-700'
+                                  }`}
+                                >
+                                  {stageLabel(level, lang)}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       <div className="px-4 py-3 flex flex-col gap-3">
@@ -1425,26 +1463,6 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
                 onChange={(e) => setDraft({ ...draft, translation: e.target.value })}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-indigo-400 transition-colors"
               />
-            </div>
-
-            {/* Status */}
-            <div>
-              <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.colStatus')}</label>
-              <div className="flex gap-2">
-                {['new', 'learning', 'known', 'mastered'].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setDraft({ ...draft, status: s })}
-                    className={`flex-1 py-2 rounded-xl text-xs font-medium border transition-colors ${
-                      draft.status === s
-                        ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'border-gray-200 text-gray-500 hover:border-indigo-300 hover:bg-indigo-50'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* Grammar note */}
@@ -2330,7 +2348,6 @@ export default function Dictionary() {
       .from('words')
       .update({
         translation: primarySense?.translation ?? updated.translation,
-        status: updated.status,
         grammar_note: primarySense?.grammarNote ?? updated.grammarNote,
         explanation: primarySense?.explanation ?? updated.explanation,
         form: primarySense?.form ?? updated.form ?? null,
@@ -2388,10 +2405,31 @@ export default function Dictionary() {
     setWords(prev => prev.map(w => w.senses?.some(s => s.id === senseId) ? patchSenses(w) : w))
   }
 
+  // The write itself happens in WordPanel (setSenseStage); this only patches
+  // local state so the derived word badge (badgeForWord) refreshes immediately.
+  function handleSenseStageChange(senseId, patch) {
+    setWords(prev => prev.map(w => {
+      if (!w.senses?.some(s => s.id === senseId)) return w
+      const senses = w.senses.map(s => s.id === senseId ? { ...s, learningStage: patch.learning_stage } : s)
+      const status = badgeForWord(senses.map(s => ({ learning_stage: s.learningStage })), w.status)
+      return { ...w, senses, status }
+    }))
+  }
+
+  // QuickSortMode sets the WORD's status, but the only real SRS state lives on
+  // its senses — so this writes the primary sense's stage (word_senses), not
+  // the dead words.status column. A word with no senses yet has nothing to
+  // write (it keeps the legacy fallback badgeForWord already handles).
   async function handleQuickStatusChange(wordId, newStatus) {
     if (!user) return
-    await supabase.from('words').update({ status: newStatus }).eq('id', wordId).eq('user_id', user.id)
-    setWords(prev => prev.map(w => w.id === wordId ? { ...w, status: newStatus } : w))
+    const w = words.find(x => x.id === wordId)
+    const primarySenseId = w?.senses?.[0]?.id
+    if (!primarySenseId) return
+    const patch = manualStagePatch(newStatus, new Date().toISOString().slice(0, 10))
+    await supabase.from('word_senses').update(patch).eq('id', primarySenseId).eq('user_id', user.id)
+    setWords(prev => prev.map(x => x.id === wordId
+      ? { ...x, status: newStatus, senses: x.senses.map((s, i) => i === 0 ? { ...s, learningStage: patch.learning_stage } : s) }
+      : x))
   }
 
   // ── Bulk selection + delete ──────────────────────────────────────────────
@@ -2719,7 +2757,7 @@ export default function Dictionary() {
 
       {selectedWord && <WordPanel word={selectedWord} onClose={() => setSelectedId(null)} onUpdate={handleUpdate} onDelete={handleDelete} onDeleteSense={handleDeleteSense} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} speechLocale={speechLocale} topics={topics}
         collections={collections} wordCollectionIds={membershipByWord[selectedWord.id]} onToggleCollection={toggleWordCollection} onQuickCreateCollection={handleQuickCreateCollection}
-        userId={user.id} onSenseImageChange={handleSenseImageChange} />}
+        userId={user.id} onSenseImageChange={handleSenseImageChange} onSenseStageChange={handleSenseStageChange} />}
       {confirmBulkDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={() => setConfirmBulkDelete(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
