@@ -50,6 +50,45 @@ It **is** right — *conduct oneself* is the correct English citation form, like
 
 This spec **documents** those rules as an explicit, per-language canonical-form table (German *sich* + case; English *oneself*; Ukrainian *-ся*), so the behaviour is a stated contract rather than an emergent property of prose. No behavioural change for German; the English/Ukrainian reflexive citation forms are pinned so they stop looking arbitrary.
 
+### The five shapes
+
+A verb sense's form is the base verb plus what it cannot stand without, ordered **reflexive · verb · preposition (+ case)**:
+
+| Shape | Example | Gloss |
+|---|---|---|
+| Plain | `kämpfen` | to fight / struggle |
+| Verb + prep (+ case) | `kämpfen gegen` + Akk | to fight against |
+| Reflexive | `sich beeilen` | to hurry |
+| Reflexive + prep | `sich freuen auf` + Akk | to look forward to |
+| Separable (+ prep) | `aufhören mit` + Dat | to stop (doing sth) |
+
+### Worked example: one word, senses that differ
+
+*kämpfen* is one spelling → **one entry** (§1), but each meaning governs a different preposition, so each is its own sense with its own form:
+
+| Sense form | Case | Ukrainian | English |
+|---|---|---|---|
+| `kämpfen gegen` | Akk | боротися проти | fight against (an enemy, an illness) |
+| `kämpfen für` | Akk | боротися за | fight for (a cause) |
+| `kämpfen mit` | Dat | боротися з | struggle with (difficulties) |
+| `kämpfen um` | Akk | боротися за | fight for (to win — a title) |
+
+Ties into §1: *"to fight someone"* transitively is *bekämpfen* — a **different spelling** (the *be-* prefix) → a **separate entry**, not a sense of *kämpfen*. Different preposition, same spelling → sense; different spelling → different word.
+
+**On the card** the header is the bare base; each sense tab prints its own form (via `showSenseForm`) and its governed preposition appears twice — in the form (`kämpfen gegen`) and spelled out with its case in Граматика (`kämpfen gegen + Akkusativ`):
+
+```
+  kämpfen  🔊
+  [ проти · gegen ]  [ за · für ]  [ з · mit ]        ← sense tabs
+  ─────────────────────────────────────────────
+  kämpfen gegen                     ← form printed (differs from header)
+  боротися проти
+  ┃ ЗНАЧЕННЯ   Протистояти комусь чи чомусь.
+  ┃ ГРАМАТИКА  kämpfen gegen + Akkusativ
+  ┌ Die Ärzte kämpfen gegen die Krankheit.
+  └ Лікарі борються проти хвороби.
+```
+
 ---
 
 ## 3. Prepositional/phrasal verbs display bare in the list
@@ -61,6 +100,15 @@ Two *setzen* entries — one plain, one *setzen auf* (to bet on) — both show a
 ### The fix
 
 The list headword shows the **primary sense's `wordForm`** when it carries more than the bare `word` (a reflexive or a governed preposition) — the same "print the form when it says more than the header" logic already used on the sense card (`showSenseForm`). So the row reads *"setzen auf"*, and the two *setzen* entries are visibly different. Fallback to `word` when the primary sense adds nothing.
+
+**Multi-sense entries whose senses differ** (e.g. *kämpfen gegen / für / mit* under one entry) show the **primary sense's form plus a sense-count marker** — `kämpfen gegen ·3` — decided 2026-07-27 (option A). This keeps the row consistent with the single-sense *setzen auf* case (never bare) while signalling there is more than one sense to open. The primary sense is the first/most-common one, as ordered by the identifier.
+
+```
+  СЛОВО / ФРАЗА       ТИП       ФОРМА
+  kämpfen gegen ·3    дієсл.    —          ← primary sense form + count
+  setzen              дієсл.    setzt / …
+  setzen auf          дієсл.    setzt auf / …
+```
 
 ---
 
