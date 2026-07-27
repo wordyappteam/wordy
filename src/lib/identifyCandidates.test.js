@@ -1,7 +1,7 @@
 // src/lib/identifyCandidates.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { baseSpelling, splitCandidates } from './identifyCandidates.js'
+import { baseSpelling, splitCandidates, candidateToRows } from './identifyCandidates.js'
 
 test('baseSpelling strips article, reflexive, and governed preposition', () => {
   assert.equal(baseSpelling('die Bank'), 'bank')
@@ -38,4 +38,16 @@ test('splitCandidates keeps a prepositional verb family as one entry', () => {
     { wordForm: 'kämpfen für',   translation: 'fight for' },
   ] }
   assert.equal(splitCandidates(entry).length, 1)
+})
+
+test('candidateToRows builds one word row + its sense rows', () => {
+  const c = { word: 'kämpfen', entryType: 'word', senses: [
+    { wordForm: 'kämpfen gegen', pos: 'verb', translation: 'fight against' },
+  ] }
+  const { wordRow, senseRows } = candidateToRows(c, { userId: 'u1', targetLang: 'de', source: 'manual' })
+  assert.equal(wordRow.word, 'kämpfen')
+  assert.equal(wordRow.user_id, 'u1')
+  assert.equal(senseRows.length, 1)
+  assert.equal(senseRows[0].word_form, 'kämpfen gegen')
+  assert.equal(senseRows[0].learning_stage, 'new')
 })

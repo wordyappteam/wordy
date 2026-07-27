@@ -46,3 +46,26 @@ function stripTrailingPrep(wordForm) {
   while (tokens.length > 1 && PREPS.has(tokens[tokens.length - 1].toLowerCase())) tokens.pop()
   return tokens.join(' ')
 }
+
+export function candidateToRows(candidate, { userId, targetLang, source = 'manual' }) {
+  const primary = candidate.senses?.[0]
+  const today = new Date().toISOString().slice(0, 10)
+  const wordRow = {
+    user_id: userId, word: candidate.word, entry_type: candidate.entryType || 'word',
+    target_language: targetLang, status: 'new', source, date_added: today, last_reviewed: '—',
+    translation: primary?.translation ?? '', pos: primary?.pos ?? 'noun',
+    form: primary?.form ?? null, grammar_note: primary?.grammarNote ?? null,
+    explanation: primary?.explanation ?? null, is_exception: primary?.isException ?? false,
+    conjugation: primary?.conjugation ?? null,
+  }
+  const senseRows = (candidate.senses ?? []).map(s => ({
+    user_id: userId, target_language: targetLang, pos: s.pos,
+    word_form: s.wordForm || candidate.word, aspect: s.aspect ?? null, gender: s.gender ?? null,
+    translation: s.translation, form: s.form || null, grammar_note: s.grammarNote || null,
+    usage_note: s.usageNote || null, explanation: s.explanation || null,
+    is_exception: s.isException || false, register: s.register || 'neutral', cefr: s.cefr || null,
+    conjugation: s.conjugation || null, examples: s.examples || [],
+    learning_stage: 'new', correct_recall_count: 0,
+  }))
+  return { wordRow, senseRows }
+}
