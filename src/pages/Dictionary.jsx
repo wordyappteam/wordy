@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { identifyWord as identifyWordAI, primaryEntry, suggestCollectionWords } from '../lib/claude'
 import { displayTranslation, showSenseForm } from '../lib/senseDisplay'
+import { listHeadword } from '../lib/senseFormat'
 import { badgeForWord } from '../lib/srs'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
@@ -504,7 +505,7 @@ function renderCell(colId, w, t, lang) {
       const caseBadge = extractCaseBadge(w)
       return (
         <span className="font-medium text-gray-900 flex items-center gap-1.5 flex-wrap">
-          <span>{w.word}</span>
+          <span>{listHeadword(w)}</span>
           {w.pos === 'noun' && w.form && (
             <span className="text-gray-400 font-normal"> ({cleanForm(w.form, w.word)})</span>
           )}
