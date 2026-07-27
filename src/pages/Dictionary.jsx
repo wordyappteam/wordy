@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { identifyWord as identifyWordAI, suggestCollectionWords } from '../lib/claude'
+import { identifyWord as identifyWordAI, primaryEntry, suggestCollectionWords } from '../lib/claude'
 import { displayTranslation, showSenseForm } from '../lib/senseDisplay'
 import { badgeForWord } from '../lib/srs'
 import { useLanguage } from '../lib/i18n'
@@ -869,7 +869,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
     setIdentifyError(null)
     try {
       const lang = reidentLang || interfaceLanguage || 'English'
-      const result = await identifyWordAI(word.word, targetLanguageName, lang, null, { topics })
+      const idResult = await identifyWordAI(word.word, targetLanguageName, lang, null, { topics })
+      const result = primaryEntry(idResult) ?? { senses: word.senses }
       const primary = result.senses?.[0]
       const updated = {
         ...word,
@@ -1608,7 +1609,8 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
       setIndex(i)
       const w = unidentified[i]
       try {
-        const result = await identifyWordAI(w.word, targetLanguageName, interfaceLanguage, null, { topics })
+        const idResult = await identifyWordAI(w.word, targetLanguageName, interfaceLanguage, null, { topics })
+        const result = primaryEntry(idResult) ?? {}
         const updated = {
           ...w,
           translation: result.translation  || w.translation,

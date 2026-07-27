@@ -1,5 +1,6 @@
 import { parseSentenceSet } from './sentenceSet'
 import { cleanGrammarNote, cleanUsageNote } from './senseNotes'
+import { splitCandidates } from './identifyCandidates.js'
 
 // Transient statuses worth an automatic retry: rate-limit, overload, gateway blips.
 const RETRYABLE = [429, 500, 502, 503, 504, 529]
@@ -47,7 +48,7 @@ async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTok
 }
 
 // ── Word identification ────────────────────────────────────────────────────
-// Returns { word, entryType, senses: [...] }
+// Returns { candidates: [ { word, entryType, senses: [...] }, ... ] }
 // Each sense: { pos, wordForm, translation, form, grammarNote, explanation, isException, examples, conjugation, register, cefr }
 // When context (sentence) is provided, returns only the matching sense.
 // Adds script hint so Haiku doesn't confuse e.g. Ukrainian (Cyrillic) with Polish
@@ -158,7 +159,7 @@ The interface language is Ukrainian: explanatory text must be Ukrainian, never R
     ? (themeHint
         ? `\nThe learner is adding this word as a member of the collection "${themeHint}". Define the word specifically as it functions within that theme — pick the meaning that makes it BELONG to "${themeHint}", even if that is not the word's most common meaning. For example, if the theme is colours, treat the word as the colour/shade it names (e.g. "canary" → the bright yellow colour), not the object or animal it is named after. Return ONLY that one sense; the senses array must contain exactly one entry.`
         : `\nReturn ONLY the single most common, everyday sense. The senses array must contain exactly one entry.`)
-    : `\nReturn ALL commonly used senses (separate POS or clearly distinct meaning groups). Most words have exactly one sense — only return multiple when there are genuinely distinct usages worth learning separately.`
+    : `\nReturn ALL senses that share this word's SPELLING (separate POS or clearly distinct meaning groups of the SAME written word). A meaning whose base spelling differs from "${input}" is a DIFFERENT word — do not include it here. Most words have exactly one sense.`
 
   const prompt = `The user is learning ${targetLanguage} and typed: "${input}"${contextInstruction}
 
@@ -231,7 +232,13 @@ ${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і
     sense.usageNote   = cleanUsageNote(sense.usageNote, sense.grammarNote)
   }
 
-  return isUkrainian ? deepFixStress(parsed) : parsed
+  const entry = isUkrainian ? deepFixStress(parsed) : parsed
+  return { candidates: splitCandidates(entry) }
+}
+
+// Callers that only ever want a single entry (re-identify, bulk) use this.
+export function primaryEntry(result) {
+  return result?.candidates?.[0] ?? null
 }
 
 // ── Goal parsing ────────────────────────────────────────────────────────────
