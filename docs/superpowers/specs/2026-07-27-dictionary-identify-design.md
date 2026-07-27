@@ -118,18 +118,22 @@ The list headword shows the **primary sense's `wordForm`** when it carries more 
 
 Editing a word you already know and choosing **"known"** does nothing. Confirmed: the status picker writes `draft.status` → the legacy `words.status` column (`Dictionary.jsx:1418`, and `QuickSortMode` at `:1489`), but every status shown in the app is now **derived** from the senses' `learning_stage` via `badgeForWord` (`:104`). The picker writes a column nobody reads.
 
-### The fix
+### The fix — per **sense**, not per word
 
-The picker writes the **SRS state of the word's senses**, which is the real source of truth. Map the four buttons to interval steps and set all of the word's senses accordingly:
+The control writes the **SRS state of a single sense**, which is the real source of truth and the unit the scheduler works in. The manual stage lives on the **sense** (its stage badge on the sense card becomes the entry point), so setting one meaning to "known" leaves its siblings untouched. Map the four levels to interval steps:
 
-| Button | `interval_step` | `next_review_date` |
+| Level | `interval_step` | `next_review_date` |
 |---|---|---|
 | new | 0 | today |
 | learning | 3 (mid) | today + interval for step 3 |
 | known | 6 | today + interval for step 6 |
 | mastered | 8 (max) | today + interval for step 8 |
 
-Writing all senses (not just the primary) matches the intent — "I know this word" — and keeps the derived badge honest. This makes the picker a genuine fast-track for words the learner arrives already knowing, which for the DTZ cohort (adults with existing vocabulary) is a real need, not a nicety. The legacy `words.status` write is removed.
+**Why per-sense is the point.** A learner who already knows *die Bank* = bench but not *die Bank* = bank marks **that one sense** known; it drops out of the review rotation while the unknown sense keeps being taught — without deleting anything. Whole-word marking would force an all-or-nothing choice the sense model was built to avoid. A single-sense word is unaffected: the word is its one sense, so marking it known marks the word.
+
+The word-level badge in the list stays **derived** from the senses (`badgeForWord`) — so a word with one known and one new sense reflects that honestly; there is no separate word-level status to keep in sync. The legacy `words.status` write is removed, and the current whole-word picker in edit mode is replaced by the per-sense control.
+
+This is a real fast-track for the DTZ cohort — adults arrive already knowing many words, or one sense of a polysemous word, and need to skip those without losing them from the dictionary.
 
 ---
 
@@ -142,5 +146,5 @@ Session/fill-in fixes are Spec 1. Pure AI-output errors (Abitur → "A-levels", 
 - **Candidate splitting (#1):** `identifyWord` parsing — a correctly-spelled input yields one candidate; an ambiguous input yields several with distinct spellings; same-spelling polysemy stays as senses within one candidate. `handleAdd` inserts N entries from N chosen candidates. The prompt-obedience risk is real (Haiku bundled these before), so the parse layer must enforce the spelling-boundary invariant in code, `senseNotes.js`-style, not trust the model.
 - **Reflexive canonical form (#2):** table-driven tests over the documented rules per language.
 - **List headword (#3):** primary-sense `wordForm` with a preposition renders; a plain verb still shows the bare lemma.
-- **Status write (#4):** each button sets the mapped `interval_step` on all senses and the derived badge updates; the dead-column write is gone.
+- **Status write (#4):** setting a level on **one sense** writes the mapped `interval_step`/`next_review_date` to that sense only, its siblings unchanged, and the derived word badge updates; the dead-column write is gone.
 - Existing 113 tests stay green.
