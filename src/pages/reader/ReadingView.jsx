@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../lib/AuthContext'
 import { useLanguage } from '../../lib/i18n'
 import { useTargetLang, SUPPORTED_LANGUAGES } from '../../lib/TargetLangContext'
-import { identifyWord } from '../../lib/claude'
+import { identifyWord, primaryEntry } from '../../lib/claude'
 import { normalizeWordForm } from '../../lib/readerText'
 import { resolveReaderLanguage } from '../../lib/readerLanguage'
 import WordPopup from './WordPopup'
@@ -144,7 +144,7 @@ export default function ReadingView({ book, onClose }) {
     setPopup({ word, sentence })
     setLookup({ status: 'loading' })
     try {
-      const result = await identifyWord(word, readerLang.name, translationLang, sentence, { topics: profile?.topics ?? [] })
+      const result = primaryEntry(await identifyWord(word, readerLang.name, translationLang, sentence, { topics: profile?.topics ?? [] })) ?? {}
       if (!result.senses?.length) throw new Error('No senses returned')
       const { data: existing, error: existErr } = await supabase.from('words')
         // No `status`: the legacy column is dead. The real stage comes from the

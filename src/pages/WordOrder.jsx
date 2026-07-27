@@ -5,7 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { inSession, advanceSession, nextExerciseName } from '../lib/sessionFlow'
-import { identifyWord, translateSentences } from '../lib/claude'
+import { identifyWord, primaryEntry, translateSentences } from '../lib/claude'
 
 const SESSION_SIZE = 10
 
@@ -226,7 +226,7 @@ export default function WordOrder() {
       if (existing) { setWordStatuses((s) => ({ ...s, [key]: 'added' })); return }
 
       // Identify with AI
-      const result = await identifyWord(word, targetLanguageName, interfaceLanguage)
+      const result = primaryEntry(await identifyWord(word, targetLanguageName, interfaceLanguage)) ?? {}
       const primary = result.senses?.[0] ?? result
 
       // Save word header

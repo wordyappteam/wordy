@@ -13,7 +13,7 @@ import {
   renameCollection, deleteCollection, addWordToCollection, removeWordFromCollection,
   COLLECTION_COLOR_KEYS,
 } from '../lib/collections'
-import { splitCandidates, candidateToRows } from '../lib/identifyCandidates'
+import { candidateToRows } from '../lib/identifyCandidates'
 import { uploadSenseImage, deleteSenseImageByUrl, setSenseImageUrl } from '../lib/senseImages'
 import NavBar from '../components/NavBar'
 
