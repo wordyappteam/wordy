@@ -108,7 +108,7 @@ The interface language is Ukrainian: explanatory text must be Ukrainian, never R
     ? 'canonical form for this sense — with definite article for nouns (e.g. das Buch); for verbs, the plain infinitive (e.g. buchen), BUT attach a bound reflexive pronoun and/or governed preposition whenever this sense is not used without it — reflexive before the verb, preposition after (e.g. "sich kümmern um", "warten auf", "sich freuen auf", "sich erinnern an", "denken an", "bestehen aus"). Do NOT attach a preposition to a verb sense that is complete on its own (plain "denken" = to think).'
     : isUkrainian
     ? 'canonical form WITH stress marked using acute accents (е́ а́ и́ о́ у́ і́): nominative singular for nouns, infinitive for verbs; Cyrillic, no article; accent must fall directly on the vowel (а е є и і ї о у ю я), never on a consonant'
-    : "canonical form for this sense — the plain verb, no article; BUT attach a bound reflexive ("oneself", e.g. "conduct oneself", "pride oneself on") and/or a governed preposition when this sense is not used without it, ordered verb-then-preposition ("wait for", "belong to"). Keep a self-standing verb plain."
+    : 'canonical form for this sense — the plain verb, no article; BUT attach a bound reflexive ("oneself", e.g. "conduct oneself", "pride oneself on") and/or a governed preposition when this sense is not used without it, ordered verb-then-preposition ("wait for", "belong to"). Keep a self-standing verb plain.'
 
   const wordNote = isUkrainian
     ? 'primary display form, stress-marked; for verbs use the imperfective infinitive'
