@@ -106,6 +106,9 @@ const translations = {
       addToDictBtn:    'Add to dictionary',
       identifyError:   "Could not identify the word. Check your connection and try again.",
       busyError:       "The AI is busy right now. Please try again in a moment.",
+      notFound:        "That is not a word in the language you are learning.",
+      notFoundHint:    "Check the spelling, or switch your learning language.",
+      didYouMean:      "Did you mean",
       // panel
       translation:     'Translation',
       pronounce:       '🔈 Pronounce',
@@ -261,6 +264,9 @@ const translations = {
       addToDictBtn:    'Додати до словника',
       identifyError:   "Не вдалося визначити слово. Перевірте з'єднання та спробуйте ще раз.",
       busyError:       "AI зараз зайнятий. Будь ласка, спробуйте ще раз за хвилинку.",
+      notFound:        "Такого слова немає в мові, яку ви вивчаєте.",
+      notFoundHint:    "Перевірте написання або змініть мову вивчення.",
+      didYouMean:      "Можливо, ви мали на увазі",
       // panel
       translation:     'Переклад',
       pronounce:       '🔈 Вимовити',

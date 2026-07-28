@@ -658,8 +658,30 @@ function AddWordModal({ onAdd, onClose, interfaceLanguage, targetLanguageName = 
             </div>
           )}
 
+          {/* Not a word in the target language — a real answer, not an empty list.
+              Add stays disabled on its own (nothing is checked), so this only has
+              to say what happened and what to do about it. */}
+          {stage === 'result' && result?.notFound && (
+            <div className="mb-5 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-medium text-amber-900">{t('dict.notFound')}</p>
+              {result.notFound.suggestion && (
+                <p className="text-sm text-amber-800 mt-1">
+                  {t('dict.didYouMean')}{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setInput(result.notFound.suggestion); setStage('idle'); setResult(null) }}
+                    className="font-semibold underline underline-offset-2 hover:text-amber-950"
+                  >
+                    {result.notFound.suggestion}
+                  </button>?
+                </p>
+              )}
+              <p className="text-xs text-amber-700 mt-1.5">{t('dict.notFoundHint')}</p>
+            </div>
+          )}
+
           {/* Candidate / sense picker */}
-          {stage === 'result' && result && (
+          {stage === 'result' && result && !result.notFound && (
             <div className="mb-5 flex flex-col gap-5">
               {(result.candidates || []).length > 1 && (
                 <p className="text-xs text-gray-400 -mb-2">{"These are different words — pick the ones to add."}</p>

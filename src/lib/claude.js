@@ -167,7 +167,13 @@ The input may be in any language (Ukrainian, English, or ${targetLanguage}).
 If it is NOT in ${targetLanguage}, find the best ${targetLanguage} equivalent.
 Always return the ${targetLanguage} base form.
 
-Return ONLY this JSON:
+If "${input}" is a typo, gibberish, or a word from an unrelated language with NO
+clear ${targetLanguage} equivalent, do not invent an entry. Return EXACTLY this
+and nothing else:
+{ "notFound": true, "suggestion": "the closest real ${targetLanguage} word if there is an obvious one, otherwise null" }
+Never write a message, an apology or an explanation into the "word" field.
+
+Otherwise return ONLY this JSON:
 {
   "word": "${wordNote}",
   "entryType": "word|phrase|idiom|phrasal-verb",
@@ -222,6 +228,15 @@ ${isUkrainian ? '- Mark stress with an acute accent (е́ а́ и́ о́ у́ і
   const match = clean.match(/\{[\s\S]*\}/)
   if (!match) throw new Error('No JSON object found in response')
   const parsed = JSON.parse(match[0])
+
+  // The model has no field for "that isn't a word in this language", so left to
+  // itself it improvises one into `word` ("das Problem — no German word 'callo'
+  // exists") and returns zero senses. The prompt now gives it `notFound`; the
+  // empty-senses check keeps the old improvisation from reaching the UI on the
+  // runs where it disobeys.
+  if (parsed.notFound || !(parsed.senses ?? []).length) {
+    return { candidates: [], notFound: { suggestion: parsed.suggestion ?? null } }
+  }
 
   // Enforce the note rules in code. The prompt asks for all of this, but Haiku
   // keeps emitting "auxiliary haben" (the default — no information) and usage
