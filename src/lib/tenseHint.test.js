@@ -59,6 +59,11 @@ test("de: an inseparable participle still reads as Perfekt after the tightening"
   assert.equal(tenseHint({ target: "Er hat die Stadt verlassen.", tense: "past" }, "de", "en"), "Perfekt")
 })
 
+test("de: a fronted participle is still Perfekt", () => {
+  assert.equal(tenseHint({ target: "Gesehen habe ich ihn nicht.", tense: "past" }, "de", "en"), "Perfekt")
+  assert.equal(tenseHint({ target: "Verlassen hat er die Stadt nie.", tense: "past" }, "de", "en"), "Perfekt")
+})
+
 // ── English ─────────────────────────────────────────────────────────────────
 test("en: have/has + participle is the present perfect", () => {
   const fb = { target: "We have reached Berlin.", tense: "past" }
@@ -92,6 +97,22 @@ test("en: a noun ending in -ood does not make a present perfect", () => {
 test("en: irregular participles are recognised", () => {
   assert.equal(tenseHint({ target: "They have gone home.", tense: "past" }, "en", "en"), "Present perfect")
   assert.equal(tenseHint({ target: "She has written the letter.", tense: "past" }, "en", "en"), "Present perfect")
+})
+
+test("en: a noun phrase after have is not a perfect", () => {
+  assert.equal(tenseHint({ target: "I have a good put in golf.", tense: "past" }, "en", "en"), "Past simple")
+  assert.equal(tenseHint({ target: "I have a chess set at home.", tense: "past" }, "en", "en"), "Past simple")
+  assert.equal(tenseHint({ target: "I have a born talent for music.", tense: "past" }, "en", "en"), "Past simple")
+  assert.equal(tenseHint({ target: "I have a left turn ahead.", tense: "past" }, "en", "en"), "Past simple")
+})
+
+test("en: adverbs may sit between the auxiliary and the participle", () => {
+  assert.equal(tenseHint({ target: "I have never eaten there.", tense: "past" }, "en", "en"), "Present perfect")
+  assert.equal(tenseHint({ target: "He has already seen it.", tense: "past" }, "en", "en"), "Present perfect")
+})
+
+test("en: an irregular participle that is also a common noun still works as a verb", () => {
+  assert.equal(tenseHint({ target: "I have left the house.", tense: "past" }, "en", "en"), "Present perfect")
 })
 
 // ── Ukrainian ───────────────────────────────────────────────────────────────

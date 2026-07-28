@@ -25,11 +25,15 @@ const DE_PARTICIPLE = /\b(?:[a-zäöüß]*ge[a-zäöüß]+(?:t|en)|[a-zäöüß]
 // "zu besuchen" is an infinitive, not a participle — and it defeats the prefix rule.
 const DE_ZU_INFINITIVE = /\bzu\s+[a-zäöüß]+(?:e|en)\b/
 
-const EN_AUX = /\b(have|has)\b/i
 // An explicit irregular list beats a suffix pattern: -en/-ne/-wn/-ood match far
 // more nouns (seven, wood, children) than participles.
 const EN_IRREGULAR_PARTICIPLE = "been|gone|seen|done|taken|given|written|eaten|spoken|broken|chosen|driven|known|grown|shown|thrown|flown|drawn|worn|born|brought|bought|caught|taught|thought|fought|sought|understood|stood|made|said|found|lost|left|kept|sent|spent|built|felt|held|met|paid|put|read|run|set|sat|told|won|become|come|had|got|gotten|begun|drunk|sung|swum"
-const EN_PARTICIPLE = new RegExp(`\\b(?:\\w+ed|${EN_IRREGULAR_PARTICIPLE})\\b`, "i")
+// Adverbs may sit between the auxiliary and the participle ("have never eaten").
+const EN_ADVERB = "(?:\\s+(?:not|never|already|just|always|often|recently|ever|still|also|only|nearly|almost|finally|yet|barely|hardly))?"
+// The present perfect is have/has + (adverbs) + participle, ADJACENT. Testing
+// for the auxiliary and a participle independently let any noun phrase after
+// "have" ("a good put", "seven children") pose as one.
+const EN_PERFECT = new RegExp(`\\b(?:have|has)\\b${EN_ADVERB}\\s+(?:\\w+ed|${EN_IRREGULAR_PARTICIPLE})\\b`, "i")
 const EN_PROGRESSIVE = /\b(am|is|are)\s+\w+ing\b/i
 
 // German grammatical terms stay in German whatever the interface language —
@@ -69,7 +73,12 @@ export function tenseHint(fillBlank, targetLang, ifaceLang = "en", sense = {}) {
 
   if (targetLang === "de") {
     if (tense === "present") return label("de", "praesens", ifaceLang)
-    const perfekt = DE_AUX.test(text) && DE_PARTICIPLE.test(text) && !DE_ZU_INFINITIVE.test(text)
+    // German capitalises the first word of a sentence whatever its class, so a
+    // fronted participle ("Gesehen habe ich ihn nicht") would fail the
+    // lowercase test. Lowercase only that first character — every OTHER
+    // capitalised word is a noun, and stays correctly excluded.
+    const probe = text.charAt(0).toLowerCase() + text.slice(1)
+    const perfekt = DE_AUX.test(text) && DE_PARTICIPLE.test(probe) && !DE_ZU_INFINITIVE.test(text)
     return label("de", perfekt ? "perfekt" : "praeteritum", ifaceLang)
   }
 
@@ -77,8 +86,7 @@ export function tenseHint(fillBlank, targetLang, ifaceLang = "en", sense = {}) {
     if (tense === "present") {
       return label("en", EN_PROGRESSIVE.test(text) ? "presentContinuous" : "presentSimple", ifaceLang)
     }
-    const perfect = EN_AUX.test(text) && EN_PARTICIPLE.test(text)
-    return label("en", perfect ? "presentPerfect" : "pastSimple", ifaceLang)
+    return label("en", EN_PERFECT.test(text) ? "presentPerfect" : "pastSimple", ifaceLang)
   }
 
   if (targetLang === "uk") {
