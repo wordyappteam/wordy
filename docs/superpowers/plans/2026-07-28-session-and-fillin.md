@@ -574,9 +574,26 @@ test("de: an -iert participle counts, it has no ge- prefix", () => {
   assert.equal(tenseHint(fb, "de", "en"), "Perfekt")
 })
 
+test("de: an inseparable-prefix participle counts — it never takes ge-", () => {
+  const fb = { target: "Er hat die Stadt verlassen.", tense: "past" }
+  assert.equal(tenseHint(fb, "de", "en"), "Perfekt")
+})
+
+test("de: a plain ge- participle counts", () => {
+  const fb = { target: "Er hat das Buch gelesen.", tense: "past" }
+  assert.equal(tenseHint(fb, "de", "en"), "Perfekt")
+})
+
 test("de: a single finite past verb is Präteritum", () => {
   const fb = { target: "Der Zug erreichte den Bahnhof.", tense: "past" }
   assert.equal(tenseHint(fb, "de", "en"), "Präteritum")
+})
+
+test("de: weak and strong Präteritum verbs are not mistaken for participles", () => {
+  // These are the forms the participle regex must NOT match, or every
+  // Präteritum sentence would be mislabelled Perfekt.
+  assert.equal(tenseHint({ target: "Er kaufte den Wagen.", tense: "past" }, "de", "en"), "Präteritum")
+  assert.equal(tenseHint({ target: "Sie ging nach Hause.", tense: "past" }, "de", "en"), "Präteritum")
 })
 
 test("de: present is Präsens", () => {
@@ -663,10 +680,20 @@ Create `src/lib/tenseHint.js`:
 // Returns null whenever the form cannot be determined. A wrong hint is worse
 // than no hint, so the caller renders nothing.
 
-// German: a finite form of haben/sein …
+// German: a finite form of haben/sein. Note these are all PRESENT forms — a
+// Präteritum sentence has "hatte"/"war", so a present auxiliary in a past
+// sentence can only be the Perfekt one.
 const DE_AUX = /\b(habe|hast|hat|haben|habt|bin|bist|ist|sind|seid)\b/i
-// … alongside a Partizip II (ge-…-t / ge-…-en, or the prefix-less -iert).
-const DE_PARTICIPLE = /\b(ge\w+(?:t|en)|\w+iert)\b/i
+// … alongside a Partizip II. German builds these four ways and the regex must
+// cover all of them, or the hint silently degrades to "Präteritum" on perfectly
+// ordinary sentences:
+//   plain            ge + stem + t/en      gemacht, gelesen
+//   separable prefix stem + ge + stem      angekommen, aufgemacht
+//   inseparable      no ge- at all         erreicht, verlassen, besucht
+//   -ieren verbs     no ge- at all         reserviert, studiert
+// The Präteritum forms it must NOT match end in -e/-te/-ten (erreichte, kaufte,
+// ging), which is why every alternative anchors on a final t/en at a word break.
+const DE_PARTICIPLE = /\b(\w*ge\w+(?:t|en)|\w+iert|(?:be|er|ver|ent|emp|zer|miss)\w+(?:t|en))\b/i
 
 const EN_AUX = /\b(have|has)\b/i
 const EN_PARTICIPLE = /\b\w+(?:ed|en|ne|wn|ught|ood)\b/i
@@ -739,8 +766,8 @@ export function tenseHint(fillBlank, targetLang, ifaceLang = "en", sense = {}) {
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `node --test src/lib/tenseHint.test.js` — expected PASS, 14 tests.
-Run: `npm test` — expected 154 passing, 0 failing.
+Run: `node --test src/lib/tenseHint.test.js` — expected PASS, 17 tests.
+Run: `npm test` — expected 157 passing, 0 failing.
 
 - [ ] **Step 5: Commit**
 
@@ -857,7 +884,7 @@ Replace the whole `if (step.exercise === 'fill_in') { … }` block with:
 - [ ] **Step 3: Verify the build and suite**
 
 Run: `npx vite build` — expected `✓ built`.
-Run: `npm test` — expected 154 passing, 0 failing.
+Run: `npm test` — expected 157 passing, 0 failing.
 
 **Watch for the known trap:** a green vite build proves nothing about undefined identifiers in JSX. Confirm by eye that `targetLang` is in `StepCard`'s parameter list and passed at the call site — this exact class of bug (a component using a value it was never given) has shipped to prod here twice.
 
@@ -903,7 +930,7 @@ In the `if (!step.graded)` branch, replace the non-fill (`!isFill`) fragment:
 - [ ] **Step 2: Verify the build and suite**
 
 Run: `npx vite build` — expected `✓ built`.
-Run: `npm test` — expected 154 passing, 0 failing.
+Run: `npm test` — expected 157 passing, 0 failing.
 
 - [ ] **Step 3: Commit**
 
