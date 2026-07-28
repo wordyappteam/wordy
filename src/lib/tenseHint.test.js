@@ -45,6 +45,20 @@ test("de: present is Präsens", () => {
   assert.equal(tenseHint(fb, "de", "en"), "Präsens")
 })
 
+test("de: a capitalised Ge- noun is not a participle", () => {
+  const fb = { target: "Sie hat gute Gedanken.", tense: "past" }
+  assert.equal(tenseHint(fb, "de", "en"), "Präteritum")
+})
+
+test("de: a zu-infinitive is not a participle", () => {
+  const fb = { target: "Ich habe Zeit, dich zu besuchen.", tense: "past" }
+  assert.equal(tenseHint(fb, "de", "en"), "Präteritum")
+})
+
+test("de: an inseparable participle still reads as Perfekt after the tightening", () => {
+  assert.equal(tenseHint({ target: "Er hat die Stadt verlassen.", tense: "past" }, "de", "en"), "Perfekt")
+})
+
 // ── English ─────────────────────────────────────────────────────────────────
 test("en: have/has + participle is the present perfect", () => {
   const fb = { target: "We have reached Berlin.", tense: "past" }
@@ -64,6 +78,20 @@ test("en: be + -ing is the present continuous", () => {
 test("en: plain present is the present simple", () => {
   const fb = { target: "We reach Berlin at six.", tense: "present" }
   assert.equal(tenseHint(fb, "en", "en"), "Present simple")
+})
+
+test("en: a noun ending in -en does not make a present perfect", () => {
+  assert.equal(tenseHint({ target: "I have seven children.", tense: "past" }, "en", "en"), "Past simple")
+  assert.equal(tenseHint({ target: "I have eleven dollars.", tense: "past" }, "en", "en"), "Past simple")
+})
+
+test("en: a noun ending in -ood does not make a present perfect", () => {
+  assert.equal(tenseHint({ target: "I have wood for the fire.", tense: "past" }, "en", "en"), "Past simple")
+})
+
+test("en: irregular participles are recognised", () => {
+  assert.equal(tenseHint({ target: "They have gone home.", tense: "past" }, "en", "en"), "Present perfect")
+  assert.equal(tenseHint({ target: "She has written the letter.", tense: "past" }, "en", "en"), "Present perfect")
 })
 
 // ── Ukrainian ───────────────────────────────────────────────────────────────

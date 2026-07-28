@@ -17,19 +17,19 @@
 // Präteritum sentence has "hatte"/"war", so a present auxiliary in a past
 // sentence can only be the Perfekt one.
 const DE_AUX = /\b(habe|hast|hat|haben|habt|bin|bist|ist|sind|seid)\b/i
-// … alongside a Partizip II. German builds these four ways and the regex must
-// cover all of them, or the hint silently degrades to "Präteritum" on perfectly
-// ordinary sentences:
-//   plain            ge + stem + t/en      gemacht, gelesen
-//   separable prefix stem + ge + stem      angekommen, aufgemacht
-//   inseparable      no ge- at all         erreicht, verlassen, besucht
-//   -ieren verbs     no ge- at all         reserviert, studiert
-// The Präteritum forms it must NOT match end in -e/-te/-ten (erreichte, kaufte,
-// ging), which is why every alternative anchors on a final t/en at a word break.
-const DE_PARTICIPLE = /\b(\w*ge\w+(?:t|en)|\w+iert|(?:be|er|ver|ent|emp|zer|miss)\w+(?:t|en))\b/i
+// … alongside a Partizip II. German nouns are capitalised and a Partizip II
+// never is — it sits clause-final, never sentence-initial. Restricting to
+// lowercase kills the Ge-noun class (Gedanken, Gemüse, Geschichte) at no cost
+// to real participles.
+const DE_PARTICIPLE = /\b(?:[a-zäöüß]*ge[a-zäöüß]+(?:t|en)|[a-zäöüß]+iert|(?:be|er|ver|ent|emp|zer|miss)[a-zäöüß]+(?:t|en))\b/
+// "zu besuchen" is an infinitive, not a participle — and it defeats the prefix rule.
+const DE_ZU_INFINITIVE = /\bzu\s+[a-zäöüß]+(?:e|en)\b/
 
 const EN_AUX = /\b(have|has)\b/i
-const EN_PARTICIPLE = /\b\w+(?:ed|en|ne|wn|ught|ood)\b/i
+// An explicit irregular list beats a suffix pattern: -en/-ne/-wn/-ood match far
+// more nouns (seven, wood, children) than participles.
+const EN_IRREGULAR_PARTICIPLE = "been|gone|seen|done|taken|given|written|eaten|spoken|broken|chosen|driven|known|grown|shown|thrown|flown|drawn|worn|born|brought|bought|caught|taught|thought|fought|sought|understood|stood|made|said|found|lost|left|kept|sent|spent|built|felt|held|met|paid|put|read|run|set|sat|told|won|become|come|had|got|gotten|begun|drunk|sung|swum"
+const EN_PARTICIPLE = new RegExp(`\\b(?:\\w+ed|${EN_IRREGULAR_PARTICIPLE})\\b`, "i")
 const EN_PROGRESSIVE = /\b(am|is|are)\s+\w+ing\b/i
 
 // German grammatical terms stay in German whatever the interface language —
@@ -69,7 +69,7 @@ export function tenseHint(fillBlank, targetLang, ifaceLang = "en", sense = {}) {
 
   if (targetLang === "de") {
     if (tense === "present") return label("de", "praesens", ifaceLang)
-    const perfekt = DE_AUX.test(text) && DE_PARTICIPLE.test(text)
+    const perfekt = DE_AUX.test(text) && DE_PARTICIPLE.test(text) && !DE_ZU_INFINITIVE.test(text)
     return label("de", perfekt ? "perfekt" : "praeteritum", ifaceLang)
   }
 
