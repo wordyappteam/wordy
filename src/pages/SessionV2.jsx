@@ -13,6 +13,9 @@ import { planSessionV2, orderForPractice, sentenceOutcome, firstFillBlank, grade
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
 import { getNewToday, addNewToday, DEFAULT_NEW_PER_DAY } from '../lib/dailyNew'
+import {
+  snapshotKey, saveSnapshot, loadSnapshot, clearSnapshot, resumableSnapshot,
+} from '../lib/sessionSnapshot'
 
 // One session's worth of graded words. Also the ceiling on a manual pick from a
 // collection — a bigger collection means a second session, not a marathon.
@@ -324,6 +327,11 @@ export default function SessionV2() {
   const collectionId   = searchParams.get('collectionId')
   const collectionName = searchParams.get('collectionName') ?? ''
 
+  // One snapshot per user + language. `null` until we have a user, which is also
+  // the guard that keeps every snapshot call below a no-op before login.
+  const snapKey = user ? snapshotKey(user.id, targetLang) : null
+  const store = typeof window !== 'undefined' ? window.localStorage : null
+
   const [phase, setPhase] = useState('loading') // loading | choosing | running | saving | done | empty | error
   const [collectionSenses, setCollectionSenses] = useState([]) // for the chooser
   const [picked, setPicked] = useState(() => new Set())        // manual pick, capped at GRADED_CAP
@@ -388,7 +396,31 @@ export default function SessionV2() {
   // Shared by the initial mount and "Keep going": re-query, re-plan, start a
   // fresh session row, and drop the runner into 'running'. `isCancelled` guards
   // against setting state after the owning effect has been cleaned up.
-  async function loadAndPlan(isCancelled, onlySenseIds = null) {
+  //
+  // `allowResume` is false for "Keep going", which must always plan fresh —
+  // the session it would resume is the one that just finished.
+  async function loadAndPlan(isCancelled, onlySenseIds = null, allowResume = false) {
+    const todayISO = new Date().toISOString().split('T')[0]
+
+    if (allowResume && snapKey && store) {
+      const saved = resumableSnapshot(loadSnapshot(store, snapKey), {
+        today: todayISO, collectionId,
+      })
+      if (saved) {
+        // Resume exactly where the learner left off — no re-query, no re-plan.
+        // `pool` is only used for multiple-choice distractors, so refill it in
+        // the background rather than making the learner wait for it.
+        countedRef.current = false
+        setSteps(saved.steps); setIdx(saved.idx); setOutcomes(saved.outcomes ?? {})
+        setSessionId(saved.sessionId); setPhase('running')
+        fetchSenses().then(({ senses }) => {
+          if (isCancelled?.()) return
+          if (senses) setPool(senses)
+        })
+        return
+      }
+    }
+
     const { error, senses, plan } = await fetchDuePlan(onlySenseIds)
     if (isCancelled?.()) return
     if (error) { setPhase('error'); return }
@@ -398,11 +430,24 @@ export default function SessionV2() {
     if (isCancelled?.()) return
     countedRef.current = false
     setPool(senses); setSteps(plan); setSessionId(id); setPhase('running')
+    if (snapKey && store) {
+      saveSnapshot(store, snapKey, {
+        date: todayISO, sessionId: id, collectionId, steps: plan, idx: 0, outcomes: {},
+      })
+    }
   }
 
   // A collection bigger than one session means something gets left out — so the
   // learner picks what. A collection that fits is just practised, no questions.
   async function loadCollectionOrChoose(isCancelled) {
+    // A resumable session already has its steps chosen — do not re-ask.
+    const todayISO = new Date().toISOString().split('T')[0]
+    if (snapKey && store) {
+      const saved = resumableSnapshot(loadSnapshot(store, snapKey), {
+        today: todayISO, collectionId,
+      })
+      if (saved) { loadAndPlan(isCancelled, null, true); return }
+    }
     const { error, senses } = await fetchSenses()
     if (isCancelled?.()) return
     if (error) { setPhase('error'); return }
@@ -419,7 +464,7 @@ export default function SessionV2() {
     let cancelled = false
     setPhase('loading'); setIdx(0); setOutcomes({}); setSummary([]); setRemainingDue(0)
     if (collectionId) loadCollectionOrChoose(() => cancelled)
-    else loadAndPlan(() => cancelled)
+    else loadAndPlan(() => cancelled, null, true)
     return () => { cancelled = true }
   }, [user, targetLang, collectionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -434,7 +479,18 @@ export default function SessionV2() {
     const step = steps[idx]
     const nextOutcomes = step.graded && outcome ? { ...outcomes, [step.senseId]: outcome } : outcomes
     if (step.graded && outcome) setOutcomes(nextOutcomes)
-    if (idx + 1 < steps.length) { setIdx(idx + 1); return }
+    if (idx + 1 < steps.length) {
+      // Persist BEFORE advancing the screen: if the tab is evicted the instant
+      // the next card renders, the snapshot must already name that card.
+      if (snapKey && store) {
+        saveSnapshot(store, snapKey, {
+          date: new Date().toISOString().split('T')[0],
+          sessionId, collectionId, steps, idx: idx + 1, outcomes: nextOutcomes,
+        })
+      }
+      setIdx(idx + 1)
+      return
+    }
 
     setPhase('saving')
     const todayISO = new Date().toISOString().split('T')[0]
@@ -445,6 +501,9 @@ export default function SessionV2() {
       senseId, outcome: o, practice: practiceBySense.get(senseId) ?? false,
     }))
     await completeSessionV2(sessionId, user.id, results, todayISO)
+    // The session is committed — the snapshot has done its job. "Keep going"
+    // must plan a genuinely fresh session, not resurrect this one.
+    if (snapKey && store) clearSnapshot(store, snapKey)
     if (!countedRef.current) {
       countedRef.current = true
       const newGraded = steps.filter((s) => s.graded && s.newIntake).length
