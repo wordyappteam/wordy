@@ -28,12 +28,13 @@ const DE_ZU_INFINITIVE = /\bzu\s+[a-zäöüß]+(?:e|en)\b/
 // An explicit irregular list beats a suffix pattern: -en/-ne/-wn/-ood match far
 // more nouns (seven, wood, children) than participles.
 const EN_IRREGULAR_PARTICIPLE = "been|gone|seen|done|taken|given|written|eaten|spoken|broken|chosen|driven|known|grown|shown|thrown|flown|drawn|worn|born|brought|bought|caught|taught|thought|fought|sought|understood|stood|made|said|found|lost|left|kept|sent|spent|built|felt|held|met|paid|put|read|run|set|sat|told|won|become|come|had|got|gotten|begun|drunk|sung|swum"
-// Adverbs may sit between the auxiliary and the participle ("have never eaten").
-const EN_ADVERB = "(?:\\s+(?:not|never|already|just|always|often|recently|ever|still|also|only|nearly|almost|finally|yet|barely|hardly))?"
-// The present perfect is have/has + (adverbs) + participle, ADJACENT. Testing
-// for the auxiliary and a participle independently let any noun phrase after
-// "have" ("a good put", "seven children") pose as one.
-const EN_PERFECT = new RegExp(`\\b(?:have|has)\\b${EN_ADVERB}\\s+(?:\\w+ed|${EN_IRREGULAR_PARTICIPLE})\\b`, "i")
+// A noun phrase after "have" is what we must exclude ("a good put", "the red
+// book"), and a noun phrase opens with a determiner. So rather than whitelisting
+// which adverbs may intervene — which wrongly rejected "Have you seen it?" —
+// allow up to two intervening words, none of them a determiner.
+const EN_DETERMINER = "a|an|the|my|your|his|her|its|our|their|this|that|these|those|some|any|no|every|each"
+const EN_GAP = `(?:\\s+(?!(?:${EN_DETERMINER})\\b)[\\w']+){0,2}`
+const EN_PERFECT = new RegExp(`\\b(?:have|has)\\b${EN_GAP}\\s+(?:\\w+ed|${EN_IRREGULAR_PARTICIPLE})\\b`, "i")
 const EN_PROGRESSIVE = /\b(am|is|are)\s+\w+ing\b/i
 
 // German grammatical terms stay in German whatever the interface language —

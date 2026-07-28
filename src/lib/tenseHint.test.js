@@ -115,6 +115,21 @@ test("en: an irregular participle that is also a common noun still works as a ve
   assert.equal(tenseHint({ target: "I have left the house.", tense: "past" }, "en", "en"), "Present perfect")
 })
 
+test("en: question inversion is still a perfect", () => {
+  assert.equal(tenseHint({ target: "Have you seen it?", tense: "past" }, "en", "en"), "Present perfect")
+  assert.equal(tenseHint({ target: "Have you ever been to Berlin?", tense: "past" }, "en", "en"), "Present perfect")
+})
+
+test("en: ordinary words between the auxiliary and the participle do not break it", () => {
+  assert.equal(tenseHint({ target: "They have both gone.", tense: "past" }, "en", "en"), "Present perfect")
+  assert.equal(tenseHint({ target: "I have just about finished.", tense: "past" }, "en", "en"), "Present perfect")
+})
+
+test("en: a determiner after have still blocks the perfect", () => {
+  assert.equal(tenseHint({ target: "I have some money for the trip.", tense: "past" }, "en", "en"), "Past simple")
+  assert.equal(tenseHint({ target: "I have the red book here.", tense: "past" }, "en", "en"), "Past simple")
+})
+
 // ── Ukrainian ───────────────────────────────────────────────────────────────
 test("uk: the past is named by aspect", () => {
   const past = { target: "Ми досягли Берліна.", tense: "past" }
