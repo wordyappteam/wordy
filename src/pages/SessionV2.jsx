@@ -442,8 +442,12 @@ export default function SessionV2() {
         // `pool` feeds the multiple-choice distractors, so it must be present
         // BEFORE the first card renders — `options` memoises on senseId and
         // would otherwise be stuck at a single option for that card's lifetime.
-        const { senses } = await fetchSenses()
+        // A failed fetch must NOT fall through to 'running': an empty pool makes
+        // makeOptions return the correct answer alone, which the learner taps and
+        // which then advances the SRS on a non-answer.
+        const { error: resumeError, senses } = await fetchSenses()
         if (isCancelled?.()) return
+        if (resumeError) { setPhase('error'); return }
         countedRef.current = !!saved.counted
         setPool(senses ?? [])
         setSteps(saved.steps); setIdx(saved.idx); setOutcomes(saved.outcomes ?? {})
