@@ -113,6 +113,13 @@ function StepCard({ step, pool, ifaceLang, targetLang, targetLanguageName, speec
         {!isFill ? (
           <>
             <p className="text-3xl font-bold text-gray-900 text-center">{step.word}</p>
+            {/* The principal parts, where the word has them. The flashcard is
+                where the learner MEETS the word before the fill-in asks them to
+                produce its forms — so this is the cheapest possible priming.
+                Nouns and adjectives have no `form` and render nothing. */}
+            {step.form && (
+              <p className="text-sm text-gray-400 text-center mt-1.5">{step.form}</p>
+            )}
             {revealed && <p className="text-lg text-gray-600 text-center mt-2">{cleanTr}</p>}
           </>
         ) : (
