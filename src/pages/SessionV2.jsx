@@ -1,7 +1,7 @@
 // SRS v2 session runner (test harness on the srs-v2 branch).
 // Self-contained: loads word_senses, plans with planSessionV2, runs each step,
-// grades ONE outcome per sense, then calls completeSessionV2. Deliberately not
-// wired into the live session flow — this is for validating the v2 loop.
+// grades ONE outcome per sense, then calls completeSessionV2. Wired into the
+// live session flow at /session — this is the v2 loop in production.
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -74,7 +74,7 @@ const EX_LABEL = {
 }
 
 // ── One step ─────────────────────────────────────────────────────────────────
-function StepCard({ step, pool, ifaceLang, targetLang, targetLanguageName, speechLocale, onDone }) {
+function StepCard({ step, pool, ifaceLang, uiLang, targetLang, targetLanguageName, speechLocale, onDone }) {
   const [revealed, setRevealed] = useState(false)
   const [input, setInput] = useState('')
   const [picked, setPicked] = useState(null)
@@ -186,7 +186,7 @@ function StepCard({ step, pool, ifaceLang, targetLang, targetLanguageName, speec
   if (step.exercise === 'fill_in') {
     // Which form the sentence actually wants. Null when it cannot be determined
     // — then we show nothing rather than a guess.
-    const hint = fillBlank ? tenseHint(fillBlank, targetLang, ifaceLang, step) : null
+    const hint = fillBlank ? tenseHint(fillBlank, targetLang, uiLang, step) : null
     // No usable example → fall back to a plain translation→type prompt.
     const submit = () => {
       if (feedback) return
@@ -439,16 +439,15 @@ export default function SessionV2() {
         today: todayISO, collectionId,
       })
       if (saved) {
-        // Resume exactly where the learner left off — no re-query, no re-plan.
-        // `pool` is only used for multiple-choice distractors, so refill it in
-        // the background rather than making the learner wait for it.
-        countedRef.current = false
+        // `pool` feeds the multiple-choice distractors, so it must be present
+        // BEFORE the first card renders — `options` memoises on senseId and
+        // would otherwise be stuck at a single option for that card's lifetime.
+        const { senses } = await fetchSenses()
+        if (isCancelled?.()) return
+        countedRef.current = !!saved.counted
+        setPool(senses ?? [])
         setSteps(saved.steps); setIdx(saved.idx); setOutcomes(saved.outcomes ?? {})
         setSessionId(saved.sessionId); setPhase('running')
-        fetchSenses().then(({ senses }) => {
-          if (isCancelled?.()) return
-          if (senses) setPool(senses)
-        })
         return
       }
     }
@@ -533,14 +532,21 @@ export default function SessionV2() {
       senseId, outcome: o, practice: practiceBySense.get(senseId) ?? false,
     }))
     await completeSessionV2(sessionId, user.id, results, todayISO)
-    // The session is committed — the snapshot has done its job. "Keep going"
-    // must plan a genuinely fresh session, not resurrect this one.
-    if (snapKey && store) clearSnapshot(store, snapKey)
     if (!countedRef.current) {
       countedRef.current = true
       const newGraded = steps.filter((s) => s.graded && s.newIntake).length
       if (newGraded > 0) addNewToday(todayISO, newGraded)
+      // Persist the counted flag so a later resume of this (already-committed)
+      // snapshot cannot cause addNewToday to fire a second time.
+      if (snapKey && store) {
+        saveSnapshot(store, snapKey, {
+          date: todayISO, sessionId, collectionId, steps, idx, outcomes: nextOutcomes, counted: true,
+        })
+      }
     }
+    // The session is committed — the snapshot has done its job. "Keep going"
+    // must plan a genuinely fresh session, not resurrect this one.
+    if (snapKey && store) clearSnapshot(store, snapKey)
     const { data } = await supabase
       .from('word_senses')
       .select('id, word_form, translation, interval_step, learning_stage, next_review_date')
@@ -705,6 +711,7 @@ export default function SessionV2() {
         step={step}
         pool={pool}
         ifaceLang={ifaceLang}
+        uiLang={lang}
         targetLang={targetLang}
         targetLanguageName={targetLanguageName}
         speechLocale={speechLocale}
