@@ -12,6 +12,7 @@ import { reviewSentence } from '../lib/claude'
 import { planSessionV2, orderForPractice, sentenceOutcome, firstFillBlank, gradeFillIn } from '../lib/srs'
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
+import { tenseHint } from '../lib/tenseHint'
 import { getNewToday, addNewToday, DEFAULT_NEW_PER_DAY } from '../lib/dailyNew'
 import {
   snapshotKey, saveSnapshot, loadSnapshot, clearSnapshot, resumableSnapshot,
@@ -73,7 +74,7 @@ const EX_LABEL = {
 }
 
 // ── One step ─────────────────────────────────────────────────────────────────
-function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onDone }) {
+function StepCard({ step, pool, ifaceLang, targetLang, targetLanguageName, speechLocale, onDone }) {
   const [revealed, setRevealed] = useState(false)
   const [input, setInput] = useState('')
   const [picked, setPicked] = useState(null)
@@ -176,6 +177,9 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
 
   // ----- graded: fill_in (type the word into its own example sentence) -----
   if (step.exercise === 'fill_in') {
+    // Which form the sentence actually wants. Null when it cannot be determined
+    // — then we show nothing rather than a guess.
+    const hint = fillBlank ? tenseHint(fillBlank, targetLang, ifaceLang, step) : null
     // No usable example → fall back to a plain translation→type prompt.
     const submit = () => {
       if (feedback) return
@@ -184,12 +188,21 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
         : (norm(input) === norm(step.word) ? 'correct' : 'wrong')
       setFeedback({ outcome })
     }
+    // With no example to show, the lemma is all we have — but the sense's own
+    // form is a truer target than a dictionary headword.
+    const expected = fillBlank?.answer ?? step.form ?? step.word
     return (
       <Shell step={step}>
         <p className="text-sm text-gray-500 text-center mb-1">{cleanTr}</p>
         {fillBlank
-          ? <p className="text-lg text-gray-800 text-center mb-4 leading-relaxed">{fillBlank.sentence}</p>
+          ? <p className="text-lg text-gray-800 text-center mb-2 leading-relaxed">{fillBlank.sentence}</p>
           : <p className="text-xs text-gray-400 text-center mb-4">Type the {targetLanguageName} word</p>}
+        {/* B2 — the required form, named specifically. Without it "Der Zug ____
+            pünktlich" accepts two tenses and the learner is guessing which. */}
+        {hint && !feedback && (
+          <p className="text-xs text-indigo-500 text-center mb-4">→ {hint}</p>
+        )}
+        {!hint && fillBlank && <div className="mb-2" />}
         <input
           autoFocus value={input} disabled={!!feedback}
           onChange={(e) => setInput(e.target.value)}
@@ -205,10 +218,20 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
               <p className="text-center mt-4 text-sm text-green-600">✓ Correct</p>
             )}
             {feedback.outcome === 'almost' && (
-              <p className="text-center mt-4 text-sm text-amber-600">≈ Almost — you were on the right path · <strong>{fillBlank?.answer ?? step.word}</strong></p>
+              <p className="text-center mt-4 text-sm text-amber-600">≈ Almost — you were on the right path · <strong>{expected}</strong></p>
             )}
             {feedback.outcome === 'wrong' && (
-              <p className="text-center mt-4 text-sm text-rose-400">The word was <strong>{fillBlank?.answer ?? step.word}</strong></p>
+              <p className="text-center mt-4 text-sm text-rose-400">The word was <strong>{expected}</strong></p>
+            )}
+            {/* B3 — the full sentence makes the required form self-explanatory:
+                a plural subject or a past-time clause is visible, not asserted. */}
+            {feedback.outcome !== 'correct' && fillBlank && (
+              <p className="text-center mt-2 text-sm text-gray-700">{fillBlank.target}</p>
+            )}
+            {/* B1 — grading a sentence you have never seen the meaning of is
+                guesswork; the word gloss alone leaves most of it unread. */}
+            {fillBlank?.translation && (
+              <p className="text-center mt-2 text-sm text-gray-500 italic">{fillBlank.translation}</p>
             )}
             <NextBtn outcome={feedback.outcome} onClick={() => onDone(feedback.outcome)} />
           </>
@@ -673,6 +696,7 @@ export default function SessionV2() {
         step={step}
         pool={pool}
         ifaceLang={ifaceLang}
+        targetLang={targetLang}
         targetLanguageName={targetLanguageName}
         speechLocale={speechLocale}
         onDone={handleDone}
