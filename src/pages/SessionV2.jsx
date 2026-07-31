@@ -188,21 +188,23 @@ function StepCard({ step, pool, ifaceLang, targetLang, targetLanguageName, speec
         : (norm(input) === norm(step.word) ? 'correct' : 'wrong')
       setFeedback({ outcome })
     }
-    // With no example to show, the lemma is all we have — but the sense's own
-    // form is a truer target than a dictionary headword.
-    const expected = fillBlank?.answer ?? step.form ?? step.word
+    // step.word is already `word_form ?? word` from the display helper in srs.js,
+    // so it IS the sense's own form rather than a dictionary headword. step.form
+    // is the principal-parts string ("erreicht / erreichte / hat erreicht") and
+    // must never be offered as the single expected answer.
+    const expected = fillBlank?.answer ?? step.word
+    const showHint = hint && !feedback
     return (
       <Shell step={step}>
         <p className="text-sm text-gray-500 text-center mb-1">{cleanTr}</p>
         {fillBlank
-          ? <p className="text-lg text-gray-800 text-center mb-2 leading-relaxed">{fillBlank.sentence}</p>
+          ? <p className={`text-lg text-gray-800 text-center leading-relaxed ${showHint ? "mb-2" : "mb-4"}`}>{fillBlank.sentence}</p>
           : <p className="text-xs text-gray-400 text-center mb-4">Type the {targetLanguageName} word</p>}
         {/* B2 — the required form, named specifically. Without it "Der Zug ____
             pünktlich" accepts two tenses and the learner is guessing which. */}
-        {hint && !feedback && (
+        {showHint && (
           <p className="text-xs text-indigo-500 text-center mb-4">→ {hint}</p>
         )}
-        {!hint && fillBlank && <div className="mb-2" />}
         <input
           autoFocus value={input} disabled={!!feedback}
           onChange={(e) => setInput(e.target.value)}
