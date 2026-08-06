@@ -435,10 +435,16 @@ export default function SessionV2() {
         const { error: resumeError, senses } = await fetchSenses()
         if (isCancelled?.()) return
         if (resumeError) { setPhase('error'); return }
+        // Heal a snapshot written before per-step content was planned: resolve
+        // it once here and write it back, so the rest of that session resumes
+        // identically. Idempotent, so a snapshot that already has its content
+        // passes through untouched — this must never re-roll a live session.
+        const resumedSteps = attachStepContent(saved.steps, senses ?? [], store)
         countedRef.current = !!saved.counted
         setPool(senses ?? [])
-        setSteps(saved.steps); setIdx(saved.idx); setOutcomes(saved.outcomes ?? {})
+        setSteps(resumedSteps); setIdx(saved.idx); setOutcomes(saved.outcomes ?? {})
         setSessionId(saved.sessionId); setPhase('running')
+        saveSnapshot(store, snapKey, { ...saved, steps: resumedSteps })
         return
       }
     }

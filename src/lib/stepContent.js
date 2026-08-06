@@ -54,15 +54,29 @@ function takeCursor(store, senseId) {
   return cursor
 }
 
+// Does this step already carry whatever content its exercise needs?
+// `fillBlank: null` counts — it means "planned, and this sense has no usable
+// example", which is different from "never planned".
+export function hasStepContent(step) {
+  switch (step?.exercise) {
+    case 'fill_in':
+    case 'fill_blank': return step.fillBlank !== undefined
+    case 'recognition':
+    case 'word_choice': return Array.isArray(step.options)
+    default: return true
+  }
+}
+
 // Resolve every step's generated content. Returns a new array of new step
 // objects; the input plan is untouched.
 //
-// A step whose exercise has no generated content is passed through unchanged.
-// `fillBlank` is set even when it resolves to null — the card distinguishes
-// "planned, no usable example" (fall back to a plain type-the-word prompt) from
-// "not planned at all" (a snapshot written by an older build; derive it live).
+// Idempotent: a step that already has its content is returned as-is. That is
+// what lets the resume path call this unconditionally to heal a snapshot
+// written before content was planned, without re-rolling the steps that are
+// already fixed.
 export function attachStepContent(plan, pool, store = null) {
   return (plan ?? []).map((step) => {
+    if (hasStepContent(step)) return step
     switch (step.exercise) {
       case 'fill_in':
       case 'fill_blank': {

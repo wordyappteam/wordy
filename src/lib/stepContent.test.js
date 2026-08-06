@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { attachStepContent, makeOptions } from './stepContent.js'
+import { attachStepContent, makeOptions, hasStepContent } from './stepContent.js'
 
 function fakeStore(initial = {}) {
   const data = { ...initial }
@@ -133,6 +133,44 @@ test('a hostile or absent store never costs the learner the content', () => {
     const [step] = attachStepContent([fillStep()], POOL, store)
     assert.ok(step.fillBlank, 'fill-in content must survive a dead store')
   }
+})
+
+// ── idempotence: healing an old snapshot must not disturb a live one ─────────
+
+test('attachStepContent is idempotent — re-running it never re-rolls settled content', () => {
+  const store = fakeStore()
+  const plan = [
+    { exercise: 'recognition', senseId: 's1', wordId: 'w1', word: 'erreichen', translation: 'досягати' },
+    fillStep(),
+  ]
+  const once = attachStepContent(plan, POOL, store)
+  const twice = attachStepContent(once, POOL, store)
+  assert.deepEqual(twice, once)
+  // …and it does not burn another example rotation.
+  assert.equal(store.getItem('wordy_ex_cursor_s1'), '1')
+})
+
+test('a settled step is returned by identity, so React sees no change', () => {
+  const once = attachStepContent([fillStep()], POOL, fakeStore())
+  const twice = attachStepContent(once, POOL, fakeStore())
+  assert.equal(twice[0], once[0])
+})
+
+test('healing fills only the steps that are missing content', () => {
+  const settled = attachStepContent([fillStep()], POOL, fakeStore())[0]
+  const stale = { exercise: 'word_choice', senseId: 's2', wordId: 'w2', word: 'ankommen', translation: 'прибувати' }
+  const healed = attachStepContent([settled, stale], POOL, fakeStore())
+  assert.equal(healed[0], settled)
+  assert.ok(Array.isArray(healed[1].options))
+})
+
+test('hasStepContent distinguishes "no usable example" from "never planned"', () => {
+  assert.equal(hasStepContent(fillStep()), false)
+  assert.equal(hasStepContent({ ...fillStep(), fillBlank: null }), true)
+  assert.equal(hasStepContent({ exercise: 'recognition' }), false)
+  assert.equal(hasStepContent({ exercise: 'recognition', options: [] }), true)
+  assert.equal(hasStepContent({ exercise: 'flashcard' }), true)
+  assert.equal(hasStepContent(null), true)
 })
 
 test('attachStepContent tolerates an empty or missing plan', () => {
