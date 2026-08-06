@@ -54,6 +54,26 @@ function takeCursor(store, senseId) {
   return cursor
 }
 
+// A multiple choice needs something to choose BETWEEN. With a single option the
+// only option is the correct one: the learner taps it because it is the only
+// button on screen, it grades `correct`, and completeSessionV2 advances that
+// sense's SRS interval on what was never an answer. Silently corrupting the
+// learning record is far worse than asking a harder question, so a step that
+// cannot be given a real choice becomes a typed recall instead — graded,
+// honest, and needing no generated content at all.
+//
+// `recognition` is L2→L1 and `active_recall` is L1→L2, so a downgraded
+// recognition step also flips direction. Accepted: the alternatives are an
+// ungraded flashcard (which would drop the word from the session's results
+// entirely, breaking the one-outcome-per-sense contract) or the freebie.
+const MIN_OPTIONS = 2
+
+function withOptions(step, correct, pool, valueOf) {
+  const options = makeOptions(correct, pool, valueOf, step.wordId)
+  if (options.length >= MIN_OPTIONS) return { ...step, options }
+  return { ...step, exercise: 'active_recall' }
+}
+
 // Does this step already carry whatever content its exercise needs?
 // `fillBlank: null` counts — it means "planned, and this sense has no usable
 // example", which is different from "never planned".
@@ -85,15 +105,9 @@ export function attachStepContent(plan, pool, store = null) {
         return { ...step, fillBlank: firstFillBlank(exs, step.word, takeCursor(store, step.senseId)) }
       }
       case 'recognition':
-        return {
-          ...step,
-          options: makeOptions(
-            displayTranslation(step.translation), pool,
-            (s) => displayTranslation(s.translation), step.wordId,
-          ),
-        }
+        return withOptions(step, displayTranslation(step.translation), pool, (s) => displayTranslation(s.translation))
       case 'word_choice':
-        return { ...step, options: makeOptions(step.word, pool, (s) => s.word_form, step.wordId) }
+        return withOptions(step, step.word, pool, (s) => s.word_form)
       default:
         return step
     }

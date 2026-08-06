@@ -177,3 +177,52 @@ test('attachStepContent tolerates an empty or missing plan', () => {
   assert.deepEqual(attachStepContent([], POOL, fakeStore()), [])
   assert.deepEqual(attachStepContent(null, POOL, fakeStore()), [])
 })
+
+// ── A multiple choice must have something to choose between ─────────────────
+// One option means the only button on screen is the correct answer: the learner
+// taps it, it grades `correct`, and the SRS interval advances on a non-answer.
+test('a step that cannot be given a real choice becomes a typed recall', () => {
+  const plan = [{ exercise: 'recognition', senseId: 's1', wordId: 'w1', word: 'erreichen', translation: 'досягати', graded: true }]
+  const [step] = attachStepContent(plan, [], fakeStore())
+  assert.equal(step.exercise, 'active_recall')
+  assert.equal(step.options, undefined)
+  // The sense must still produce an outcome — completeSessionV2 expects one per
+  // graded sense, so downgrading to an UNgraded card would drop it silently.
+  assert.equal(step.graded, true)
+})
+
+test('a pool holding only the word itself is not a choice', () => {
+  const plan = [{ exercise: 'word_choice', senseId: 's1', wordId: 'w1', word: 'erreichen', translation: 'досягати' }]
+  const solo = [{ word_id: 'w1', word_form: 'erreichen', translation: 'досягати' }]
+  const [step] = attachStepContent(plan, solo, fakeStore())
+  assert.equal(step.exercise, 'active_recall')
+})
+
+test('two options are enough to stay a multiple choice', () => {
+  const plan = [{ exercise: 'word_choice', senseId: 's1', wordId: 'w1', word: 'erreichen', translation: 'досягати' }]
+  const pair = [{ word_id: 'w2', word_form: 'ankommen', translation: 'прибувати' }]
+  const [step] = attachStepContent(plan, pair, fakeStore())
+  assert.equal(step.exercise, 'word_choice')
+  assert.deepEqual([...step.options].sort(), ['ankommen', 'erreichen'])
+})
+
+test('no baked step ever has fewer than two options', () => {
+  for (const pool of [[], POOL.slice(0, 1), POOL.slice(0, 2), POOL]) {
+    const plan = [
+      { exercise: 'recognition', senseId: 's1', wordId: 'w1', word: 'erreichen', translation: 'досягати' },
+      { exercise: 'word_choice', senseId: 's1', wordId: 'w1', word: 'erreichen', translation: 'досягати' },
+    ]
+    for (const step of attachStepContent(plan, pool, fakeStore())) {
+      if (step.options) assert.ok(step.options.length >= 2, `pool of ${pool.length} produced ${step.options.length} options`)
+    }
+  }
+})
+
+test('a downgraded step is settled, so healing does not revisit it', () => {
+  const [step] = attachStepContent(
+    [{ exercise: 'recognition', senseId: 's1', wordId: 'w1', word: 'erreichen', translation: 'досягати' }],
+    [], fakeStore(),
+  )
+  assert.equal(hasStepContent(step), true)
+  assert.equal(attachStepContent([step], POOL, fakeStore())[0], step)
+})

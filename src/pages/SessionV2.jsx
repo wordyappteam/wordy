@@ -374,11 +374,16 @@ export default function SessionV2() {
     let senses = (data ?? []).filter((s) => s.translation?.trim() && s.word_form?.trim())
 
     if (collectionId) {
-      const { data: members } = await supabase
+      // This error must surface. Swallowing it yields an empty `senses` with no
+      // error field, which slips past the resume path's error guard and reaches
+      // 'running' with an empty distractor pool — the exact state that guard
+      // exists to prevent.
+      const { data: members, error: memberError } = await supabase
         .from('word_collections')
         .select('word_id')
         .eq('user_id', user.id)
         .eq('collection_id', collectionId)
+      if (memberError) { console.error('[v2] collection load error:', memberError.message); return { error: memberError } }
       const wordIds = new Set((members ?? []).map((m) => m.word_id))
       senses = senses.filter((s) => wordIds.has(s.word_id))
     }
@@ -394,6 +399,11 @@ export default function SessionV2() {
   async function fetchDuePlan(onlySenseIds = null) {
     const { error, senses: all } = await fetchSenses()
     if (error) return { error }
+    // Plan only what was picked — but draw distractors from the WHOLE deck.
+    // Handing back the narrowed list as the pool meant a one-word manual pick
+    // produced a one-option multiple choice (the pool's only entry is the word
+    // itself, which makeOptions excludes). Words outside the pick are perfectly
+    // good distractors; they are simply not being tested.
     const senses = onlySenseIds ? all.filter((s) => onlySenseIds.includes(s.id)) : all
     const todayISO = new Date().toISOString().split('T')[0]
     const plan = planSessionV2(senses, {
@@ -409,7 +419,7 @@ export default function SessionV2() {
       // but a correct answer on them writes nothing (see applyVerdict).
       practiceAll: !!collectionId,
     })
-    return { senses, plan }
+    return { senses: all, plan }
   }
 
   // Shared by the initial mount and "Keep going": re-query, re-plan, start a
