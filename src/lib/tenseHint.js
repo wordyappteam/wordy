@@ -69,6 +69,15 @@ function label(lang, keyName, ifaceLang) {
 export function tenseHint(fillBlank, targetLang, ifaceLang = "en", sense = {}) {
   const tense = fillBlank?.tense
   if (!tense) return null
+  // Only a verb has a tense to produce. `tense` is stamped on the EXAMPLE
+  // SENTENCE, and every sentence has one — so a noun whose example happened to
+  // be tagged was being told to supply a "Perfekt", which is meaningless for a
+  // form that varies by case and number. That is also why it looked arbitrary:
+  // whether a non-verb got a hint depended only on whether the generator had
+  // bothered to tag that particular example. `pos` is a fixed lowercase English
+  // enum from the identify schema; anything we cannot positively call a verb
+  // gets no hint, per the rule at the top of this file.
+  if (sense?.pos !== "verb") return null
   const text = fillBlank.target ?? ""
   const aspect = sense?.aspect ?? null
 
