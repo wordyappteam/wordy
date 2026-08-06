@@ -168,7 +168,11 @@ test('hasStepContent distinguishes "no usable example" from "never planned"', ()
   assert.equal(hasStepContent(fillStep()), false)
   assert.equal(hasStepContent({ ...fillStep(), fillBlank: null }), true)
   assert.equal(hasStepContent({ exercise: 'recognition' }), false)
-  assert.equal(hasStepContent({ exercise: 'recognition', options: [] }), true)
+  // An options array too short to be a choice is NOT settled — it is the freebie
+  // itself, and calling it settled would hand it back untouched.
+  assert.equal(hasStepContent({ exercise: 'recognition', options: [] }), false)
+  assert.equal(hasStepContent({ exercise: 'recognition', options: ['a'] }), false)
+  assert.equal(hasStepContent({ exercise: 'recognition', options: ['a', 'b'] }), true)
   assert.equal(hasStepContent({ exercise: 'flashcard' }), true)
   assert.equal(hasStepContent(null), true)
 })
@@ -225,4 +229,16 @@ test('a downgraded step is settled, so healing does not revisit it', () => {
   )
   assert.equal(hasStepContent(step), true)
   assert.equal(attachStepContent([step], POOL, fakeStore())[0], step)
+})
+
+test('a snapshot carrying a one-option step is repaired, not waved through', () => {
+  // Written by a build that predates MIN_OPTIONS. Healing must NOT treat it as
+  // settled — that would hand back the one-button card it was meant to kill.
+  const stale = { exercise: 'recognition', senseId: 's1', wordId: 'w1', word: 'erreichen', translation: 'досягати', options: ['досягати'], graded: true }
+  const [healed] = attachStepContent([stale], POOL, fakeStore())
+  assert.equal(healed.exercise, 'recognition')
+  assert.ok(healed.options.length >= 2)
+  // …and with no pool to repair it with, it degrades rather than staying a freebie.
+  const [degraded] = attachStepContent([stale], [], fakeStore())
+  assert.equal(degraded.exercise, 'active_recall')
 })

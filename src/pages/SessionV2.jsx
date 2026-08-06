@@ -13,7 +13,7 @@ import { planSessionV2, orderForPractice, sentenceOutcome, firstFillBlank, grade
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
 import { tenseHint } from '../lib/tenseHint'
-import { attachStepContent, makeOptions } from '../lib/stepContent'
+import { attachStepContent, makeOptions, MIN_OPTIONS } from '../lib/stepContent'
 import { getNewToday, addNewToday, DEFAULT_NEW_PER_DAY } from '../lib/dailyNew'
 import {
   snapshotKey, saveSnapshot, loadSnapshot, clearSnapshot, resumableSnapshot,
@@ -57,14 +57,14 @@ const EX_LABEL = {
 }
 
 // ── One step ─────────────────────────────────────────────────────────────────
-function StepCard({ step, pool, ifaceLang, uiLang, targetLang, targetLanguageName, speechLocale, onDone }) {
+function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLanguageName, speechLocale, onDone }) {
   const [revealed, setRevealed] = useState(false)
   const [input, setInput] = useState('')
   const [picked, setPicked] = useState(null)
   const [feedback, setFeedback] = useState(null) // { outcome, detail }
   const [busy, setBusy] = useState(false)
 
-  const cleanTr = displayTranslation(step.translation)
+  const cleanTr = displayTranslation(rawStep.translation)
 
   // Both of these are resolved at planning time by attachStepContent and ride
   // along inside the step — which is what makes a resumed card the SAME card
@@ -72,25 +72,36 @@ function StepCard({ step, pool, ifaceLang, uiLang, targetLang, targetLanguageNam
   // a snapshot written by a build that predates that, and are the old
   // derive-at-mount behaviour verbatim.
   const fillBlank = useMemo(() => {
-    if (step.exercise !== 'fill_in' && step.exercise !== 'fill_blank') return null
-    if (step.fillBlank !== undefined) return step.fillBlank // planned — null means "no usable example"
-    const exs = step.examples || []
+    if (rawStep.exercise !== 'fill_in' && rawStep.exercise !== 'fill_blank') return null
+    if (rawStep.fillBlank !== undefined) return rawStep.fillBlank // planned — null means "no usable example"
+    const exs = rawStep.examples || []
     if (!exs.length) return null
-    const key = `wordy_ex_cursor_${step.senseId}`
+    const key = `wordy_ex_cursor_${rawStep.senseId}`
     let cursor = 0
     try { cursor = parseInt(localStorage.getItem(key) || '0', 10) || 0 } catch { /* no storage */ }
     try { localStorage.setItem(key, String(cursor + 1)) } catch { /* no storage */ }
-    return firstFillBlank(exs, step.word, cursor)
-  }, [step.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
+    return firstFillBlank(exs, rawStep.word, cursor)
+  }, [rawStep.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Memoised so answering doesn't reshuffle the list — your picked wrong option
   // has to stay put to be highlighted red.
   const options = useMemo(() => {
-    if (Array.isArray(step.options)) return step.options
-    if (step.exercise === 'recognition') return makeOptions(cleanTr, pool, (s) => displayTranslation(s.translation), step.wordId)
-    if (step.exercise === 'word_choice') return makeOptions(step.word, pool, (s) => s.word_form, step.wordId)
+    if (Array.isArray(rawStep.options)) return rawStep.options
+    if (rawStep.exercise === 'recognition') return makeOptions(cleanTr, pool, (s) => displayTranslation(s.translation), rawStep.wordId)
+    if (rawStep.exercise === 'word_choice') return makeOptions(rawStep.word, pool, (s) => s.word_form, rawStep.wordId)
     return []
-  }, [step.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rawStep.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The same invariant stepContent.js enforces where options are MADE, enforced
+  // again where they are USED. A one-option multiple choice fails silently — the
+  // learner taps the only button, it grades `correct`, and the SRS interval
+  // advances on what was never an answer — so it is worth refusing to render one
+  // no matter which path produced it. Everything downstream reads the effective
+  // step, so the card, its label and its grading all agree.
+  const step = (rawStep.exercise === 'recognition' || rawStep.exercise === 'word_choice')
+    && options.length < MIN_OPTIONS
+    ? { ...rawStep, exercise: 'active_recall' }
+    : rawStep
 
   // ----- ungraded scaffolds: flashcard / fill_blank -----
   if (!step.graded) {
@@ -577,8 +588,16 @@ export default function SessionV2() {
   }
 
   const wrap = (inner) => (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col items-center justify-center px-4 py-10">
-      <style>{`.btn-primary{width:100%;padding:.75rem;border-radius:.75rem;background:#4f46e5;color:#fff;font-weight:600;font-size:.875rem}.btn-primary:hover{background:#4338ca}.btn-secondary{width:100%;padding:.75rem;border-radius:.75rem;background:#eef2ff;color:#4338ca;font-weight:600;font-size:.875rem}.btn-secondary:hover{background:#e0e7ff}`}</style>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-yellow-50 flex flex-col items-center justify-center px-4 py-10">
+      {/* The session's buttons are styled here rather than through utility
+          classes, and they were written as literal Tailwind-indigo hexes — so
+          the Willow & Paper rebrand, which repoints the indigo-* SCALE to Verba
+          green, never reached them. The whole exercise screen stayed pre-rebrand
+          blue. Read the tokens instead of restating their values, so the next
+          palette change carries here for free. Hex fallbacks only matter if the
+          theme block fails to load, in which case they keep the buttons legible
+          rather than transparent. */}
+      <style>{`.btn-primary{width:100%;padding:.75rem;border-radius:.75rem;background:var(--color-indigo-600,#2F6B4E);color:#fff;font-weight:600;font-size:.875rem}.btn-primary:hover{background:var(--color-indigo-700,#275C42)}.btn-secondary{width:100%;padding:.75rem;border-radius:.75rem;background:var(--color-indigo-50,#E9F1EB);color:var(--color-indigo-700,#275C42);font-weight:600;font-size:.875rem}.btn-secondary:hover{background:var(--color-indigo-100,#D6E7DC)}`}</style>
       {inner}
     </div>
   )

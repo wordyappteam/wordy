@@ -66,7 +66,7 @@ function takeCursor(store, senseId) {
 // recognition step also flips direction. Accepted: the alternatives are an
 // ungraded flashcard (which would drop the word from the session's results
 // entirely, breaking the one-outcome-per-sense contract) or the freebie.
-const MIN_OPTIONS = 2
+export const MIN_OPTIONS = 2
 
 function withOptions(step, correct, pool, valueOf) {
   const options = makeOptions(correct, pool, valueOf, step.wordId)
@@ -81,8 +81,12 @@ export function hasStepContent(step) {
   switch (step?.exercise) {
     case 'fill_in':
     case 'fill_blank': return step.fillBlank !== undefined
+    // Length matters, not just presence: a step carrying a one-option array is
+    // NOT settled — it is the freebie this module exists to prevent, and
+    // treating it as settled would hand it straight back untouched. Snapshots
+    // written before the MIN_OPTIONS guard existed contain exactly that.
     case 'recognition':
-    case 'word_choice': return Array.isArray(step.options)
+    case 'word_choice': return Array.isArray(step.options) && step.options.length >= MIN_OPTIONS
     default: return true
   }
 }
