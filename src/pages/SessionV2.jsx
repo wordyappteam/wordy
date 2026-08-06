@@ -13,6 +13,7 @@ import { planSessionV2, orderForPractice, sentenceOutcome, firstFillBlank, grade
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
 import { tenseHint } from '../lib/tenseHint'
+import { attachStepContent, makeOptions } from '../lib/stepContent'
 import { getNewToday, addNewToday, DEFAULT_NEW_PER_DAY } from '../lib/dailyNew'
 import {
   snapshotKey, saveSnapshot, loadSnapshot, clearSnapshot, resumableSnapshot,
@@ -41,24 +42,6 @@ function gradeTyped(input, answer) {
   if (targets.some((t) => lev(a, t) <= 1)) return 'almost'
   return 'wrong'
 }
-function shuffle(arr) {
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]] }
-  return a
-}
-// Build multiple-choice options: correct value + distractors drawn from the deck.
-function makeOptions(correct, pool, valueOf, excludeWordId, n = 3) {
-  const seen = new Set([norm(correct)])
-  const ds = []
-  for (const s of shuffle(pool)) {
-    if (s.word_id === excludeWordId) continue // skip the word itself AND its sibling senses
-    const v = valueOf(s)
-    if (!v || seen.has(norm(v))) continue
-    seen.add(norm(v)); ds.push(v)
-    if (ds.length >= n) break
-  }
-  return shuffle([correct, ...ds])
-}
 function speak(text, locale) {
   try {
     const u = new SpeechSynthesisUtterance(text)
@@ -83,10 +66,14 @@ function StepCard({ step, pool, ifaceLang, uiLang, targetLang, targetLanguageNam
 
   const cleanTr = displayTranslation(step.translation)
 
-  // Rotate through the sense's examples (anti-memorization). Cursor persists
-  // per sense in localStorage; advances each time this card mounts.
+  // Both of these are resolved at planning time by attachStepContent and ride
+  // along inside the step — which is what makes a resumed card the SAME card
+  // rather than a freshly generated one. The live fallbacks below only fire for
+  // a snapshot written by a build that predates that, and are the old
+  // derive-at-mount behaviour verbatim.
   const fillBlank = useMemo(() => {
     if (step.exercise !== 'fill_in' && step.exercise !== 'fill_blank') return null
+    if (step.fillBlank !== undefined) return step.fillBlank // planned — null means "no usable example"
     const exs = step.examples || []
     if (!exs.length) return null
     const key = `wordy_ex_cursor_${step.senseId}`
@@ -96,10 +83,10 @@ function StepCard({ step, pool, ifaceLang, uiLang, targetLang, targetLanguageNam
     return firstFillBlank(exs, step.word, cursor)
   }, [step.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Compute the multiple-choice options ONCE per step (not every render), so they
-  // don't reshuffle when you answer — and so your picked wrong option stays in the
-  // list and can be highlighted red.
+  // Memoised so answering doesn't reshuffle the list — your picked wrong option
+  // has to stay put to be highlighted red.
   const options = useMemo(() => {
+    if (Array.isArray(step.options)) return step.options
     if (step.exercise === 'recognition') return makeOptions(cleanTr, pool, (s) => displayTranslation(s.translation), step.wordId)
     if (step.exercise === 'word_choice') return makeOptions(step.word, pool, (s) => s.word_form, step.wordId)
     return []
@@ -463,11 +450,15 @@ export default function SessionV2() {
     const gradedCount = new Set(plan.filter((s) => s.graded).map((s) => s.senseId)).size
     const id = await startSession(user.id, 'v2', gradedCount)
     if (isCancelled?.()) return
+    // Resolve the distractors and the example sentences NOW, so they are part of
+    // the steps the snapshot persists. Deriving them in the card instead meant a
+    // resumed session re-rolled both and handed back a different question.
+    const plannedSteps = attachStepContent(plan, senses, store)
     countedRef.current = false
-    setPool(senses); setSteps(plan); setSessionId(id); setPhase('running')
+    setPool(senses); setSteps(plannedSteps); setSessionId(id); setPhase('running')
     if (snapKey && store) {
       saveSnapshot(store, snapKey, {
-        date: todayISO, sessionId: id, collectionId, steps: plan, idx: 0, outcomes: {},
+        date: todayISO, sessionId: id, collectionId, steps: plannedSteps, idx: 0, outcomes: {},
       })
     }
   }
