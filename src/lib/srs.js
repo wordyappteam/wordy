@@ -246,7 +246,15 @@ export function planSessionV2(senses, opts = {}) {
   // Sequencing v2.1: stage packs -> balanced encode->test cycles -> type
   // phases (all flashcards, then all context cards, then all tests; same
   // word order per phase). Spec: 2026-07-02-session-sequencing-design.md.
-  const display = (s) => ({ word: s.word_form ?? s.word ?? '', translation: s.translation ?? '' })
+  // `form` = the principal parts ("erreicht / erreichte / hat erreicht"), shown
+  // under the infinitive on flashcards so exposure primes the forms the fill-in
+  // will ask for. `aspect` is what makes a Ukrainian past tense specific.
+  const display = (s) => ({
+    word: s.word_form ?? s.word ?? '',
+    translation: s.translation ?? '',
+    form: s.form ?? null,
+    aspect: s.aspect ?? null,
+  })
   const out = []
   for (const pack of packSenses(selected)) {
     for (const chunk of balancedChunks(pack, blockSize)) {
@@ -353,8 +361,6 @@ export function nextExampleIndex(cursor, total) {
   return ((c % total) + total) % total
 }
 
-// Turn one example into a fill-in: blank the target word, return the answer.
-// Prefers the inflected `blank` surface form; falls back to a base-form regex.
 export function buildFillBlank(example, lemma) {
   if (!example || !example.target) return null
   const text = example.target
@@ -363,13 +369,16 @@ export function buildFillBlank(example, lemma) {
   // sentence of context, and translating only the target word leaves the rest of
   // it unreadable. Null when the example has none, so the UI can omit the line.
   const translation = example.translation ?? null
+  // The coarse tense the generator stored. `tenseHint` refines it into the
+  // specific form (Perfekt vs Präteritum) using the full sentence.
+  const tense = example.tense ?? null
   if (surface && text.includes(surface)) {
-    return { sentence: text.replace(surface, "____"), answer: surface, target: text, translation }
+    return { sentence: text.replace(surface, "____"), answer: surface, target: text, translation, tense }
   }
   if (lemma) {
     const re = new RegExp(`\\b${escapeReSrs(lemma)}\\b`, "i")
     const m = text.match(re)
-    if (m) return { sentence: text.replace(re, "____"), answer: m[0], target: text, translation }
+    if (m) return { sentence: text.replace(re, "____"), answer: m[0], target: text, translation, tense }
   }
   return null
 }

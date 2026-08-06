@@ -1,7 +1,7 @@
 // SRS v2 session runner (test harness on the srs-v2 branch).
 // Self-contained: loads word_senses, plans with planSessionV2, runs each step,
-// grades ONE outcome per sense, then calls completeSessionV2. Deliberately not
-// wired into the live session flow — this is for validating the v2 loop.
+// grades ONE outcome per sense, then calls completeSessionV2. Wired into the
+// live session flow at /session — this is the v2 loop in production.
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -12,7 +12,12 @@ import { reviewSentence } from '../lib/claude'
 import { planSessionV2, orderForPractice, sentenceOutcome, firstFillBlank, gradeFillIn } from '../lib/srs'
 import { startSession, completeSessionV2 } from '../lib/sessionEngine'
 import { displayTranslation } from '../lib/senseDisplay'
+import { tenseHint } from '../lib/tenseHint'
+import { attachStepContent, makeOptions, MIN_OPTIONS } from '../lib/stepContent'
 import { getNewToday, addNewToday, DEFAULT_NEW_PER_DAY } from '../lib/dailyNew'
+import {
+  snapshotKey, saveSnapshot, loadSnapshot, clearSnapshot, resumableSnapshot,
+} from '../lib/sessionSnapshot'
 
 // One session's worth of graded words. Also the ceiling on a manual pick from a
 // collection — a bigger collection means a second session, not a marathon.
@@ -37,24 +42,6 @@ function gradeTyped(input, answer) {
   if (targets.some((t) => lev(a, t) <= 1)) return 'almost'
   return 'wrong'
 }
-function shuffle(arr) {
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]] }
-  return a
-}
-// Build multiple-choice options: correct value + distractors drawn from the deck.
-function makeOptions(correct, pool, valueOf, excludeWordId, n = 3) {
-  const seen = new Set([norm(correct)])
-  const ds = []
-  for (const s of shuffle(pool)) {
-    if (s.word_id === excludeWordId) continue // skip the word itself AND its sibling senses
-    const v = valueOf(s)
-    if (!v || seen.has(norm(v))) continue
-    seen.add(norm(v)); ds.push(v)
-    if (ds.length >= n) break
-  }
-  return shuffle([correct, ...ds])
-}
 function speak(text, locale) {
   try {
     const u = new SpeechSynthesisUtterance(text)
@@ -70,36 +57,51 @@ const EX_LABEL = {
 }
 
 // ── One step ─────────────────────────────────────────────────────────────────
-function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onDone }) {
+function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLanguageName, speechLocale, onDone }) {
   const [revealed, setRevealed] = useState(false)
   const [input, setInput] = useState('')
   const [picked, setPicked] = useState(null)
   const [feedback, setFeedback] = useState(null) // { outcome, detail }
   const [busy, setBusy] = useState(false)
 
-  const cleanTr = displayTranslation(step.translation)
+  const cleanTr = displayTranslation(rawStep.translation)
 
-  // Rotate through the sense's examples (anti-memorization). Cursor persists
-  // per sense in localStorage; advances each time this card mounts.
+  // Both of these are resolved at planning time by attachStepContent and ride
+  // along inside the step — which is what makes a resumed card the SAME card
+  // rather than a freshly generated one. The live fallbacks below only fire for
+  // a snapshot written by a build that predates that, and are the old
+  // derive-at-mount behaviour verbatim.
   const fillBlank = useMemo(() => {
-    if (step.exercise !== 'fill_in' && step.exercise !== 'fill_blank') return null
-    const exs = step.examples || []
+    if (rawStep.exercise !== 'fill_in' && rawStep.exercise !== 'fill_blank') return null
+    if (rawStep.fillBlank !== undefined) return rawStep.fillBlank // planned — null means "no usable example"
+    const exs = rawStep.examples || []
     if (!exs.length) return null
-    const key = `wordy_ex_cursor_${step.senseId}`
+    const key = `wordy_ex_cursor_${rawStep.senseId}`
     let cursor = 0
     try { cursor = parseInt(localStorage.getItem(key) || '0', 10) || 0 } catch { /* no storage */ }
     try { localStorage.setItem(key, String(cursor + 1)) } catch { /* no storage */ }
-    return firstFillBlank(exs, step.word, cursor)
-  }, [step.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
+    return firstFillBlank(exs, rawStep.word, cursor)
+  }, [rawStep.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Compute the multiple-choice options ONCE per step (not every render), so they
-  // don't reshuffle when you answer — and so your picked wrong option stays in the
-  // list and can be highlighted red.
+  // Memoised so answering doesn't reshuffle the list — your picked wrong option
+  // has to stay put to be highlighted red.
   const options = useMemo(() => {
-    if (step.exercise === 'recognition') return makeOptions(cleanTr, pool, (s) => displayTranslation(s.translation), step.wordId)
-    if (step.exercise === 'word_choice') return makeOptions(step.word, pool, (s) => s.word_form, step.wordId)
+    if (Array.isArray(rawStep.options)) return rawStep.options
+    if (rawStep.exercise === 'recognition') return makeOptions(cleanTr, pool, (s) => displayTranslation(s.translation), rawStep.wordId)
+    if (rawStep.exercise === 'word_choice') return makeOptions(rawStep.word, pool, (s) => s.word_form, rawStep.wordId)
     return []
-  }, [step.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rawStep.senseId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The same invariant stepContent.js enforces where options are MADE, enforced
+  // again where they are USED. A one-option multiple choice fails silently — the
+  // learner taps the only button, it grades `correct`, and the SRS interval
+  // advances on what was never an answer — so it is worth refusing to render one
+  // no matter which path produced it. Everything downstream reads the effective
+  // step, so the card, its label and its grading all agree.
+  const step = (rawStep.exercise === 'recognition' || rawStep.exercise === 'word_choice')
+    && options.length < MIN_OPTIONS
+    ? { ...rawStep, exercise: 'active_recall' }
+    : rawStep
 
   // ----- ungraded scaffolds: flashcard / fill_blank -----
   if (!step.graded) {
@@ -109,6 +111,13 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
         {!isFill ? (
           <>
             <p className="text-3xl font-bold text-gray-900 text-center">{step.word}</p>
+            {/* The principal parts, where the word has them. The flashcard is
+                where the learner MEETS the word before the fill-in asks them to
+                produce its forms — so this is the cheapest possible priming.
+                Nouns and adjectives have no `form` and render nothing. */}
+            {step.form && (
+              <p className="text-sm text-gray-400 text-center mt-1.5">{step.form}</p>
+            )}
             {revealed && <p className="text-lg text-gray-600 text-center mt-2">{cleanTr}</p>}
           </>
         ) : (
@@ -173,6 +182,9 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
 
   // ----- graded: fill_in (type the word into its own example sentence) -----
   if (step.exercise === 'fill_in') {
+    // Which form the sentence actually wants. Null when it cannot be determined
+    // — then we show nothing rather than a guess.
+    const hint = fillBlank ? tenseHint(fillBlank, targetLang, uiLang, step) : null
     // No usable example → fall back to a plain translation→type prompt.
     const submit = () => {
       if (feedback) return
@@ -181,12 +193,23 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
         : (norm(input) === norm(step.word) ? 'correct' : 'wrong')
       setFeedback({ outcome })
     }
+    // step.word is already `word_form ?? word` from the display helper in srs.js,
+    // so it IS the sense's own form rather than a dictionary headword. step.form
+    // is the principal-parts string ("erreicht / erreichte / hat erreicht") and
+    // must never be offered as the single expected answer.
+    const expected = fillBlank?.answer ?? step.word
+    const showHint = hint && !feedback
     return (
       <Shell step={step}>
         <p className="text-sm text-gray-500 text-center mb-1">{cleanTr}</p>
         {fillBlank
-          ? <p className="text-lg text-gray-800 text-center mb-4 leading-relaxed">{fillBlank.sentence}</p>
+          ? <p className={`text-lg text-gray-800 text-center leading-relaxed ${showHint ? "mb-2" : "mb-4"}`}>{fillBlank.sentence}</p>
           : <p className="text-xs text-gray-400 text-center mb-4">Type the {targetLanguageName} word</p>}
+        {/* B2 — the required form, named specifically. Without it "Der Zug ____
+            pünktlich" accepts two tenses and the learner is guessing which. */}
+        {showHint && (
+          <p className="text-xs text-indigo-500 text-center mb-4">→ {hint}</p>
+        )}
         <input
           autoFocus value={input} disabled={!!feedback}
           onChange={(e) => setInput(e.target.value)}
@@ -202,10 +225,20 @@ function StepCard({ step, pool, ifaceLang, targetLanguageName, speechLocale, onD
               <p className="text-center mt-4 text-sm text-green-600">✓ Correct</p>
             )}
             {feedback.outcome === 'almost' && (
-              <p className="text-center mt-4 text-sm text-amber-600">≈ Almost — you were on the right path · <strong>{fillBlank?.answer ?? step.word}</strong></p>
+              <p className="text-center mt-4 text-sm text-amber-600">≈ Almost — you were on the right path · <strong>{expected}</strong></p>
             )}
             {feedback.outcome === 'wrong' && (
-              <p className="text-center mt-4 text-sm text-rose-400">The word was <strong>{fillBlank?.answer ?? step.word}</strong></p>
+              <p className="text-center mt-4 text-sm text-rose-400">The word was <strong>{expected}</strong></p>
+            )}
+            {/* B3 — the full sentence makes the required form self-explanatory:
+                a plural subject or a past-time clause is visible, not asserted. */}
+            {feedback.outcome !== 'correct' && fillBlank && (
+              <p className="text-center mt-2 text-sm text-gray-700">{fillBlank.target}</p>
+            )}
+            {/* B1 — grading a sentence you have never seen the meaning of is
+                guesswork; the word gloss alone leaves most of it unread. */}
+            {fillBlank?.translation && (
+              <p className="text-center mt-2 text-sm text-gray-500 italic">{fillBlank.translation}</p>
             )}
             <NextBtn outcome={feedback.outcome} onClick={() => onDone(feedback.outcome)} />
           </>
@@ -324,6 +357,11 @@ export default function SessionV2() {
   const collectionId   = searchParams.get('collectionId')
   const collectionName = searchParams.get('collectionName') ?? ''
 
+  // One snapshot per user + language. `null` until we have a user, which is also
+  // the guard that keeps every snapshot call below a no-op before login.
+  const snapKey = user ? snapshotKey(user.id, targetLang) : null
+  const store = typeof window !== 'undefined' ? window.localStorage : null
+
   const [phase, setPhase] = useState('loading') // loading | choosing | running | saving | done | empty | error
   const [collectionSenses, setCollectionSenses] = useState([]) // for the chooser
   const [picked, setPicked] = useState(() => new Set())        // manual pick, capped at GRADED_CAP
@@ -347,11 +385,16 @@ export default function SessionV2() {
     let senses = (data ?? []).filter((s) => s.translation?.trim() && s.word_form?.trim())
 
     if (collectionId) {
-      const { data: members } = await supabase
+      // This error must surface. Swallowing it yields an empty `senses` with no
+      // error field, which slips past the resume path's error guard and reaches
+      // 'running' with an empty distractor pool — the exact state that guard
+      // exists to prevent.
+      const { data: members, error: memberError } = await supabase
         .from('word_collections')
         .select('word_id')
         .eq('user_id', user.id)
         .eq('collection_id', collectionId)
+      if (memberError) { console.error('[v2] collection load error:', memberError.message); return { error: memberError } }
       const wordIds = new Set((members ?? []).map((m) => m.word_id))
       senses = senses.filter((s) => wordIds.has(s.word_id))
     }
@@ -367,6 +410,11 @@ export default function SessionV2() {
   async function fetchDuePlan(onlySenseIds = null) {
     const { error, senses: all } = await fetchSenses()
     if (error) return { error }
+    // Plan only what was picked — but draw distractors from the WHOLE deck.
+    // Handing back the narrowed list as the pool meant a one-word manual pick
+    // produced a one-option multiple choice (the pool's only entry is the word
+    // itself, which makeOptions excludes). Words outside the pick are perfectly
+    // good distractors; they are simply not being tested.
     const senses = onlySenseIds ? all.filter((s) => onlySenseIds.includes(s.id)) : all
     const todayISO = new Date().toISOString().split('T')[0]
     const plan = planSessionV2(senses, {
@@ -382,13 +430,46 @@ export default function SessionV2() {
       // but a correct answer on them writes nothing (see applyVerdict).
       practiceAll: !!collectionId,
     })
-    return { senses, plan }
+    return { senses: all, plan }
   }
 
   // Shared by the initial mount and "Keep going": re-query, re-plan, start a
   // fresh session row, and drop the runner into 'running'. `isCancelled` guards
   // against setting state after the owning effect has been cleaned up.
-  async function loadAndPlan(isCancelled, onlySenseIds = null) {
+  //
+  // `allowResume` is false for "Keep going", which must always plan fresh —
+  // the session it would resume is the one that just finished.
+  async function loadAndPlan(isCancelled, onlySenseIds = null, allowResume = false) {
+    const todayISO = new Date().toISOString().split('T')[0]
+
+    if (allowResume && snapKey && store) {
+      const saved = resumableSnapshot(loadSnapshot(store, snapKey), {
+        today: todayISO, collectionId,
+      })
+      if (saved) {
+        // `pool` feeds the multiple-choice distractors, so it must be present
+        // BEFORE the first card renders — `options` memoises on senseId and
+        // would otherwise be stuck at a single option for that card's lifetime.
+        // A failed fetch must NOT fall through to 'running': an empty pool makes
+        // makeOptions return the correct answer alone, which the learner taps and
+        // which then advances the SRS on a non-answer.
+        const { error: resumeError, senses } = await fetchSenses()
+        if (isCancelled?.()) return
+        if (resumeError) { setPhase('error'); return }
+        // Heal a snapshot written before per-step content was planned: resolve
+        // it once here and write it back, so the rest of that session resumes
+        // identically. Idempotent, so a snapshot that already has its content
+        // passes through untouched — this must never re-roll a live session.
+        const resumedSteps = attachStepContent(saved.steps, senses ?? [], store)
+        countedRef.current = !!saved.counted
+        setPool(senses ?? [])
+        setSteps(resumedSteps); setIdx(saved.idx); setOutcomes(saved.outcomes ?? {})
+        setSessionId(saved.sessionId); setPhase('running')
+        saveSnapshot(store, snapKey, { ...saved, steps: resumedSteps })
+        return
+      }
+    }
+
     const { error, senses, plan } = await fetchDuePlan(onlySenseIds)
     if (isCancelled?.()) return
     if (error) { setPhase('error'); return }
@@ -396,13 +477,30 @@ export default function SessionV2() {
     const gradedCount = new Set(plan.filter((s) => s.graded).map((s) => s.senseId)).size
     const id = await startSession(user.id, 'v2', gradedCount)
     if (isCancelled?.()) return
+    // Resolve the distractors and the example sentences NOW, so they are part of
+    // the steps the snapshot persists. Deriving them in the card instead meant a
+    // resumed session re-rolled both and handed back a different question.
+    const plannedSteps = attachStepContent(plan, senses, store)
     countedRef.current = false
-    setPool(senses); setSteps(plan); setSessionId(id); setPhase('running')
+    setPool(senses); setSteps(plannedSteps); setSessionId(id); setPhase('running')
+    if (snapKey && store) {
+      saveSnapshot(store, snapKey, {
+        date: todayISO, sessionId: id, collectionId, steps: plannedSteps, idx: 0, outcomes: {},
+      })
+    }
   }
 
   // A collection bigger than one session means something gets left out — so the
   // learner picks what. A collection that fits is just practised, no questions.
   async function loadCollectionOrChoose(isCancelled) {
+    // A resumable session already has its steps chosen — do not re-ask.
+    const todayISO = new Date().toISOString().split('T')[0]
+    if (snapKey && store) {
+      const saved = resumableSnapshot(loadSnapshot(store, snapKey), {
+        today: todayISO, collectionId,
+      })
+      if (saved) { loadAndPlan(isCancelled, null, true); return }
+    }
     const { error, senses } = await fetchSenses()
     if (isCancelled?.()) return
     if (error) { setPhase('error'); return }
@@ -419,7 +517,7 @@ export default function SessionV2() {
     let cancelled = false
     setPhase('loading'); setIdx(0); setOutcomes({}); setSummary([]); setRemainingDue(0)
     if (collectionId) loadCollectionOrChoose(() => cancelled)
-    else loadAndPlan(() => cancelled)
+    else loadAndPlan(() => cancelled, null, true)
     return () => { cancelled = true }
   }, [user, targetLang, collectionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -434,7 +532,18 @@ export default function SessionV2() {
     const step = steps[idx]
     const nextOutcomes = step.graded && outcome ? { ...outcomes, [step.senseId]: outcome } : outcomes
     if (step.graded && outcome) setOutcomes(nextOutcomes)
-    if (idx + 1 < steps.length) { setIdx(idx + 1); return }
+    if (idx + 1 < steps.length) {
+      // Persist BEFORE advancing the screen: if the tab is evicted the instant
+      // the next card renders, the snapshot must already name that card.
+      if (snapKey && store) {
+        saveSnapshot(store, snapKey, {
+          date: new Date().toISOString().split('T')[0],
+          sessionId, collectionId, steps, idx: idx + 1, outcomes: nextOutcomes,
+        })
+      }
+      setIdx(idx + 1)
+      return
+    }
 
     setPhase('saving')
     const todayISO = new Date().toISOString().split('T')[0]
@@ -449,7 +558,17 @@ export default function SessionV2() {
       countedRef.current = true
       const newGraded = steps.filter((s) => s.graded && s.newIntake).length
       if (newGraded > 0) addNewToday(todayISO, newGraded)
+      // Persist the counted flag so a later resume of this (already-committed)
+      // snapshot cannot cause addNewToday to fire a second time.
+      if (snapKey && store) {
+        saveSnapshot(store, snapKey, {
+          date: todayISO, sessionId, collectionId, steps, idx, outcomes: nextOutcomes, counted: true,
+        })
+      }
     }
+    // The session is committed — the snapshot has done its job. "Keep going"
+    // must plan a genuinely fresh session, not resurrect this one.
+    if (snapKey && store) clearSnapshot(store, snapKey)
     const { data } = await supabase
       .from('word_senses')
       .select('id, word_form, translation, interval_step, learning_stage, next_review_date')
@@ -469,8 +588,16 @@ export default function SessionV2() {
   }
 
   const wrap = (inner) => (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col items-center justify-center px-4 py-10">
-      <style>{`.btn-primary{width:100%;padding:.75rem;border-radius:.75rem;background:#4f46e5;color:#fff;font-weight:600;font-size:.875rem}.btn-primary:hover{background:#4338ca}.btn-secondary{width:100%;padding:.75rem;border-radius:.75rem;background:#eef2ff;color:#4338ca;font-weight:600;font-size:.875rem}.btn-secondary:hover{background:#e0e7ff}`}</style>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-yellow-50 flex flex-col items-center justify-center px-4 py-10">
+      {/* The session's buttons are styled here rather than through utility
+          classes, and they were written as literal Tailwind-indigo hexes — so
+          the Willow & Paper rebrand, which repoints the indigo-* SCALE to Verba
+          green, never reached them. The whole exercise screen stayed pre-rebrand
+          blue. Read the tokens instead of restating their values, so the next
+          palette change carries here for free. Hex fallbacks only matter if the
+          theme block fails to load, in which case they keep the buttons legible
+          rather than transparent. */}
+      <style>{`.btn-primary{width:100%;padding:.75rem;border-radius:.75rem;background:var(--color-indigo-600,#2F6B4E);color:#fff;font-weight:600;font-size:.875rem}.btn-primary:hover{background:var(--color-indigo-700,#275C42)}.btn-secondary{width:100%;padding:.75rem;border-radius:.75rem;background:var(--color-indigo-50,#E9F1EB);color:var(--color-indigo-700,#275C42);font-weight:600;font-size:.875rem}.btn-secondary:hover{background:var(--color-indigo-100,#D6E7DC)}`}</style>
       {inner}
     </div>
   )
@@ -614,6 +741,8 @@ export default function SessionV2() {
         step={step}
         pool={pool}
         ifaceLang={ifaceLang}
+        uiLang={lang}
+        targetLang={targetLang}
         targetLanguageName={targetLanguageName}
         speechLocale={speechLocale}
         onDone={handleDone}

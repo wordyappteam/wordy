@@ -67,11 +67,17 @@ Three fixes, all using data that already exists. No generation change.
 
 The scaffold fill-blank card shows the sentence translation on reveal (`SessionV2.jsx:121`), but the **graded** fill-in path (`:176+`) does not — so you grade a sentence like *"Wir ____ Berlin um 18 Uhr"* having seen only the word gloss *"to reach; to arrive at"*, never the sentence's meaning. `buildFillBlank` already threads `translation` (`srs.js:353`); the graded card just has to render it, on reveal/feedback, in the interface language.
 
-### B2 — Show the required tense
+### B2 — Name the *specific* required form (per language)
 
-*"Der Zug ____ pünktlich"* accepts both `erreicht` (present) and `erreichte` (past); with no time marker the learner is guessing which tense is wanted, and a correct guess of the *other* valid tense is scored as a slip. The example already carries `tense` (`present | past | null`), but `buildFillBlank` drops it. Fix: thread `tense` through the returned object, and render a small hint on the card — the same idea the word-bank "Fill the sentences" exercise already shows (*"→ Präteritum…"*). Use the existing `tenseLabel(tense, lang)` localisation. When `tense` is `null` (the example never specified one), show no hint — do not invent one.
+*"Der Zug ____ pünktlich"* accepts both `erreicht` (present) and `erreichte` (past); with no time marker the learner is guessing which tense is wanted, and a correct guess of the *other* valid tense is scored as a slip. So the card must show the required tense — but **"past" is too coarse.** In German a past blank is ambiguous between **Perfekt** (`habe erreicht`) and **Präteritum** (`erreichte`) — two different forms the learner has to *produce* — so a hint of "past" still doesn't pin the answer, defeating the point.
 
-> Note for the DTZ pack: this is the UI half of the tense-ambiguity problem. The generation half — every fill-in example must set `tense`, and its sentence should license only that tense — is a rule for the pack build spec, not here.
+The stored `tense` is only `present | past | null`, so the specific tense is **inferred from the sentence** at display time (decided 2026-07-27):
+- **German:** an auxiliary (`haben`/`sein`) + Partizip II → **Perfekt**; a single finite past verb → **Präteritum**; otherwise **Präsens**.
+- **This is not German-only.** Per the standing cross-language rule ([[cross-language-distinctions]]), the same "name the specific form" treatment applies to **English** (simple past vs present perfect) and **Ukrainian** (aspect-marked past), each with its own distinctions. The inference and its labels must be defined for de AND en AND uk, not added for German and back-filled later.
+
+A new pure helper — `tenseHint(example, targetLang, ifaceLang)` — returns the localised specific label, or `null` when the form can't be determined (then show no hint, never invent one). It is rendered as the small card hint the word-bank "Fill the sentences" exercise already uses (*"→ Präteritum…"*).
+
+> Note for the DTZ pack: the generation half — every fill-in example carrying a specific tense, its sentence licensing only that form — is a rule for the pack build spec. Here we infer it from the sentence so words already in the dictionary benefit immediately, without regeneration.
 
 ### B3 — Feedback names the form that was wanted
 
@@ -81,6 +87,10 @@ The feedback already shows `fillBlank.answer` — the expected **inflected** for
 - On reveal, show the **full correct sentence** (`fillBlank.target`) alongside the answer, so *why* the form is what it is (a plural subject, a past-time clause) is visible in context. This turns *"The word was gehören"* into the sentence that makes `gehören` obviously right.
 
 The grader itself (`gradeFillIn`) is **unchanged** — we are not loosening it to accept multiple forms. Showing the required tense removes the *unfair* misses (valid alternate tense) while keeping genuine ones catchable (`gehört` for a plural subject is still wrong, and now the shown sentence explains why).
+
+### B4 — Flashcards show the principal parts under the infinitive
+
+The flashcard is where the learner *meets* a word before having to produce its forms in the fill-in — so it should show them. The verb `form` field already holds the principal parts (German `erreicht / erreichte / hat erreicht`; English `goes / went / gone`; Ukrainian aspect forms), and the card currently shows only the infinitive. Render `form` in a **smaller font directly under the headword**, so exposure primes the exact forms B2/B3 will ask for. Applies to every target language that has a `form`; an empty/`null` `form` (most nouns, adjectives) renders nothing — the same "silent when empty" rule the sense card already follows.
 
 ---
 
@@ -92,5 +102,7 @@ Dictionary/identify findings from the same testing — reflexive/phrasal lemma t
 
 - **Snapshot logic** (`saveSnapshot` / `loadSnapshot` / `resumableSnapshot`): pure, unit-tested against a fake store — round-trip, today-vs-stale-date, collection match/mismatch, `idx` out of range, corrupt value → null.
 - **`buildFillBlank`**: a new test that `tense` is threaded through (present, past, and null → omitted).
-- **The card and resume UX** are presentational / integration — verified by click-through: leave mid-session and return (desktop route change *and* an iPad tab-switch), confirm the same card and position; a fill-in card shows gloss + tense hint + sentence translation, and on a wrong answer shows the expected form in its full sentence.
+- **`tenseHint`** (pure, unit-tested per language): German — aux+Partizip II → Perfekt, single finite past verb → Präteritum, plain → Präsens; English — simple past vs present perfect; Ukrainian — aspect-marked past; undeterminable → `null` (no hint). Each label localised.
+- **B4 flashcard forms** (presentational): a verb with a `form` renders the principal parts under the infinitive; a noun/adjective with empty `form` renders nothing.
+- **The card and resume UX** are presentational / integration — verified by click-through: leave mid-session and return (desktop route change *and* an iPad tab-switch), confirm the same card and position; a fill-in card shows gloss + specific-tense hint + sentence translation, and on a wrong answer shows the expected form in its full sentence; a flashcard shows the principal parts under the infinitive.
 - The existing 113 tests stay green.

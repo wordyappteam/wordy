@@ -580,3 +580,42 @@ test('manualStagePatch: new is due today', () => {
 test('manualStagePatch: mastered is the max step', () => {
   assert.equal(manualStagePatch('mastered', '2026-07-27').interval_step, 8)
 })
+
+test("buildFillBlank carries the example's tense through", () => {
+  const ex = { target: "Der Zug erreichte den Bahnhof.", blank: "erreichte", translation: "The train reached the station.", tense: "past" }
+  assert.equal(buildFillBlank(ex, "erreichen").tense, "past")
+})
+
+test("buildFillBlank carries tense on the lemma-match path too", () => {
+  // No `blank` — the regex fallback path must not drop the field.
+  const ex = { target: "Wir erreichen Berlin.", translation: "We reach Berlin.", tense: "present" }
+  assert.equal(buildFillBlank(ex, "erreichen").tense, "present")
+})
+
+test("buildFillBlank yields a null tense when the example has none", () => {
+  const ex = { target: "Wir erreichen Berlin.", blank: "erreichen" }
+  assert.equal(buildFillBlank(ex, "erreichen").tense, null)
+})
+
+test("planned steps carry the sense's principal parts and aspect", () => {
+  const senses = [{
+    id: "s1", word_id: "w1", word_form: "erreichen", translation: "to reach",
+    pos: "verb", form: "erreicht / erreichte / hat erreicht", aspect: null,
+    interval_step: 0, learning_stage: "new", next_review_date: "2026-07-28",
+    examples: [],
+  }]
+  const plan = planSessionV2(senses, { today: "2026-07-28", newPerDay: 7, newToday: 0 })
+  assert.ok(plan.length > 0)
+  assert.equal(plan[0].form, "erreicht / erreichte / hat erreicht")
+  assert.equal(plan[0].aspect, null)
+})
+
+test("a sense with no form yields a null form on its steps", () => {
+  const senses = [{
+    id: "s2", word_id: "w2", word_form: "das Haus", translation: "house",
+    pos: "noun", interval_step: 0, learning_stage: "new",
+    next_review_date: "2026-07-28", examples: [],
+  }]
+  const plan = planSessionV2(senses, { today: "2026-07-28", newPerDay: 7, newToday: 0 })
+  assert.equal(plan[0].form, null)
+})
