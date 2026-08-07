@@ -2493,6 +2493,42 @@ export default function Dictionary() {
     exitSelection()
   }
 
+  // Download the whole dictionary as JSON. Exists so the dictionary can be
+  // AUDITED — duplicate senses, overstuffed translations and missing meanings
+  // are only visible across the whole set, and there was previously no way to
+  // see it except one word at a time in the UI. Also a plain backup.
+  const [exporting, setExporting] = useState(false)
+  async function handleExport() {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const [w, s] = await Promise.all([
+        supabase.from('words').select('*').eq('user_id', user.id).eq('target_language', targetLang),
+        supabase.from('word_senses').select('*').eq('user_id', user.id).eq('target_language', targetLang),
+      ])
+      if (w.error || s.error) { alert(`Export failed: ${(w.error || s.error).message}`); return }
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        targetLanguage: targetLang,
+        words: w.data ?? [],
+        senses: s.data ?? [],
+      }
+      const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `verba-dictionary-${targetLang}-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      // Revoking immediately can cancel the download in some browsers.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+    } catch (e) {
+      alert(`Export failed: ${e?.message ?? e}`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   async function handleBulkImport(entries) {
     if (!user) return
     const rows = entries.map(e => ({
@@ -2529,6 +2565,13 @@ export default function Dictionary() {
               className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
             >
               {t('dict.importList')}
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+            >
+              {exporting ? (lang === 'uk' ? 'Експортую…' : 'Exporting…') : (lang === 'uk' ? 'Експорт' : 'Export')}
             </button>
             <button
               onClick={() => setShowBulkIdentify(true)}
