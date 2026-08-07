@@ -190,7 +190,7 @@ Otherwise return ONLY this JSON:
       "aspect": "imperfective or perfective for verbs, otherwise null",
       "gender": "m, f or n for nouns, otherwise null",` : ''}
       "wordForm": "${wordFormNote}",
-      "translation": "THIS sense's meaning in ${ifaceLang}, as ONE primary gloss — the single best word or short phrase, under 4 words. This is the sense's identity: it is what the sense picker shows, what a multiple-choice option offers and what a typed answer is graded against, so it must be short enough to read at a glance and specific enough to name THIS sense and no other. A second gloss may follow after a comma ONLY if it is a true synonym that adds clarity; never a third. Never a pile of near-synonyms (WRONG: 'панувати, правити; бути правителем' — that names no single thing). Never a definition; the definition is \"explanation\". If two senses of this word would get the same primary gloss, you have split them wrongly — see the SEPARATION TEST.",
+      "translation": "THIS sense's meaning in ${ifaceLang}, as ONE primary gloss — the single best word or short phrase, under 4 words. This is the sense's identity: it is what the sense picker shows, what a multiple-choice option offers and what a typed answer is graded against, so it must be short enough to read at a glance and specific enough to name THIS sense and no other. A second gloss may follow after a comma ONLY if it is a true synonym that adds clarity; never a third. Never a pile of near-synonyms (WRONG: 'панувати, правити; бути правителем' — that names no single thing). Never a definition; the definition is "explanation". If two senses of this word would get the same primary gloss, you have split them wrongly — see the SEPARATION TEST.",
       "form": "${formNote}",
       "grammarNote": "how to BUILD with THIS word — or null. Telegraphic: under 12 words, no sentences, parts separated by ' · '. The test is whether the fact is specific to this word. NULL if it is true of the whole word class (every masculine noun takes den in the accusative; most verbs take haben) or already visible on the card (the article is in the headword, the plural is in \\"form\\", irregularity is in the conjugation table). WORTH SAYING, and belongs HERE rather than in usageNote: a governed preposition and its case — ALWAYS include this when the verb has one, it is the single most useful thing you can say (bestehen aus + Dativ · sich freuen auf + Akk · warten auf + Akk); an object case that is not the default; a separable prefix; auxiliary sein; an obligatory reflexive; uncountable or plural-only. NEVER write the word haben: haben is the default auxiliary and saying so is noise — mention an auxiliary ONLY when it is sein. Write it in ${ifaceLang}${isUkrainianIface ? ' — Ukrainian, NEVER Russian' : ''}, but keep German grammatical terms and forms in German (Akkusativ, Dativ, auf + Dat.)",
       "explanation": "WRITTEN IN ${ifaceLang.toUpperCase()} — every word of it. Not in ${targetLanguage}, not in English${isUkrainianIface ? ', and never in Russian' : ''}. A definition, and nothing else: say what the word MEANS, precisely, for an A2-B1 learner. No usage advice here (that is usageNote). Define it with words SIMPLER than the headword — never explain a word using harder words. Under 40 words.",
@@ -673,4 +673,77 @@ Return JSON exactly:
     maxTokens: 2048,
   })
   return parseSentenceSet(text)
+}
+
+// ── Re-glossing an existing dictionary ──────────────────────────────────────
+// Rewrite the `translation` of senses that are already in the dictionary, so
+// each one reads as a single clear gloss rather than a pile of synonyms.
+//
+// This exists because the identify prompt used to say only "concise translation"
+// with no cap, and because a dictionary built while the interface was English
+// keeps its English glosses forever. Both leave senses the learner cannot tell
+// apart — which is the whole point of a sense.
+//
+// It rewrites TEXT ONLY. It never adds, removes, merges or re-splits senses:
+// the SRS history (interval_step, next_review_date, lapses) hangs off sense IDs,
+// so re-identifying a word the learner has been studying would silently discard
+// everything they have learned on it. Sense ids go in and the same sense ids
+// come out — the caller updates `translation` in place.
+//
+// `entries` is [{ word, pos, senses: [{ id, translation, explanation }] }].
+// All senses of a word MUST be passed together: making two senses distinct is
+// impossible without seeing both.
+//
+// Returns { [senseId]: newGloss }. A sense the model omits or returns unchanged
+// is simply left alone.
+export async function reglossSenses(entries, interfaceLanguage = 'English', targetLanguage = 'German') {
+  if (!entries?.length) return {}
+  const lang = langWithScript(interfaceLanguage)
+  const system = `You rewrite dictionary glosses for a ${targetLanguage} learner whose interface language is ${lang}.
+
+For each sense you are given, return ONE primary gloss in ${lang}.
+
+RULES
+- Under 4 words. It is the sense's identity — it is shown in the sense picker, offered as a multiple-choice option, and graded against a typed answer.
+- A second gloss may follow after a comma ONLY if it is a true synonym that adds clarity. Never a third. Never a definition.
+- WRONG: "панувати, правити; бути правителем" — a pile of near-synonyms names no single thing.
+- RIGHT: "панувати" · "переважати" · "to pass (an exam)" · "to consist of"
+- Where a word has several senses, their glosses MUST be mutually distinguishable. No two senses of the same word may share a primary gloss. If they currently do, give each the meaning it truly names.
+- Write in ${lang} and nothing else, even where the current gloss is in another language.
+- Preserve the MEANING of the existing sense exactly. You are renaming it, not redefining it. Use the explanation to work out which meaning it is.
+
+Return ONLY a JSON object mapping sense id to the new gloss:
+{ "<sense-id>": "<gloss>", ... }
+No prose, no code fences.`
+
+  const payload = entries.map((e) => ({
+    word: e.word,
+    pos: e.pos,
+    senses: (e.senses ?? []).map((s) => ({
+      id: s.id,
+      current: s.translation ?? '',
+      explanation: (s.explanation ?? '').slice(0, 200),
+    })),
+  }))
+
+  const text = await callClaude({
+    system,
+    messages: [{ role: 'user', content: JSON.stringify(payload, null, 1) }],
+    model: 'claude-haiku-4-5',
+    maxTokens: 2048,
+  })
+  const clean = text.replace(/```json|```/g, '').trim()
+  const m = clean.match(/\{[\s\S]*\}/)
+  if (!m) throw new Error('No JSON object in regloss response')
+  const raw = JSON.parse(m[0])
+  // Keep only ids we asked about, and only non-empty strings — a hallucinated
+  // id must never reach an UPDATE.
+  const asked = new Set(entries.flatMap((e) => (e.senses ?? []).map((s) => s.id)))
+  const out = {}
+  for (const [id, gloss] of Object.entries(raw)) {
+    if (!asked.has(id)) continue
+    const g = String(gloss ?? '').trim()
+    if (g) out[id] = g
+  }
+  return out
 }
