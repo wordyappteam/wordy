@@ -2147,7 +2147,7 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
 // UPDATEs rows in a dictionary someone has been studying from for a month. Sense
 // ids are untouched, so interval_step / next_review_date / lapses all survive —
 // the reason this is a re-gloss and not a re-identify.
-function ReglossModal({ onClose, userId, targetLang, targetLanguageName, interfaceLanguage, lang, onApplied }) {
+function ReglossModal({ onClose, userId, targetLang, targetLanguageName, lang, onApplied }) {
   const [phase, setPhase] = useState("idle") // idle | scanning | review | applying | done | error
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [rows, setRows] = useState([])
@@ -2206,7 +2206,7 @@ function ReglossModal({ onClose, userId, targetLang, targetLanguageName, interfa
         const chunk = entries.slice(i, i + BATCH)
         let map = {}
         // One bad batch must not lose the ones that already succeeded.
-        try { map = await reglossSenses(chunk, interfaceLanguage, targetLanguageName) } catch { map = {} }
+        try { map = await reglossSenses(chunk, targetLanguageName) } catch { map = {} }
         for (const e of chunk) for (const x of e.senses) {
           const got = map[x.id]
           if (!got) continue
@@ -3077,7 +3077,6 @@ export default function Dictionary() {
           userId={user.id}
           targetLang={targetLang}
           targetLanguageName={targetLanguageName}
-          interfaceLanguage={interfaceLanguage}
           lang={lang}
           onApplied={fetchWords}
         />
@@ -3094,7 +3093,6 @@ export default function Dictionary() {
           words={words}
           onClose={() => { setShowBulkIdentify(false); fetchWords() }}
           onWordIdentified={handleUpdate}
-          interfaceLanguage={interfaceLanguage}
           targetLanguageName={targetLanguageName}
           topics={topics}
         />

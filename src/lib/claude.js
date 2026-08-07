@@ -690,43 +690,38 @@ Return JSON exactly:
 // everything they have learned on it. Sense ids go in and the same sense ids
 // come out — the caller updates `translation` in place.
 //
+// Each sense keeps the language it is already written in — the dictionary holds
+// both English and Ukrainian entries by design, and which one a given entry uses
+// is not this function's business.
+//
 // `entries` is [{ word, pos, senses: [{ id, translation, explanation }] }].
 // All senses of a word MUST be passed together: making two senses distinct is
 // impossible without seeing both.
 //
 // Returns { [senseId]: newGloss }. A sense the model omits or returns unchanged
 // is simply left alone.
-export async function reglossSenses(entries, interfaceLanguage = 'English', targetLanguage = 'German') {
+export async function reglossSenses(entries, targetLanguage = 'German') {
   if (!entries?.length) return {}
-  const lang = langWithScript(interfaceLanguage)
-  const isUk = interfaceLanguage === 'Ukrainian'
-  // The examples MUST be in the output language. An earlier version listed
-  // Ukrainian and English samples side by side; with most existing glosses also
-  // in English, the model followed the examples rather than the language rule
-  // and rewrote a Ukrainian dictionary into English.
-  const rightExamples = isUk
-    ? '"панувати" · "переважати" · "скласти (іспит)" · "складатися з"'
-    : '"to rule" · "to prevail" · "to pass (an exam)" · "to consist of"'
-  const wrongExample = isUk
-    ? '"панувати, правити; бути правителем" — a pile of near-synonyms names no single thing'
-    : '"to rule, to govern; to be a ruler" — a pile of near-synonyms names no single thing'
-  const system = `You rewrite dictionary glosses for a ${targetLanguage} learner whose interface language is ${lang}.
+  const system = `You rewrite dictionary glosses for a ${targetLanguage} learner.
 
-THE OUTPUT LANGUAGE IS ${lang.toUpperCase()}. Every gloss you return must be written in ${lang}, with no exceptions.
-Many of the current glosses are in the WRONG language — that is one of the things you are fixing. Never copy the language of the current gloss; translate it into ${lang}.
+LANGUAGE — read this first.
+Write each sense in the SAME LANGUAGE as that sense's current gloss. NEVER translate between languages.
+- Current gloss in Ukrainian → return Ukrainian (Cyrillic).
+- Current gloss in English → return English.
+This dictionary deliberately contains both, and which language a given entry uses is not yours to change. You are making each sense CLEARER, not changing what language it is in. The same applies to the explanation: keep each one in the language it is already written in.
 
-For each sense you are given, return ONE primary gloss in ${lang}.
+For each sense you are given, return ONE primary gloss.
 
 RULES
 - Under 4 words. It is the sense's identity — it is shown in the sense picker, offered as a multiple-choice option, and graded against a typed answer.
 - A second gloss may follow after a comma ONLY if it is a true synonym that adds clarity. Never a third. Never a definition.
-- WRONG: ${wrongExample}.
-- RIGHT: ${rightExamples}
+- WRONG: "панувати, правити; бути правителем" and "to rule, to govern; to be a ruler" — a pile of near-synonyms names no single thing.
+- RIGHT: "панувати" · "переважати" · "to pass (an exam)" · "to consist of" — each names ONE meaning. Match the language of the sense you are given, not of these samples.
 - Where a word has several senses, their glosses MUST be mutually distinguishable. NO GLOSS MAY APPEAR IN TWO SENSES OF THE SAME WORD — not as the primary, not as the second. "belong to, be owned by" alongside "be part of, belong to" is WRONG: "belong to" appears twice. Drop the repeat and let each sense name what only it means.
 - Divide and define meanings the way a good monolingual dictionary does — Duden or DWDS for German. Their numbered senses are the target. Do not invent finer distinctions than a lexicographer would, and do not blur two that they keep apart.
 - Preserve the MEANING of the existing sense exactly. You are renaming it and translating it, not redefining it. Use the explanation to work out which meaning it is.
 
-ALSO REWRITE THE EXPLANATION of each sense, in ${lang}, under 35 words.
+ALSO REWRITE THE EXPLANATION of each sense, in that same sense's own language, under 35 words.
 - It must define THIS sense and no other. The commonest fault in this dictionary is an explanation that defines one sense and then adds "also used to mean <the other sense>" — that single clause is what makes two senses feel identical however well their glosses are separated. Remove it.
 - A definition only. No usage advice, no grammar, no examples.
 - Define with words SIMPLER than the headword.
