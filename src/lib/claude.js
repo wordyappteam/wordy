@@ -722,11 +722,17 @@ RULES
 - A second gloss may follow after a comma ONLY if it is a true synonym that adds clarity. Never a third. Never a definition.
 - WRONG: ${wrongExample}.
 - RIGHT: ${rightExamples}
-- Where a word has several senses, their glosses MUST be mutually distinguishable. No two senses of the same word may share a primary gloss. If they currently do, give each the meaning it truly names.
+- Where a word has several senses, their glosses MUST be mutually distinguishable. NO GLOSS MAY APPEAR IN TWO SENSES OF THE SAME WORD — not as the primary, not as the second. "belong to, be owned by" alongside "be part of, belong to" is WRONG: "belong to" appears twice. Drop the repeat and let each sense name what only it means.
+- Divide and define meanings the way a good monolingual dictionary does — Duden or DWDS for German. Their numbered senses are the target. Do not invent finer distinctions than a lexicographer would, and do not blur two that they keep apart.
 - Preserve the MEANING of the existing sense exactly. You are renaming it and translating it, not redefining it. Use the explanation to work out which meaning it is.
 
-Return ONLY a JSON object mapping sense id to the new gloss:
-{ "<sense-id>": "<gloss>", ... }
+ALSO REWRITE THE EXPLANATION of each sense, in ${lang}, under 35 words.
+- It must define THIS sense and no other. The commonest fault in this dictionary is an explanation that defines one sense and then adds "also used to mean <the other sense>" — that single clause is what makes two senses feel identical however well their glosses are separated. Remove it.
+- A definition only. No usage advice, no grammar, no examples.
+- Define with words SIMPLER than the headword.
+
+Return ONLY a JSON object mapping sense id to its new gloss and explanation:
+{ "<sense-id>": { "translation": "<gloss>", "explanation": "<definition>" }, ... }
 No prose, no code fences.`
 
   const payload = entries.map((e) => ({
@@ -753,10 +759,13 @@ No prose, no code fences.`
   // id must never reach an UPDATE.
   const asked = new Set(entries.flatMap((e) => (e.senses ?? []).map((s) => s.id)))
   const out = {}
-  for (const [id, gloss] of Object.entries(raw)) {
+  for (const [id, v] of Object.entries(raw)) {
     if (!asked.has(id)) continue
-    const g = String(gloss ?? '').trim()
-    if (g) out[id] = g
+    // Tolerate the older bare-string shape as well as the object one.
+    const gloss = String((typeof v === 'string' ? v : v?.translation) ?? '').trim()
+    const expl = String((typeof v === 'string' ? '' : v?.explanation) ?? '').trim()
+    if (!gloss) continue
+    out[id] = { translation: gloss, explanation: expl || null }
   }
   return out
 }

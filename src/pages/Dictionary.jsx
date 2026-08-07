@@ -2170,8 +2170,10 @@ function ReglossModal({ onClose, userId, targetLang, targetLanguageName, interfa
       let n = 0
       for (const x of senses) {
         if (!x?.id || typeof x.translation !== "string") continue
+        const patch = { translation: x.translation }
+        if (typeof x.explanation === "string") patch.explanation = x.explanation
         const { error: upErr } = await supabase.from("word_senses")
-          .update({ translation: x.translation })
+          .update(patch)
           .eq("id", x.id).eq("user_id", userId)
         if (upErr) throw upErr
         n++
@@ -2206,9 +2208,19 @@ function ReglossModal({ onClose, userId, targetLang, targetLanguageName, interfa
         // One bad batch must not lose the ones that already succeeded.
         try { map = await reglossSenses(chunk, interfaceLanguage, targetLanguageName) } catch { map = {} }
         for (const e of chunk) for (const x of e.senses) {
-          const next = (map[x.id] ?? "").trim()
-          if (next && next !== (x.translation ?? "").trim()) {
-            found.push({ id: x.id, word: e.word, old: x.translation ?? "", next, checked: true })
+          const got = map[x.id]
+          if (!got) continue
+          const next = (got.translation ?? "").trim()
+          const nextExpl = (got.explanation ?? "").trim()
+          const glossChanged = next && next !== (x.translation ?? "").trim()
+          const explChanged = nextExpl && nextExpl !== (x.explanation ?? "").trim()
+          if (glossChanged || explChanged) {
+            found.push({
+              id: x.id, word: e.word,
+              old: x.translation ?? "", next: next || (x.translation ?? ""),
+              oldExpl: x.explanation ?? "", nextExpl: nextExpl || null,
+              checked: true,
+            })
           }
         }
         setProgress({ done: Math.min(i + BATCH, entries.length), total: entries.length })
@@ -2222,7 +2234,9 @@ function ReglossModal({ onClose, userId, targetLang, targetLanguageName, interfa
     setPhase("applying")
     const picked = rows.filter(r => r.checked)
     for (const r of picked) {
-      const { error: upErr } = await supabase.from("word_senses").update({ translation: r.next }).eq("id", r.id)
+      const patch = { translation: r.next }
+      if (r.nextExpl) patch.explanation = r.nextExpl
+      const { error: upErr } = await supabase.from("word_senses").update(patch).eq("id", r.id).eq("user_id", userId)
       if (upErr) { setError(upErr.message); setPhase("error"); return }
     }
     setPhase("done"); onApplied?.()
@@ -2295,8 +2309,14 @@ function ReglossModal({ onClose, userId, targetLang, targetLanguageName, interfa
                             onChange={() => setRows(rs => rs.map((x, j) => j === i ? { ...x, checked: !x.checked } : x))} />
                         </td>
                         <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{r.word}</td>
-                        <td className="px-3 py-2 text-gray-400 line-through">{r.old}</td>
-                        <td className="px-3 py-2 text-gray-900 font-medium">{r.next}</td>
+                        <td className="px-3 py-2 text-gray-400 align-top">
+                          <div className="line-through">{r.old}</div>
+                          {r.nextExpl && <div className="text-[11px] mt-1 max-w-xs">{r.oldExpl}</div>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-900 align-top">
+                          <div className="font-medium">{r.next}</div>
+                          {r.nextExpl && <div className="text-[11px] text-gray-500 mt-1 max-w-xs">{r.nextExpl}</div>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
