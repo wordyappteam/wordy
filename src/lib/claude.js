@@ -708,13 +708,16 @@ LANGUAGE — read this first.
 Write each sense in the SAME LANGUAGE as that sense's current gloss. NEVER translate between languages.
 - Current gloss in Ukrainian → return Ukrainian (Cyrillic).
 - Current gloss in English → return English.
-This dictionary deliberately contains both, and which language a given entry uses is not yours to change. You are making each sense CLEARER, not changing what language it is in. The same applies to the explanation: keep each one in the language it is already written in.
+This dictionary deliberately contains both, and which language a given entry uses is not yours to change. You are making each sense CLEARER, not changing what language it is in.
+The explanation follows the same rule: write it in the language its CURRENT explanation is written in, or — if there is none — the language of that sense's current gloss.
+NEVER write a gloss or an explanation in ${targetLanguage}. ${targetLanguage} is the language being LEARNED; the gloss and the explanation exist to explain a ${targetLanguage} word TO the learner, so they are never in ${targetLanguage} themselves.
 
 For each sense you are given, return ONE primary gloss.
 
 RULES
-- Under 4 words. It is the sense's identity — it is shown in the sense picker, offered as a multiple-choice option, and graded against a typed answer.
-- A second gloss may follow after a comma ONLY if it is a true synonym that adds clarity. Never a third. Never a definition.
+- ONE gloss. Not a list. Under 4 words, and shorter is better.
+- It is the sense's IDENTIFIER, not its description: it is shown in the sense picker tab, offered as a multiple-choice option, and graded against a typed answer. Everything that needs saying about the meaning goes in the explanation, which is what that field is for — so nothing is lost by keeping this short.
+- Add a second gloss after a comma ONLY when the first is genuinely ambiguous alone and the second removes that ambiguity. This is rare. Never a third. Never a definition.
 - WRONG: "панувати, правити; бути правителем" and "to rule, to govern; to be a ruler" — a pile of near-synonyms names no single thing.
 - RIGHT: "панувати" · "переважати" · "to pass (an exam)" · "to consist of" — each names ONE meaning. Match the language of the sense you are given, not of these samples.
 - Where a word has several senses, their glosses MUST be mutually distinguishable. NO GLOSS MAY APPEAR IN TWO SENSES OF THE SAME WORD — not as the primary, not as the second. "belong to, be owned by" alongside "be part of, belong to" is WRONG: "belong to" appears twice. Drop the repeat and let each sense name what only it means.
