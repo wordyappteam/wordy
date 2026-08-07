@@ -41,6 +41,12 @@ function Protected({ children }) {
   if (!profile?.onboarding_complete && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />
   }
+  // …and back out again once it IS complete. This guard only ever pushed users
+  // TOWARDS onboarding, so anyone who landed there wrongly had no way off it
+  // except signing out and in again until the timing happened to work.
+  if (profile?.onboarding_complete && location.pathname === '/onboarding') {
+    return <Navigate to="/dashboard" replace />
+  }
   return children
 }
 
