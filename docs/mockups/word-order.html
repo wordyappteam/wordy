@@ -1,0 +1,346 @@
+<title>Word order — design mockups</title>
+<style>
+  :root {
+    --paper:      #FAF7F2;
+    --card:       #FFFFFF;
+    --ink:        #232A2F;
+    --ink-muted:  #5B6167;
+    --ink-faint:  #94908A;
+    --line:       #E7E1D6;
+    --verba:      #2F6B4E;
+    --verba-mid:  #3B8060;
+    --verba-pale: #E9F1EB;
+    --wheat:      #E5B04C;
+    --wheat-pale: #F7EBD5;
+    --wheat-ink:  #94610F;
+    --rose-pale:  #FDF0EE;
+    --rose-ink:   #B4472F;
+    --shadow:     0 1px 2px rgba(35,42,47,.05), 0 8px 24px -12px rgba(35,42,47,.18);
+    --radius:     18px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14181A; --card: #1D2225; --ink: #ECEAE4; --ink-muted: #A7AAA6;
+      --ink-faint: #7C807C; --line: #2E3438; --verba: #7FBE9C; --verba-mid: #6BA588;
+      --verba-pale: #1E2C25; --wheat: #E5B04C; --wheat-pale: #2E2618; --wheat-ink: #E5B04C;
+      --rose-pale: #2E1E1B; --rose-ink: #E79A85;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14181A; --card: #1D2225; --ink: #ECEAE4; --ink-muted: #A7AAA6;
+    --ink-faint: #7C807C; --line: #2E3438; --verba: #7FBE9C; --verba-mid: #6BA588;
+    --verba-pale: #1E2C25; --wheat: #E5B04C; --wheat-pale: #2E2618; --wheat-ink: #E5B04C;
+    --rose-pale: #2E1E1B; --rose-ink: #E79A85;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+  :root[data-theme="light"] {
+    --paper: #FAF7F2; --card: #FFFFFF; --ink: #232A2F; --ink-muted: #5B6167;
+    --ink-faint: #94908A; --line: #E7E1D6; --verba: #2F6B4E; --verba-mid: #3B8060;
+    --verba-pale: #E9F1EB; --wheat: #E5B04C; --wheat-pale: #F7EBD5; --wheat-ink: #94610F;
+    --rose-pale: #FDF0EE; --rose-ink: #B4472F;
+    --shadow: 0 1px 2px rgba(35,42,47,.05), 0 8px 24px -12px rgba(35,42,47,.18);
+  }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+
+  h1 { font-size: clamp(1.7rem, 4vw, 2.4rem); line-height: 1.15; margin: 0 0 .6rem; text-wrap: balance; letter-spacing: -.02em; }
+  .lede { color: var(--ink-muted); max-width: 40rem; margin: 0 0 .6rem; font-size: 1.02rem; }
+  .eyebrow { font-size: .72rem; text-transform: uppercase; letter-spacing: .14em; color: var(--verba-mid); font-weight: 700; margin: 0 0 .5rem; }
+
+  .variant { margin-top: 3.25rem; }
+  .variant > header { border-left: 3px solid var(--line); padding-left: .9rem; margin-bottom: 1rem; }
+  .variant.pick > header { border-left-color: var(--verba); }
+  .variant.bad > header { border-left-color: var(--wheat); }
+  .variant h2 { font-size: 1.16rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
+  .variant .why { color: var(--ink-muted); font-size: .92rem; margin: 0; max-width: 46rem; }
+  .tag { display: inline-block; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
+         padding: .2rem .5rem; border-radius: 999px; margin-left: .5rem; vertical-align: 2px; }
+  .tag.rec { background: var(--verba-pale); color: var(--verba); }
+  .tag.warn { background: var(--wheat-pale); color: var(--wheat-ink); }
+  .tag.now { background: var(--line); color: var(--ink-muted); }
+
+  .stage {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1.6rem 1.4rem 1.5rem; display: flex; flex-direction: column; gap: 1.1rem;
+  }
+  .stage .prompt-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .14em; color: var(--ink-faint); text-align: center; margin: 0; }
+  .stage .prompt { text-align: center; margin: 0; text-wrap: balance; }
+  .stage.new .prompt { font-size: 1.35rem; font-weight: 600; line-height: 1.3; }
+  .stage.old .prompt { font-size: 1.02rem; font-weight: 600; font-style: italic; color: var(--ink-muted); }
+  .headword { display: block; text-align: center; margin-top: .55rem; }
+  .headword span { display: inline-block; background: var(--wheat-pale); color: var(--wheat-ink);
+                   font-size: .7rem; font-weight: 700; letter-spacing: .04em; padding: .22rem .6rem; border-radius: 999px; }
+  .stage.old .headword span { background: none; color: var(--verba-mid); font-weight: 500; font-size: .74rem; padding: 0; }
+
+  .answer { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: center; min-height: 4.4rem; }
+  .stage.new .answer { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: .9rem; }
+  .stage.old .answer { background: var(--card); border: 2px dashed var(--line); border-radius: 14px; padding: .8rem; min-height: 3.4rem; }
+  .answer .hint { color: var(--ink-faint); font-size: .9rem; }
+
+  .chip {
+    font: inherit; cursor: pointer; border-radius: 11px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); padding: .5rem .8rem; font-weight: 500;
+    transition: transform .12s ease, background .15s ease, border-color .15s ease;
+  }
+  .stage.new .chip { font-size: 1rem; }
+  .stage.old .chip { font-size: .87rem; padding: .35rem .7rem; }
+  .chip:hover:not(:disabled) { border-color: var(--verba-mid); background: var(--verba-pale); transform: translateY(-1px); }
+  .chip:focus-visible { outline: 2px solid var(--verba); outline-offset: 2px; }
+  .chip.placed { background: var(--verba-pale); border-color: var(--verba-mid); color: var(--verba); }
+  .stage.old .chip.placed { background: #E0E7FF; border-color: #C7D2FE; color: #3730A3; }
+  .chip.ok { background: var(--verba-pale); border-color: var(--verba-mid); color: var(--verba); }
+  .chip.bad { background: var(--rose-pale); border-color: var(--rose-ink); color: var(--rose-ink); }
+  .chip.locked { background: var(--verba); border-color: var(--verba); color: #fff; cursor: default; }
+  .chip:disabled { cursor: default; }
+  .chip.pop { animation: pop .22s ease-out; }
+  .chip.snap { animation: snap .3s ease-out; }
+  @keyframes pop { 0% { transform: scale(.82); } 60% { transform: scale(1.05); } 100% { transform: scale(1); } }
+  @keyframes snap { 0% { transform: scale(1); } 35% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+  .banklabel { font-size: .68rem; text-transform: uppercase; letter-spacing: .14em; color: var(--ink-faint); text-align: center; margin: 0; }
+  .bank { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; min-height: 2.6rem; }
+
+  .verdict { border-radius: 14px; padding: .75rem .9rem; text-align: center; font-size: .95rem; }
+  .verdict.good { background: var(--verba-pale); color: var(--verba); font-weight: 600; }
+  .verdict.part { background: var(--wheat-pale); color: var(--wheat-ink); }
+  .verdict.miss { background: var(--rose-pale); color: var(--rose-ink); }
+  .verdict small { display: block; text-transform: uppercase; letter-spacing: .12em; font-size: .64rem; opacity: .8; margin-bottom: .3rem; }
+
+  .actions { display: flex; gap: .6rem; justify-content: center; flex-wrap: wrap; }
+  .btn { font: inherit; font-weight: 600; font-size: .9rem; cursor: pointer; border-radius: 13px; padding: .62rem 1.5rem; border: 1px solid transparent; transition: background .15s ease; }
+  .btn.primary { background: var(--verba); color: #fff; }
+  .btn.primary:hover:not(:disabled) { background: var(--verba-mid); }
+  .btn.primary:disabled { background: var(--line); color: var(--ink-faint); cursor: not-allowed; }
+  .stage.old .btn.primary { background: #7C3AED; }
+  .stage.old .btn.primary:hover:not(:disabled) { background: #6D28D9; }
+  .stage.old .btn.primary:disabled { background: var(--line); color: var(--ink-faint); }
+  .btn.ghost { background: transparent; border-color: var(--line); color: var(--ink-muted); }
+  .btn.ghost:hover { background: var(--paper); }
+  .btn:focus-visible { outline: 2px solid var(--verba); outline-offset: 2px; }
+
+  .tries { text-align: center; font-size: .76rem; color: var(--ink-faint); margin: 0; }
+
+  .callout { margin-top: 3.5rem; border: 1px solid var(--line); border-radius: var(--radius); padding: 1.3rem 1.4rem; background: var(--card); }
+  .callout h3 { margin: 0 0 .5rem; font-size: 1rem; }
+  .callout p { margin: 0 0 .7rem; color: var(--ink-muted); font-size: .94rem; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout strong { color: var(--ink); }
+  ul { color: var(--ink-muted); font-size: .94rem; padding-left: 1.1rem; }
+  li { margin-bottom: .4rem; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Verba · design mockup</p>
+  <h1>Word order: the three-word lock</h1>
+  <p class="lede">All playable — tap the words. The first three lock <em>together</em>, the moment all three are in the right order. Nothing before that, so there is no per-tap signal to probe.</p>
+
+  <section class="variant pick">
+    <header>
+      <h2>5 · The first three lock as a bundle<span class="tag rec">your call</span></h2>
+      <p class="why">Get the opening three into the right order and they snap shut together, filling solid. Until then nothing happens — so a single tap tells you nothing, and there is no way to feel out one word at a time. After the lock the rest is yours to build, with the start settled under you.</p>
+    </header>
+    <div class="stage new" data-style="new" data-lock="place" data-max="3" data-sentence="law"></div>
+  </section>
+
+  <section class="variant bad">
+    <header>
+      <h2>The same rule on a short sentence<span class="tag warn">worth deciding</span></h2>
+      <p class="why">Five words, three of them locked in one go: the exercise hands over most of the answer. Bundling makes this hard to exploit, but it does not stop it giving the sentence away. Capping at three <em>or half the sentence, whichever is smaller</em>, would lock two here and still three on the long one.</p>
+    </header>
+    <div class="stage new" data-style="new" data-lock="place" data-max="3" data-sentence="short"></div>
+  </section>
+
+  <section class="variant">
+    <header>
+      <h2>4 · Lock on Check instead</h2>
+      <p class="why">For comparison. Same feeling, but the lock happens when you press Check, so each hint costs an attempt and nothing can be farmed by tapping.</p>
+    </header>
+    <div class="stage new" data-style="new" data-lock="check" data-max="3" data-sentence="law"></div>
+  </section>
+
+  <section class="variant">
+    <header>
+      <h2>1 · What's on prod today<span class="tag now">now</span></h2>
+      <p class="why">Small italic prompt under a “Translation” caption, dashed answer box, violet Check.</p>
+    </header>
+    <div class="stage old" data-style="old" data-lock="none" data-sentence="law"></div>
+  </section>
+
+  <div class="callout">
+    <h3>Where this lands</h3>
+    <p><strong>Bundling is what closes the exploit.</strong> Locking word-by-word answers a question on every tap — <em>is this one right?</em> — which is exactly what makes guessing pay. Locking only when all three are correct answers nothing until you have committed to an order, so there is no cheap probe. Combined with the cap of three, guessing stops being a winning strategy.</p>
+    <p>Two things I'd still settle before building:</p>
+    <ul>
+      <li><strong>Three, or half the sentence?</strong> The short-sentence demo above shows why. Your word-order sentences run from about five to twelve words, so a flat three gives away 60% of a short one and 25% of a long one.</li>
+      <li><strong>Does the lock affect grading?</strong> Nothing is counted, so a sentence finished after the lock fired scores the same as one built cold. If that matters, record whether the lock fired and grade that as <em>almost</em>.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+(function () {
+  const SENTENCES = {
+    law: {
+      words: ["Nach","dem","Grundgesetz","darf","der","Staat","die","Menschenrechte","nicht","verletzen."],
+      prompt: "За Основним законом держава не має права порушувати права людини.",
+      headword: "das Grundgesetz",
+    },
+    short: {
+      words: ["Der","Staat","schützt","die","Menschenrechte."],
+      prompt: "Держава захищає права людини.",
+      headword: "schützen",
+    },
+  };
+
+  const shuffle = (a) => { const r = a.slice(); for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+
+  function build(stage) {
+    const style = stage.dataset.style;
+    const lock  = stage.dataset.lock;
+    const MAX   = stage.dataset.max ? parseInt(stage.dataset.max, 10) : Infinity;
+    const S     = SENTENCES[stage.dataset.sentence || "law"];
+    const WORDS = S.words;
+
+    let placed = [], bank = [], lockedCount = 0, checked = null, tries = 0, justLocked = null;
+
+    function reset(full) {
+      placed = []; bank = shuffle(WORDS.map((w, i) => ({ id: i + ":" + w, w }))); checked = null; justLocked = null;
+      if (full) { lockedCount = 0; tries = 0; }
+      else if (lockedCount) {
+        placed = WORDS.slice(0, lockedCount).map((w, i) => ({ id: i + ":" + w, w }));
+        const need = placed.map(p => p.id);
+        bank = bank.filter(c => !need.includes(c.id));
+      }
+      render();
+    }
+
+    const correctRun = () => { let n = 0; while (n < placed.length && placed[n].w === WORDS[n]) n++; return n; };
+    const isSolved = () => placed.length === WORDS.length && correctRun() === WORDS.length;
+
+    function place(chip) {
+      if (checked) return;
+      bank = bank.filter(c => c.id !== chip.id);
+      placed.push(chip);
+      let popped = chip.id, snapped = null;
+      if (lock === "place" && lockedCount === 0 && correctRun() >= MAX && placed.length >= MAX) {
+        // All-or-nothing. Locking each word as it lands answers "is this one
+        // right?" on every tap, which is what makes guessing pay; locking only
+        // once the whole opening is correct answers nothing until an order has
+        // been committed to.
+        lockedCount = MAX;
+        snapped = placed.slice(0, MAX).map(c => c.id);
+        popped = null;
+      }
+      justLocked = snapped;
+      render(popped);
+    }
+    function pull(chip, i) {
+      if (checked || i < lockedCount) return;
+      placed.splice(i, 1); bank.push(chip); render();
+    }
+    function check() {
+      tries++;
+      if (isSolved()) { checked = "solved"; render(); return; }
+      if (lock === "check") {
+        const run = Math.min(correctRun(), MAX);
+        const gained = run > lockedCount;
+        lockedCount = Math.max(lockedCount, run);
+        checked = gained ? "partial" : "none";
+        render();
+        setTimeout(() => { checked = null; reset(false); }, 1600);
+      } else { checked = "wrong"; render(); }
+    }
+
+    function render(popId) {
+      stage.textContent = "";
+      stage.appendChild(el("p", "prompt-label", style === "old" ? "Translation" : "Build the sentence"));
+      stage.appendChild(el("p", "prompt", style === "old" ? '"' + S.prompt + '"' : S.prompt));
+      const hw = el("div", "headword"); hw.appendChild(el("span", null, S.headword)); stage.appendChild(hw);
+
+      if (style === "old") stage.appendChild(el("p", "prompt-label", "Your answer"));
+      const ans = el("div", "answer");
+      if (!placed.length) ans.appendChild(el("span", "hint", "Tap the words below"));
+      placed.forEach((c, i) => {
+        const b = el("button", "chip", c.w);
+        if (i < lockedCount) b.className = "chip locked";
+        else if (checked === "solved") b.className = "chip ok";
+        else if (checked === "wrong") b.className = "chip " + (c.w === WORDS[i] ? "ok" : "bad");
+        else b.className = "chip placed";
+        if (c.id === popId) b.classList.add("pop");
+        if (justLocked && justLocked.indexOf(c.id) !== -1) b.classList.add("snap");
+        if (i < lockedCount || checked) b.disabled = true;
+        b.addEventListener("click", () => pull(c, i));
+        ans.appendChild(b);
+      });
+      stage.appendChild(ans);
+      justLocked = null;
+
+      if (checked === "solved") {
+        stage.appendChild(el("div", "verdict good", "✓ Perfect" + (tries > 1 ? " — after " + tries + " tries" : tries === 1 ? " — first try" : "")));
+      } else if (checked === "partial") {
+        const v = el("div", "verdict part");
+        v.appendChild(el("small", null, "Right so far"));
+        v.appendChild(document.createTextNode("First " + lockedCount + (lockedCount === 1 ? " word is" : " words are") + " in place — locked. Build the rest."));
+        stage.appendChild(v);
+      } else if (checked === "none") {
+        const v = el("div", "verdict miss");
+        v.appendChild(el("small", null, "Not yet"));
+        v.appendChild(document.createTextNode("Nothing new to lock — the opening isn't right yet. Which word starts the sentence?"));
+        stage.appendChild(v);
+      } else if (checked === "wrong") {
+        const v = el("div", "verdict miss");
+        v.appendChild(el("small", null, "Correct order"));
+        v.appendChild(document.createTextNode(WORDS.join(" ")));
+        stage.appendChild(v);
+      }
+
+      // Only ever shown AFTER the bundle locks. Any progress readout before
+      // that would reinstate the per-tap signal bundling exists to remove.
+      if (lock === "place" && !checked && lockedCount > 0) {
+        stage.appendChild(el("p", "tries", "Opening locked — the rest is yours"));
+      }
+
+      if (!checked) {
+        stage.appendChild(el("p", "banklabel", "Words"));
+        const bk = el("div", "bank");
+        bank.forEach(c => { const b = el("button", "chip", c.w); b.addEventListener("click", () => place(c)); bk.appendChild(b); });
+        stage.appendChild(bk);
+      }
+
+      const acts = el("div", "actions");
+      if (checked === "solved" || checked === "wrong") {
+        const again = el("button", "btn primary", "Try again");
+        again.addEventListener("click", () => reset(true));
+        acts.appendChild(again);
+      } else if (!checked) {
+        const r = el("button", "btn ghost", "Reset");
+        r.addEventListener("click", () => reset(true));
+        const c = el("button", "btn primary", "Check");
+        c.disabled = placed.length !== WORDS.length;
+        c.addEventListener("click", check);
+        acts.appendChild(r); acts.appendChild(c);
+      }
+      stage.appendChild(acts);
+
+      if (tries > 0 && lock === "check" && checked !== "solved") {
+        stage.appendChild(el("p", "tries", tries === 1 ? "1 attempt" : tries + " attempts"));
+      }
+    }
+
+    reset(true);
+  }
+
+  document.querySelectorAll(".stage").forEach(build);
+})();
+</script>
