@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase'
 
 const AuthContext = createContext({})
@@ -8,19 +8,31 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // Whose profile is currently loaded. Guards against re-fetching on every
+  // token refresh, which would otherwise flash the loading spinner hourly.
+  const profileFor = useRef(null)
+
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
+      if (session?.user) { profileFor.current = session.user.id; fetchProfile(session.user.id) }
       else setLoading(false)
     })
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else { setProfile(null); setLoading(false) }
+      const u = session?.user ?? null
+      setUser(u)
+      if (!u) { profileFor.current = null; setProfile(null); setLoading(false); return }
+      if (profileFor.current === u.id) return // already have this user's profile
+      // BACK TO LOADING. Without this, signing in re-rendered with `user` set,
+      // `profile` still null and `loading` already false from the no-session
+      // check — so the route guard read "no profile" as "needs onboarding" and
+      // redirected there before the profile had a chance to arrive.
+      profileFor.current = u.id
+      setLoading(true)
+      fetchProfile(u.id)
     })
 
     return () => subscription.unsubscribe()
