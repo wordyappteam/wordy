@@ -51,6 +51,20 @@ function speak(text, locale) {
   } catch { /* TTS unavailable */ }
 }
 
+// A correct answer needs no decision, so making the learner tap "Next" to
+// acknowledge it costs a beat on the majority of cards — a 24-word session plans
+// ~66 steps, and that second tap on each was most of why a session dragged.
+// Advance on its own instead, after just long enough to register the tick.
+//
+// Only on CORRECT. "Almost" and "wrong" show the expected form, which is the
+// single most valuable moment in the session — snatching it away after a fixed
+// delay would trade pace for the actual learning.
+//
+// Only for the quick exercises. `sentence_writing` returns a paragraph of AI
+// feedback to read, and `flashcard`/`fill_blank` are self-paced by design.
+const AUTO_ADVANCE_MS = 850
+const AUTO_ADVANCE = new Set(['recognition', 'word_choice', 'fill_in', 'active_recall'])
+
 const EX_LABEL = {
   flashcard: 'Flashcard', fill_blank: 'Fill in context', recognition: 'Recognise',
   word_choice: 'Choose the word', active_recall: 'Recall', sentence_writing: 'Write a sentence',
@@ -103,6 +117,25 @@ function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLa
     ? { ...rawStep, exercise: 'active_recall' }
     : rawStep
 
+  // Advancing exactly once is the whole safety property here. The auto-advance
+  // timer and the learner's own tap on "Next" race by design — whichever wins,
+  // the other must become a no-op, or the session skips a card and records an
+  // outcome against the wrong sense. `key={idx}` remounts this component per
+  // card, so the ref resets naturally.
+  const doneRef = useRef(false)
+  const finish = (outcome) => {
+    if (doneRef.current) return
+    doneRef.current = true
+    onDone(outcome)
+  }
+
+  useEffect(() => {
+    if (feedback?.outcome !== 'correct') return
+    if (!AUTO_ADVANCE.has(step.exercise)) return
+    const t = setTimeout(() => finish('correct'), AUTO_ADVANCE_MS)
+    return () => clearTimeout(t) // unmount mid-delay must not advance the NEXT card
+  }, [feedback, step.exercise]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ----- ungraded scaffolds: flashcard / fill_blank -----
   if (!step.graded) {
     const isFill = step.exercise === 'fill_blank' && fillBlank
@@ -135,7 +168,7 @@ function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLa
         {!revealed ? (
           <button onClick={() => { setRevealed(true); speak(step.word, speechLocale) }} className="btn-primary mt-6">Reveal 🔈</button>
         ) : (
-          <button onClick={() => onDone(null)} className="btn-primary mt-6">Continue →</button>
+          <button onClick={() => finish(null)} className="btn-primary mt-6">Continue →</button>
         )}
       </Shell>
     )
@@ -156,7 +189,7 @@ function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLa
         <div className="grid gap-2">
           {options.map((opt) => <Option key={opt} opt={opt} picked={picked} correct={cleanTr} disabled={!!feedback} onClick={() => choose(opt)} />)}
         </div>
-        {feedback && <NextBtn outcome={feedback.outcome} onClick={() => onDone(feedback.outcome)} />}
+        {feedback && <NextBtn outcome={feedback.outcome} onClick={() => finish(feedback.outcome)} />}
       </Shell>
     )
   }
@@ -175,7 +208,7 @@ function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLa
         <div className="grid gap-2">
           {options.map((opt) => <Option key={opt} opt={opt} picked={picked} correct={step.word} disabled={!!feedback} onClick={() => choose(opt)} />)}
         </div>
-        {feedback && <NextBtn outcome={feedback.outcome} onClick={() => onDone(feedback.outcome)} />}
+        {feedback && <NextBtn outcome={feedback.outcome} onClick={() => finish(feedback.outcome)} />}
       </Shell>
     )
   }
@@ -240,7 +273,7 @@ function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLa
             {fillBlank?.translation && (
               <p className="text-center mt-2 text-sm text-gray-500 italic">{fillBlank.translation}</p>
             )}
-            <NextBtn outcome={feedback.outcome} onClick={() => onDone(feedback.outcome)} />
+            <NextBtn outcome={feedback.outcome} onClick={() => finish(feedback.outcome)} />
           </>
         )}
       </Shell>
@@ -272,7 +305,7 @@ function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLa
               {feedback.outcome === 'correct' ? '✓ Correct' : feedback.outcome === 'almost' ? '≈ Almost — ' : '✗ '}
               {feedback.outcome !== 'correct' && <strong>{step.word}</strong>}
             </p>
-            <NextBtn outcome={feedback.outcome} onClick={() => onDone(feedback.outcome)} />
+            <NextBtn outcome={feedback.outcome} onClick={() => finish(feedback.outcome)} />
           </>
         )}
       </Shell>
@@ -308,7 +341,7 @@ function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLa
         ) : (
           <>
             {feedback.detail && <p className="text-sm text-gray-600 mt-3">{feedback.detail}</p>}
-            <NextBtn outcome={feedback.outcome} onClick={() => onDone(feedback.outcome)} />
+            <NextBtn outcome={feedback.outcome} onClick={() => finish(feedback.outcome)} />
           </>
         )}
       </Shell>
@@ -316,13 +349,13 @@ function StepCard({ step: rawStep, pool, ifaceLang, uiLang, targetLang, targetLa
   }
 
   // Unknown exercise — skip gracefully
-  return <Shell step={step}><button onClick={() => onDone(null)} className="btn-primary">Continue →</button></Shell>
+  return <Shell step={step}><button onClick={() => finish(null)} className="btn-primary">Continue →</button></Shell>
 }
 
 // ── small presentational helpers ─────────────────────────────────────────────
 function Shell({ step, children }) {
   return (
-    <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-8 w-full max-w-md">
+    <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-8 w-full max-w-md card-in">
       <div className="flex items-center justify-between text-xs text-gray-400 mb-6">
         <span className="uppercase tracking-wide">{EX_LABEL[step.exercise] ?? step.exercise}{step.remedial ? ' · review' : ''}</span>
         <span className="px-2 py-0.5 rounded-full bg-gray-100">{step.stage}</span>
@@ -597,7 +630,10 @@ export default function SessionV2() {
           palette change carries here for free. Hex fallbacks only matter if the
           theme block fails to load, in which case they keep the buttons legible
           rather than transparent. */}
-      <style>{`.btn-primary{width:100%;padding:.75rem;border-radius:.75rem;background:var(--color-indigo-600,#2F6B4E);color:#fff;font-weight:600;font-size:.875rem}.btn-primary:hover{background:var(--color-indigo-700,#275C42)}.btn-secondary{width:100%;padding:.75rem;border-radius:.75rem;background:var(--color-indigo-50,#E9F1EB);color:var(--color-indigo-700,#275C42);font-weight:600;font-size:.875rem}.btn-secondary:hover{background:var(--color-indigo-100,#D6E7DC)}`}</style>
+      <style>{`.btn-primary{width:100%;padding:.75rem;border-radius:.75rem;background:var(--color-indigo-600,#2F6B4E);color:#fff;font-weight:600;font-size:.875rem}.btn-primary:hover{background:var(--color-indigo-700,#275C42)}.btn-secondary{width:100%;padding:.75rem;border-radius:.75rem;background:var(--color-indigo-50,#E9F1EB);color:var(--color-indigo-700,#275C42);font-weight:600;font-size:.875rem}.btn-secondary:hover{background:var(--color-indigo-100,#D6E7DC)}
+.card-in{animation:cardIn .2s ease-out}
+@keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.card-in{animation:none}}`}</style>
       {inner}
     </div>
   )
@@ -720,6 +756,12 @@ export default function SessionV2() {
   const graded = steps.filter((s) => s.graded).length
   const gradedSoFar = Object.keys(outcomes).length
   const pct = steps.length ? Math.round(((idx + 1) / steps.length) * 100) : 0
+  // Where each word's graded test finishes, as a % of the bar. The final one
+  // lands on 100% and is dropped — a tick on the end cap reads as a rendering
+  // artefact, not a milestone.
+  const wordMarks = steps.length
+    ? steps.flatMap((s, i) => (s.graded ? [((i + 1) / steps.length) * 100] : [])).filter((p) => p < 99.5)
+    : []
   return wrap(
     <>
       <div className="w-full max-w-md mb-5">
@@ -734,7 +776,18 @@ export default function SessionV2() {
           <span>{pct}%</span>
           <span>{gradedSoFar} / {graded} {uk ? 'слів' : 'words'}</span>
         </div>
-        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${pct}%` }} /></div>
+        {/* A single continuous bar moves on every card, which is what keeps the
+            session feeling like it is going somewhere — but it gives no sense of
+            a WORD being finished. The ticks mark exactly where each graded test
+            sits, so the bar crossing one is a real milestone rather than a
+            decorative fraction. Derived from the step list, so they always line
+            up with the fill however unevenly the words expand into steps. */}
+        <div className="relative h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-indigo-500 transition-all duration-300 ease-out" style={{ width: `${pct}%` }} />
+          {wordMarks.map((left, i) => (
+            <span key={i} className="absolute top-0 h-full w-px bg-white" style={{ left: `${left}%` }} />
+          ))}
+        </div>
       </div>
       <StepCard
         key={idx}
