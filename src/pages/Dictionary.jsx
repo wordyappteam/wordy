@@ -2152,7 +2152,33 @@ function ReglossModal({ onClose, userId, targetLang, targetLanguageName, interfa
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [rows, setRows] = useState([])
   const [error, setError] = useState(null)
+  const [restored, setRestored] = useState(0)
   const uk = lang === "uk"
+
+  // Undo. Every proposal this modal writes replaces a gloss that existed before,
+  // and an export taken beforehand holds every one of them verbatim — so putting
+  // them back is just an UPDATE keyed by the same sense ids. Worth having
+  // unconditionally: this tool rewrites a dictionary someone studies from, and a
+  // preview you have to read 104 rows of is not, on its own, a safety net.
+  async function restoreFromFile(file) {
+    if (!file) return
+    setPhase("applying"); setError(null)
+    try {
+      const data = JSON.parse(await file.text())
+      const senses = Array.isArray(data?.senses) ? data.senses : []
+      if (!senses.length) throw new Error(uk ? "У файлі немає значень." : "No senses found in that file.")
+      let n = 0
+      for (const x of senses) {
+        if (!x?.id || typeof x.translation !== "string") continue
+        const { error: upErr } = await supabase.from("word_senses")
+          .update({ translation: x.translation })
+          .eq("id", x.id).eq("user_id", userId)
+        if (upErr) throw upErr
+        n++
+      }
+      setRestored(n); setRows([]); setPhase("done"); onApplied?.()
+    } catch (e) { setError(e?.message ?? String(e)); setPhase("error") }
+  }
 
   async function scan() {
     setPhase("scanning"); setError(null); setRows([])
@@ -2222,6 +2248,17 @@ function ReglossModal({ onClose, userId, targetLang, targetLanguageName, interfa
             <button onClick={scan} className="py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
               {uk ? "Переглянути зміни" : "Preview changes"}
             </button>
+            <div className="border-t border-gray-100 pt-4 mt-1">
+              <p className="text-xs font-semibold text-gray-500 mb-1">{uk ? "Відновити з файлу експорту" : "Restore from an export file"}</p>
+              <p className="text-xs text-gray-400 mb-2">
+                {uk
+                  ? "Повертає переклади точно такими, якими вони були на момент експорту. Нічого іншого не змінює."
+                  : "Puts every gloss back exactly as it was when the file was exported. Changes nothing else."}
+              </p>
+              <input type="file" accept="application/json,.json"
+                onChange={(e) => restoreFromFile(e.target.files?.[0])}
+                className="text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-gray-200 file:text-xs file:font-semibold file:bg-white file:text-gray-600" />
+            </div>
           </div>
         )}
 
@@ -2279,7 +2316,9 @@ function ReglossModal({ onClose, userId, targetLang, targetLanguageName, interfa
         {phase === "applying" && <p className="p-6 text-sm text-gray-600">{uk ? "Зберігаю…" : "Saving…"}</p>}
         {phase === "done" && (
           <div className="p-6 flex flex-col gap-4">
-            <p className="text-sm text-gray-900 font-semibold">{uk ? "Готово." : "Done."} {picked} {uk ? "значень оновлено." : "senses updated."}</p>
+            <p className="text-sm text-gray-900 font-semibold">
+              {uk ? "Готово." : "Done."} {restored || picked} {uk ? "значень оновлено." : "senses updated."}
+            </p>
             <button onClick={onClose} className="py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold">{uk ? "Закрити" : "Close"}</button>
           </div>
         )}

@@ -699,18 +699,31 @@ Return JSON exactly:
 export async function reglossSenses(entries, interfaceLanguage = 'English', targetLanguage = 'German') {
   if (!entries?.length) return {}
   const lang = langWithScript(interfaceLanguage)
+  const isUk = interfaceLanguage === 'Ukrainian'
+  // The examples MUST be in the output language. An earlier version listed
+  // Ukrainian and English samples side by side; with most existing glosses also
+  // in English, the model followed the examples rather than the language rule
+  // and rewrote a Ukrainian dictionary into English.
+  const rightExamples = isUk
+    ? '"панувати" · "переважати" · "скласти (іспит)" · "складатися з"'
+    : '"to rule" · "to prevail" · "to pass (an exam)" · "to consist of"'
+  const wrongExample = isUk
+    ? '"панувати, правити; бути правителем" — a pile of near-synonyms names no single thing'
+    : '"to rule, to govern; to be a ruler" — a pile of near-synonyms names no single thing'
   const system = `You rewrite dictionary glosses for a ${targetLanguage} learner whose interface language is ${lang}.
+
+THE OUTPUT LANGUAGE IS ${lang.toUpperCase()}. Every gloss you return must be written in ${lang}, with no exceptions.
+Many of the current glosses are in the WRONG language — that is one of the things you are fixing. Never copy the language of the current gloss; translate it into ${lang}.
 
 For each sense you are given, return ONE primary gloss in ${lang}.
 
 RULES
 - Under 4 words. It is the sense's identity — it is shown in the sense picker, offered as a multiple-choice option, and graded against a typed answer.
 - A second gloss may follow after a comma ONLY if it is a true synonym that adds clarity. Never a third. Never a definition.
-- WRONG: "панувати, правити; бути правителем" — a pile of near-synonyms names no single thing.
-- RIGHT: "панувати" · "переважати" · "to pass (an exam)" · "to consist of"
+- WRONG: ${wrongExample}.
+- RIGHT: ${rightExamples}
 - Where a word has several senses, their glosses MUST be mutually distinguishable. No two senses of the same word may share a primary gloss. If they currently do, give each the meaning it truly names.
-- Write in ${lang} and nothing else, even where the current gloss is in another language.
-- Preserve the MEANING of the existing sense exactly. You are renaming it, not redefining it. Use the explanation to work out which meaning it is.
+- Preserve the MEANING of the existing sense exactly. You are renaming it and translating it, not redefining it. Use the explanation to work out which meaning it is.
 
 Return ONLY a JSON object mapping sense id to the new gloss:
 { "<sense-id>": "<gloss>", ... }
