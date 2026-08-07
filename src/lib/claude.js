@@ -159,7 +159,14 @@ The interface language is Ukrainian: explanatory text must be Ukrainian, never R
     ? (themeHint
         ? `\nThe learner is adding this word as a member of the collection "${themeHint}". Define the word specifically as it functions within that theme — pick the meaning that makes it BELONG to "${themeHint}", even if that is not the word's most common meaning. For example, if the theme is colours, treat the word as the colour/shade it names (e.g. "canary" → the bright yellow colour), not the object or animal it is named after. Return ONLY that one sense; the senses array must contain exactly one entry.`
         : `\nReturn ONLY the single most common, everyday sense. The senses array must contain exactly one entry.`)
-    : `\nReturn ALL senses that share this word's SPELLING (separate POS or clearly distinct meaning groups of the SAME written word). A meaning whose base spelling differs from "${input}" is a DIFFERENT word — do not include it here. Most words have exactly one sense.`
+    : `\nReturn ALL senses that share this word's SPELLING (separate POS or clearly distinct meaning groups of the SAME written word). A meaning whose base spelling differs from "${input}" is a DIFFERENT word — do not include it here. Most words have exactly one sense.
+
+SEPARATION TEST — apply before returning more than one sense. Splitting badly is worse than not splitting: a learner who meets two senses they cannot tell apart cannot study either.
+- State in ONE clause how each sense differs from the others. If you cannot, they are ONE sense — merge them.
+- No two senses may share their primary gloss (the first item in "translation"). "to reach" cannot be the primary gloss of two senses; pick the one meaning it truly names and give the other its own ("to contact", "to achieve").
+- Masculine/feminine pairs of the same noun (der Bürger / die Bürgerin), and singular/plural or spelling variants, are ONE sense. Use "gender", not a second sense.
+- A sense that exists only to hold extra synonyms of another sense is not a sense. Delete it.
+- Prefer fewer senses. Two well-separated senses beat four blurred ones.`
 
   const prompt = `The user is learning ${targetLanguage} and typed: "${input}"${contextInstruction}
 
@@ -183,7 +190,7 @@ Otherwise return ONLY this JSON:
       "aspect": "imperfective or perfective for verbs, otherwise null",
       "gender": "m, f or n for nouns, otherwise null",` : ''}
       "wordForm": "${wordFormNote}",
-      "translation": "concise ${ifaceLang} translation for THIS sense only",
+      "translation": "THIS sense's meaning in ${ifaceLang}, as ONE primary gloss — the single best word or short phrase, under 4 words. This is the sense's identity: it is what the sense picker shows, what a multiple-choice option offers and what a typed answer is graded against, so it must be short enough to read at a glance and specific enough to name THIS sense and no other. A second gloss may follow after a comma ONLY if it is a true synonym that adds clarity; never a third. Never a pile of near-synonyms (WRONG: 'панувати, правити; бути правителем' — that names no single thing). Never a definition; the definition is "explanation". If two senses of this word would get the same primary gloss, you have split them wrongly — see the SEPARATION TEST.",
       "form": "${formNote}",
       "grammarNote": "how to BUILD with THIS word — or null. Telegraphic: under 12 words, no sentences, parts separated by ' · '. The test is whether the fact is specific to this word. NULL if it is true of the whole word class (every masculine noun takes den in the accusative; most verbs take haben) or already visible on the card (the article is in the headword, the plural is in \\"form\\", irregularity is in the conjugation table). WORTH SAYING, and belongs HERE rather than in usageNote: a governed preposition and its case — ALWAYS include this when the verb has one, it is the single most useful thing you can say (bestehen aus + Dativ · sich freuen auf + Akk · warten auf + Akk); an object case that is not the default; a separable prefix; auxiliary sein; an obligatory reflexive; uncountable or plural-only. NEVER write the word haben: haben is the default auxiliary and saying so is noise — mention an auxiliary ONLY when it is sein. Write it in ${ifaceLang}${isUkrainianIface ? ' — Ukrainian, NEVER Russian' : ''}, but keep German grammatical terms and forms in German (Akkusativ, Dativ, auf + Dat.)",
       "explanation": "WRITTEN IN ${ifaceLang.toUpperCase()} — every word of it. Not in ${targetLanguage}, not in English${isUkrainianIface ? ', and never in Russian' : ''}. A definition, and nothing else: say what the word MEANS, precisely, for an A2-B1 learner. No usage advice here (that is usageNote). Define it with words SIMPLER than the headword — never explain a word using harder words. Under 40 words.",
@@ -666,4 +673,97 @@ Return JSON exactly:
     maxTokens: 2048,
   })
   return parseSentenceSet(text)
+}
+
+// ── Re-glossing an existing dictionary ──────────────────────────────────────
+// Rewrite the `translation` of senses that are already in the dictionary, so
+// each one reads as a single clear gloss rather than a pile of synonyms.
+//
+// This exists because the identify prompt used to say only "concise translation"
+// with no cap, and because a dictionary built while the interface was English
+// keeps its English glosses forever. Both leave senses the learner cannot tell
+// apart — which is the whole point of a sense.
+//
+// It rewrites TEXT ONLY. It never adds, removes, merges or re-splits senses:
+// the SRS history (interval_step, next_review_date, lapses) hangs off sense IDs,
+// so re-identifying a word the learner has been studying would silently discard
+// everything they have learned on it. Sense ids go in and the same sense ids
+// come out — the caller updates `translation` in place.
+//
+// Each sense keeps the language it is already written in — the dictionary holds
+// both English and Ukrainian entries by design, and which one a given entry uses
+// is not this function's business.
+//
+// `entries` is [{ word, pos, senses: [{ id, translation, explanation }] }].
+// All senses of a word MUST be passed together: making two senses distinct is
+// impossible without seeing both.
+//
+// Returns { [senseId]: newGloss }. A sense the model omits or returns unchanged
+// is simply left alone.
+export async function reglossSenses(entries, targetLanguage = 'German') {
+  if (!entries?.length) return {}
+  const system = `You rewrite dictionary glosses for a ${targetLanguage} learner.
+
+LANGUAGE — read this first.
+Write each sense in the SAME LANGUAGE as that sense's current gloss. NEVER translate between languages.
+- Current gloss in Ukrainian → return Ukrainian (Cyrillic).
+- Current gloss in English → return English.
+This dictionary deliberately contains both, and which language a given entry uses is not yours to change. You are making each sense CLEARER, not changing what language it is in.
+The explanation follows the same rule: write it in the language its CURRENT explanation is written in, or — if there is none — the language of that sense's current gloss.
+NEVER write a gloss or an explanation in ${targetLanguage}. ${targetLanguage} is the language being LEARNED; the gloss and the explanation exist to explain a ${targetLanguage} word TO the learner, so they are never in ${targetLanguage} themselves.
+
+For each sense you are given, return ONE primary gloss.
+
+RULES
+- ONE gloss. Not a list. Under 4 words, and shorter is better.
+- It is the sense's IDENTIFIER, not its description: it is shown in the sense picker tab, offered as a multiple-choice option, and graded against a typed answer. Everything that needs saying about the meaning goes in the explanation, which is what that field is for — so nothing is lost by keeping this short.
+- Add a second gloss after a comma ONLY when the first is genuinely ambiguous alone and the second removes that ambiguity. This is rare. Never a third. Never a definition.
+- WRONG: "панувати, правити; бути правителем" and "to rule, to govern; to be a ruler" — a pile of near-synonyms names no single thing.
+- RIGHT: "панувати" · "переважати" · "to pass (an exam)" · "to consist of" — each names ONE meaning. Match the language of the sense you are given, not of these samples.
+- Where a word has several senses, their glosses MUST be mutually distinguishable. NO GLOSS MAY APPEAR IN TWO SENSES OF THE SAME WORD — not as the primary, not as the second. "belong to, be owned by" alongside "be part of, belong to" is WRONG: "belong to" appears twice. Drop the repeat and let each sense name what only it means.
+- Divide and define meanings the way a good monolingual dictionary does — Duden or DWDS for German. Their numbered senses are the target. Do not invent finer distinctions than a lexicographer would, and do not blur two that they keep apart.
+- Preserve the MEANING of the existing sense exactly. You are renaming it and translating it, not redefining it. Use the explanation to work out which meaning it is.
+
+ALSO REWRITE THE EXPLANATION of each sense, in that same sense's own language, under 35 words.
+- It must define THIS sense and no other. The commonest fault in this dictionary is an explanation that defines one sense and then adds "also used to mean <the other sense>" — that single clause is what makes two senses feel identical however well their glosses are separated. Remove it.
+- A definition only. No usage advice, no grammar, no examples.
+- Define with words SIMPLER than the headword.
+
+Return ONLY a JSON object mapping sense id to its new gloss and explanation:
+{ "<sense-id>": { "translation": "<gloss>", "explanation": "<definition>" }, ... }
+No prose, no code fences.`
+
+  const payload = entries.map((e) => ({
+    word: e.word,
+    pos: e.pos,
+    senses: (e.senses ?? []).map((s) => ({
+      id: s.id,
+      current: s.translation ?? '',
+      explanation: (s.explanation ?? '').slice(0, 200),
+    })),
+  }))
+
+  const text = await callClaude({
+    system,
+    messages: [{ role: 'user', content: JSON.stringify(payload, null, 1) }],
+    model: 'claude-haiku-4-5',
+    maxTokens: 2048,
+  })
+  const clean = text.replace(/```json|```/g, '').trim()
+  const m = clean.match(/\{[\s\S]*\}/)
+  if (!m) throw new Error('No JSON object in regloss response')
+  const raw = JSON.parse(m[0])
+  // Keep only ids we asked about, and only non-empty strings — a hallucinated
+  // id must never reach an UPDATE.
+  const asked = new Set(entries.flatMap((e) => (e.senses ?? []).map((s) => s.id)))
+  const out = {}
+  for (const [id, v] of Object.entries(raw)) {
+    if (!asked.has(id)) continue
+    // Tolerate the older bare-string shape as well as the object one.
+    const gloss = String((typeof v === 'string' ? v : v?.translation) ?? '').trim()
+    const expl = String((typeof v === 'string' ? '' : v?.explanation) ?? '').trim()
+    if (!gloss) continue
+    out[id] = { translation: gloss, explanation: expl || null }
+  }
+  return out
 }

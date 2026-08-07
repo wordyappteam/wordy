@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { identifyWord as identifyWordAI, primaryEntry, suggestCollectionWords } from '../lib/claude'
+import { identifyWord as identifyWordAI, primaryEntry, suggestCollectionWords, reglossSenses } from '../lib/claude'
 import { displayTranslation, showSenseForm } from '../lib/senseDisplay'
 import { listHeadword } from '../lib/senseFormat'
 import { badgeForWord, badgeForStage, manualStagePatch } from '../lib/srs'
@@ -2140,6 +2140,219 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
 }
 
 // ── Main component ────────────────────────────────────────────────────────
+
+// Rewrite existing glosses so each sense reads as one clear meaning.
+//
+// Text only, and never without showing the learner what will change first: this
+// UPDATEs rows in a dictionary someone has been studying from for a month. Sense
+// ids are untouched, so interval_step / next_review_date / lapses all survive —
+// the reason this is a re-gloss and not a re-identify.
+function ReglossModal({ onClose, userId, targetLang, targetLanguageName, lang, onApplied }) {
+  const [phase, setPhase] = useState("idle") // idle | scanning | review | applying | done | error
+  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [rows, setRows] = useState([])
+  const [error, setError] = useState(null)
+  const [restored, setRestored] = useState(0)
+  const uk = lang === "uk"
+
+  // Undo. Every proposal this modal writes replaces a gloss that existed before,
+  // and an export taken beforehand holds every one of them verbatim — so putting
+  // them back is just an UPDATE keyed by the same sense ids. Worth having
+  // unconditionally: this tool rewrites a dictionary someone studies from, and a
+  // preview you have to read 104 rows of is not, on its own, a safety net.
+  async function restoreFromFile(file) {
+    if (!file) return
+    setPhase("applying"); setError(null)
+    try {
+      const data = JSON.parse(await file.text())
+      const senses = Array.isArray(data?.senses) ? data.senses : []
+      if (!senses.length) throw new Error(uk ? "У файлі немає значень." : "No senses found in that file.")
+      let n = 0
+      for (const x of senses) {
+        if (!x?.id || typeof x.translation !== "string") continue
+        const patch = { translation: x.translation }
+        if (typeof x.explanation === "string") patch.explanation = x.explanation
+        const { error: upErr } = await supabase.from("word_senses")
+          .update(patch)
+          .eq("id", x.id).eq("user_id", userId)
+        if (upErr) throw upErr
+        n++
+      }
+      setRestored(n); setRows([]); setPhase("done"); onApplied?.()
+    } catch (e) { setError(e?.message ?? String(e)); setPhase("error") }
+  }
+
+  async function scan() {
+    setPhase("scanning"); setError(null); setRows([])
+    try {
+      const [w, sn] = await Promise.all([
+        supabase.from("words").select("id, word, pos").eq("user_id", userId).eq("target_language", targetLang),
+        supabase.from("word_senses").select("id, word_id, translation, explanation").eq("user_id", userId).eq("target_language", targetLang),
+      ])
+      if (w.error || sn.error) throw (w.error || sn.error)
+      const byWord = new Map()
+      for (const x of sn.data ?? []) {
+        if (!byWord.has(x.word_id)) byWord.set(x.word_id, [])
+        byWord.get(x.word_id).push(x)
+      }
+      // Every sense of a word goes in the same request — two senses cannot be
+      // made distinct from each other unless the model sees both.
+      const entries = (w.data ?? []).filter(x => byWord.has(x.id))
+        .map(x => ({ word: x.word, pos: x.pos, senses: byWord.get(x.id) }))
+      setProgress({ done: 0, total: entries.length })
+      const found = []
+      const BATCH = 8
+      for (let i = 0; i < entries.length; i += BATCH) {
+        const chunk = entries.slice(i, i + BATCH)
+        let map = {}
+        // One bad batch must not lose the ones that already succeeded.
+        try { map = await reglossSenses(chunk, targetLanguageName) } catch { map = {} }
+        for (const e of chunk) for (const x of e.senses) {
+          const got = map[x.id]
+          if (!got) continue
+          const next = (got.translation ?? "").trim()
+          const nextExpl = (got.explanation ?? "").trim()
+          const glossChanged = next && next !== (x.translation ?? "").trim()
+          const explChanged = nextExpl && nextExpl !== (x.explanation ?? "").trim()
+          if (glossChanged || explChanged) {
+            found.push({
+              id: x.id, word: e.word,
+              old: x.translation ?? "", next: next || (x.translation ?? ""),
+              oldExpl: x.explanation ?? "", nextExpl: nextExpl || null,
+              checked: true,
+            })
+          }
+        }
+        setProgress({ done: Math.min(i + BATCH, entries.length), total: entries.length })
+        setRows([...found])
+      }
+      setPhase("review")
+    } catch (e) { setError(e?.message ?? String(e)); setPhase("error") }
+  }
+
+  async function apply() {
+    setPhase("applying")
+    const picked = rows.filter(r => r.checked)
+    for (const r of picked) {
+      const patch = { translation: r.next }
+      if (r.nextExpl) patch.explanation = r.nextExpl
+      const { error: upErr } = await supabase.from("word_senses").update(patch).eq("id", r.id).eq("user_id", userId)
+      if (upErr) { setError(upErr.message); setPhase("error"); return }
+    }
+    setPhase("done"); onApplied?.()
+  }
+
+  const picked = rows.filter(r => r.checked).length
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-900">{uk ? "Почистити переклади" : "Clean up glosses"}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        {phase === "idle" && (
+          <div className="p-6 flex flex-col gap-4">
+            <p className="text-sm text-gray-600">
+              {uk
+                ? "Кожне значення отримає один чіткий переклад замість списку синонімів, і всі — мовою інтерфейсу. Значення НЕ додаються, не об'єднуються і не розділяються, тож ваш прогрес у вивченні зберігається повністю."
+                : "Each sense gets one clear gloss instead of a pile of synonyms, all in your interface language. No sense is added, merged or re-split, so your learning progress is kept in full."}
+            </p>
+            <p className="text-xs text-gray-400">{uk ? "Ви побачите всі зміни перед тим, як щось буде збережено." : "You will see every change before anything is saved."}</p>
+            <button onClick={scan} className="py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
+              {uk ? "Переглянути зміни" : "Preview changes"}
+            </button>
+            <div className="border-t border-gray-100 pt-4 mt-1">
+              <p className="text-xs font-semibold text-gray-500 mb-1">{uk ? "Відновити з файлу експорту" : "Restore from an export file"}</p>
+              <p className="text-xs text-gray-400 mb-2">
+                {uk
+                  ? "Повертає переклади точно такими, якими вони були на момент експорту. Нічого іншого не змінює."
+                  : "Puts every gloss back exactly as it was when the file was exported. Changes nothing else."}
+              </p>
+              <input type="file" accept="application/json,.json"
+                onChange={(e) => restoreFromFile(e.target.files?.[0])}
+                className="text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-gray-200 file:text-xs file:font-semibold file:bg-white file:text-gray-600" />
+            </div>
+          </div>
+        )}
+
+        {phase === "scanning" && (
+          <div className="p-6 flex flex-col gap-3">
+            <p className="text-sm text-gray-600">{uk ? "Аналізую словник…" : "Reading the dictionary…"} {progress.done} / {progress.total}</p>
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
+            </div>
+            <p className="text-xs text-gray-400">{rows.length} {uk ? "змін знайдено" : "changes found so far"}</p>
+          </div>
+        )}
+
+        {phase === "review" && (
+          <>
+            <div className="overflow-y-auto flex-1">
+              {rows.length === 0 ? (
+                <p className="p-6 text-sm text-gray-500">{uk ? "Нічого міняти — словник уже чистий." : "Nothing to change — the dictionary is already clean."}</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-xs text-gray-400 font-semibold uppercase tracking-wide sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 w-8"></th>
+                      <th className="px-3 py-2 text-left">{uk ? "Слово" : "Word"}</th>
+                      <th className="px-3 py-2 text-left">{uk ? "Було" : "Now"}</th>
+                      <th className="px-3 py-2 text-left">{uk ? "Стане" : "Becomes"}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {rows.map((r, i) => (
+                      <tr key={r.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2">
+                          <input type="checkbox" checked={r.checked}
+                            onChange={() => setRows(rs => rs.map((x, j) => j === i ? { ...x, checked: !x.checked } : x))} />
+                        </td>
+                        <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{r.word}</td>
+                        <td className="px-3 py-2 text-gray-400 align-top">
+                          <div className="line-through">{r.old}</div>
+                          {r.nextExpl && <div className="text-[11px] mt-1 max-w-xs">{r.oldExpl}</div>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-900 align-top">
+                          <div className="font-medium">{r.next}</div>
+                          {r.nextExpl && <div className="text-[11px] text-gray-500 mt-1 max-w-xs">{r.nextExpl}</div>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex gap-2">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">{uk ? "Скасувати" : "Cancel"}</button>
+              <button onClick={apply} disabled={!picked}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 text-white text-sm font-semibold transition-colors">
+                {uk ? `Застосувати ${picked}` : `Apply ${picked}`}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phase === "applying" && <p className="p-6 text-sm text-gray-600">{uk ? "Зберігаю…" : "Saving…"}</p>}
+        {phase === "done" && (
+          <div className="p-6 flex flex-col gap-4">
+            <p className="text-sm text-gray-900 font-semibold">
+              {uk ? "Готово." : "Done."} {restored || picked} {uk ? "значень оновлено." : "senses updated."}
+            </p>
+            <button onClick={onClose} className="py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold">{uk ? "Закрити" : "Close"}</button>
+          </div>
+        )}
+        {phase === "error" && (
+          <div className="p-6 flex flex-col gap-4">
+            <p className="text-sm text-rose-600">{error}</p>
+            <button onClick={() => setPhase("idle")} className="py-2.5 rounded-xl border border-gray-200 text-sm font-semibold">{uk ? "Спробувати ще" : "Try again"}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Dictionary() {
   const navigate = useNavigate()
   const { user, profile } = useAuth()
@@ -2498,6 +2711,7 @@ export default function Dictionary() {
   // are only visible across the whole set, and there was previously no way to
   // see it except one word at a time in the UI. Also a plain backup.
   const [exporting, setExporting] = useState(false)
+  const [showRegloss, setShowRegloss] = useState(false)
   async function handleExport() {
     if (exporting) return
     setExporting(true)
@@ -2565,6 +2779,12 @@ export default function Dictionary() {
               className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
             >
               {t('dict.importList')}
+            </button>
+            <button
+              onClick={() => setShowRegloss(true)}
+              className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+            >
+              {lang === 'uk' ? 'Почистити переклади' : 'Clean up glosses'}
             </button>
             <button
               onClick={handleExport}
@@ -2851,6 +3071,16 @@ export default function Dictionary() {
       )}
       {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} topics={topics} />}
       {showBulkModal && <BulkImportModal onClose={() => setShowBulkModal(false)} onImport={handleBulkImport} />}
+      {showRegloss && (
+        <ReglossModal
+          onClose={() => setShowRegloss(false)}
+          userId={user.id}
+          targetLang={targetLang}
+          targetLanguageName={targetLanguageName}
+          lang={lang}
+          onApplied={fetchWords}
+        />
+      )}
       {showSortMode && (
         <QuickSortMode
           words={words}
@@ -2863,7 +3093,6 @@ export default function Dictionary() {
           words={words}
           onClose={() => { setShowBulkIdentify(false); fetchWords() }}
           onWordIdentified={handleUpdate}
-          interfaceLanguage={interfaceLanguage}
           targetLanguageName={targetLanguageName}
           topics={topics}
         />
