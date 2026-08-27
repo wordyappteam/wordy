@@ -25,7 +25,7 @@ import FillSentences from './pages/FillSentences'
 
 // Wraps pages that require login
 function Protected({ children }) {
-  const { user, profile, loading } = useAuth()
+  const { user, profile, profileError, loading, retryProfile } = useAuth()
   const location = useLocation()
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -37,6 +37,21 @@ function Protected({ children }) {
     </div>
   )
   if (!user) return <Navigate to="/auth" replace />
+  // Could not LOAD the profile — say so and offer a retry. Never fall through
+  // to the onboarding redirect below: sending a signed-in learner who has
+  // already finished onboarding back through it, because of a failed request,
+  // is the worst possible reading of a network error.
+  if (profileError) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+      <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-8 w-full max-w-sm text-center">
+        <p className="text-lg font-semibold text-gray-900 mb-1">Could not load your account</p>
+        <p className="text-sm text-gray-500 mb-6">Your data is safe — the app just could not reach it. This usually clears in a moment.</p>
+        <button onClick={retryProfile} className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
+          Try again
+        </button>
+      </div>
+    </div>
+  )
   // No profile row (new user) or onboarding not yet complete → send to onboarding
   if (!profile?.onboarding_complete && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />

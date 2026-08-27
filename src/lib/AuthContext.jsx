@@ -7,6 +7,10 @@ export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  // A profile that FAILED TO LOAD is not a user who HAS no profile. Keeping
+  // them apart is the whole point: conflating them sends an existing learner
+  // back through onboarding, which is what happened.
+  const [profileError, setProfileError] = useState(null)
 
   // Whose profile is currently loaded. Guards against re-fetching on every
   // token refresh, which would otherwise flash the loading spinner hourly.
@@ -16,7 +20,7 @@ export function AuthProvider({ children }) {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) { profileFor.current = session.user.id; fetchProfile(session.user.id) }
+      if (session?.user) fetchProfile(session.user.id)
       else setLoading(false)
     })
 
@@ -30,7 +34,6 @@ export function AuthProvider({ children }) {
       // `profile` still null and `loading` already false from the no-session
       // check — so the route guard read "no profile" as "needs onboarding" and
       // redirected there before the profile had a chance to arrive.
-      profileFor.current = u.id
       setLoading(true)
       fetchProfile(u.id)
     })
@@ -38,15 +41,46 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  async function fetchProfile(userId) {
+  // `maybeSingle`, not `single`: single() treats "no row" as an ERROR, so a
+  // brand-new user and a failed request came back identically — both as
+  // `data: null` — and the route guard read either as "needs onboarding".
+  // maybeSingle gives `data: null, error: null` for no row, which is the one
+  // case that genuinely means new user.
+  async function fetchProfile(userId, attempt = 0) {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .single()
-    if (error) console.warn('[wordy] fetchProfile error:', error.message, error.code)
-    setProfile(data)
+      .maybeSingle()
+
+    if (error) {
+      // A database that has just woken from Supabase's free-tier pause is slow
+      // and flaky on its first queries, so retry before giving up.
+      if (attempt < 2) {
+        setTimeout(() => fetchProfile(userId, attempt + 1), 500 * (attempt + 1))
+        return
+      }
+      console.warn('[wordy] fetchProfile FAILED (not a new user):', error.message, error.code)
+      // Leave profileFor unset so a later auth event can try again, and report
+      // the failure as a failure. Falling through to setProfile(null) here is
+      // exactly the bug: it is indistinguishable from having no profile.
+      profileFor.current = null
+      setProfileError(error)
+      setLoading(false)
+      return
+    }
+
+    profileFor.current = userId // only once the profile has really arrived
+    setProfileError(null)
+    setProfile(data)            // null here genuinely means: no row yet, new user
     setLoading(false)
+  }
+
+  function retryProfile() {
+    if (!user) return
+    setProfileError(null)
+    setLoading(true)
+    fetchProfile(user.id)
   }
 
   async function updateProfile(updates) {
@@ -97,7 +131,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, updateProfile, signOut, deleteAccount }}>
+    <AuthContext.Provider value={{ user, profile, profileError, loading, retryProfile, updateProfile, signOut, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   )
