@@ -186,12 +186,9 @@ export default function WordOrder() {
     setJustLocked(null)
   }, [index, cards, phase])
 
-  const placeWord = (chip) => {
-    if (checked) return
-    const next = placeChip({ placed, bank, lockedCount }, chip, {
-      targetWords: cards[index].words,
-      mode: LOCK_MODE,
-    })
+  // Both moves can leave a correct opening behind — pulling a wrong word out of
+  // the first slot shifts the rest left — so both go through the same commit.
+  const applyMove = (next) => {
     setPlaced(next.placed)
     setBank(next.bank)
     setLockedCount(next.lockedCount)
@@ -201,11 +198,16 @@ export default function WordOrder() {
     }
   }
 
+  const lockOpts = () => ({ targetWords: cards[index].words, mode: LOCK_MODE })
+
+  const placeWord = (chip) => {
+    if (checked) return
+    applyMove(placeChip({ placed, bank, lockedCount }, chip, lockOpts()))
+  }
+
   const returnWord = (chip, i) => {
     if (checked) return
-    const next = pullChip({ placed, bank, lockedCount }, i)
-    setPlaced(next.placed)
-    setBank(next.bank)
+    applyMove(pullChip({ placed, bank, lockedCount }, i, lockOpts()))
   }
 
   const handleCheck = () => {

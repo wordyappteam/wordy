@@ -95,3 +95,27 @@ test("a locked chip cannot be pulled back", () => {
   assert.deepEqual(after.placed.map((c) => c.word), ["Das", "Gesetz", "tritt"])
   assert.deepEqual(after.bank, [])
 })
+
+// ── the lock must be reachable by taking a word back ─────────────────────────
+// Placing is not the only way to arrive at a correct opening: pulling a wrong
+// word out of slot 1 shifts everything left and can complete the bundle. The
+// lock has to be evaluated there too, or the learner ends up staring at a
+// correct opening that refuses to close.
+test("taking a word back can complete the opening, and it locks", () => {
+  const s = state(chips("morgen", "Das", "Gesetz", "tritt"), [])
+  const after = pullChip(s, 0, { targetWords: WORDS })
+  assert.equal(after.lockedCount, LOCK_CAP)
+  assert.deepEqual(after.placed.map((c) => c.word), ["Das", "Gesetz", "tritt"])
+})
+
+test("taking a word back locks nothing when the opening is still wrong", () => {
+  const s = state(chips("Das", "morgen", "Gesetz", "tritt"), [])
+  const after = pullChip(s, 3, { targetWords: WORDS })
+  assert.equal(after.lockedCount, 0)
+})
+
+test("taking a word back never locks in free-flowing mode", () => {
+  const s = state(chips("morgen", "Das", "Gesetz", "tritt"), [])
+  const after = pullChip(s, 0, { targetWords: WORDS, mode: "free" })
+  assert.equal(after.lockedCount, 0)
+})
