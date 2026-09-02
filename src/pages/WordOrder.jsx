@@ -6,8 +6,14 @@ import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import { inSession, advanceSession, nextExerciseName } from '../lib/sessionFlow'
 import { identifyWord, primaryEntry, translateSentences } from '../lib/claude'
+import { placeChip, pullChip } from '../lib/wordOrderLock'
 
 const SESSION_SIZE = 10
+
+// Two modes, both kept: 'lock' snaps the opening three shut once they are in
+// the right order; 'free' is the old free-flowing build with no lock at all.
+// Learner-selectable later — for now the lock is the default.
+const LOCK_MODE = 'lock'
 
 // Rough check: do two sentences look like they're in the same language?
 // Used to detect a degenerate prompt (e.g. an English example shown to an
@@ -60,6 +66,8 @@ export default function WordOrder() {
   const [placed, setPlaced]     = useState([])          // { key, word }[]
   const [bank, setBank]         = useState([])          // { key, word }[]
   const [checked, setChecked]       = useState(false)
+  const [lockedCount, setLockedCount] = useState(0)   // opening words snapped shut
+  const [justLocked, setJustLocked]   = useState(null) // keys, for the snap, one render
   const [results, setResults]       = useState([])   // { correct: bool }[]
   const [speaking, setSpeaking]     = useState(false)
   const [wordStatuses, setWordStatuses] = useState({}) // key → 'loading'|'added'|'error'
@@ -174,18 +182,30 @@ export default function WordOrder() {
     setPlaced([])
     setBank(chips)
     setChecked(false)
+    setLockedCount(0)
+    setJustLocked(null)
   }, [index, cards, phase])
 
   const placeWord = (chip) => {
     if (checked) return
-    setBank((b) => b.filter((c) => c.key !== chip.key))
-    setPlaced((p) => [...p, chip])
+    const next = placeChip({ placed, bank, lockedCount }, chip, {
+      targetWords: cards[index].words,
+      mode: LOCK_MODE,
+    })
+    setPlaced(next.placed)
+    setBank(next.bank)
+    setLockedCount(next.lockedCount)
+    if (next.justLocked) {
+      setJustLocked(next.justLocked)
+      setTimeout(() => setJustLocked(null), 600)
+    }
   }
 
-  const returnWord = (chip) => {
+  const returnWord = (chip, i) => {
     if (checked) return
-    setPlaced((p) => p.filter((c) => c.key !== chip.key))
-    setBank((b) => [...b, chip])
+    const next = pullChip({ placed, bank, lockedCount }, i)
+    setPlaced(next.placed)
+    setBank(next.bank)
   }
 
   const handleCheck = () => {
@@ -207,6 +227,8 @@ export default function WordOrder() {
     setPlaced([])
     setBank([])
     setChecked(false)
+    setLockedCount(0)
+    setJustLocked(null)
     if (index + 1 >= cards.length) setPhase('done')
     else setIndex((i) => i + 1)
   }
@@ -517,23 +539,38 @@ export default function WordOrder() {
               <span className="text-sm text-gray-300">{lang === 'uk' ? 'Натисніть слова нижче' : 'Tap the words below'}</span>
             )}
             {placed.map((chip, i) => {
+              // Colour is the whole signal — no ticks, no arrows. A locked word
+              // fills solid; it is settled, not "correct so far".
+              const locked = i < lockedCount
               let chipStyle = 'bg-indigo-50 text-indigo-800 border-indigo-200'
               if (checked) {
                 chipStyle = normalise(chip.word) === normalise(card.words[i])
                   ? 'bg-green-50 text-green-700 border-green-300'
                   : 'bg-rose-50 text-rose-700 border-rose-200'
+              } else if (locked) {
+                chipStyle = 'bg-indigo-600 text-white border-indigo-600'
               }
+              const snapping = justLocked?.includes(chip.key)
+              const movable = !checked && !locked
               return (
                 <button
                   key={chip.key}
-                  onClick={() => returnWord(chip)}
-                  className={`px-3.5 py-2 rounded-xl border text-base font-medium transition-all ${chipStyle} ${!checked ? 'hover:scale-105 active:scale-95' : 'cursor-default'}`}
+                  onClick={() => returnWord(chip, i)}
+                  disabled={!movable}
+                  className={`px-3.5 py-2 rounded-xl border text-base font-medium transition-all duration-300 ${chipStyle} ${movable ? 'hover:scale-105 active:scale-95' : 'cursor-default'} ${snapping ? 'scale-110' : ''}`}
                 >
                   {chip.word}
                 </button>
               )
             })}
           </div>
+          {/* Only ever shown after the bundle locks. Any progress readout before
+              that would reinstate the per-tap signal bundling exists to remove. */}
+          {!checked && lockedCount > 0 && (
+            <p className="mt-2 text-center text-[11px] text-gray-400 uppercase tracking-[0.14em]">
+              {lang === 'uk' ? 'Початок зафіксовано — решта за вами' : 'Opening locked — the rest is yours'}
+            </p>
+          )}
         </div>
 
         {/* One block, two states. This was two nearly identical green panels with
