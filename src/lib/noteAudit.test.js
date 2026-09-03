@@ -43,8 +43,11 @@ test("German umlauts and the sharp s are not diacritic findings", () => {
 
 test("a letter that exists in Russian but not Ukrainian is a finding", () => {
   const f = auditSense(sense({ explanation: "это слово используется в речи" }))
-  assert.deepEqual(f.map((x) => x.code), ["russian-letter"])
+  assert.equal(f[0].code, "russian-letter")
   assert.equal(f[0].excerpt, "э")
+  // The same sentence also trips the word list — both rules are meant to fire.
+  assert.deepEqual(f.filter((x) => x.code === "russian-word").map((x) => x.excerpt),
+                   ["это", "используется"])
 })
 
 // ── one sense, one language ─────────────────────────────────────────────────
@@ -159,4 +162,71 @@ test("a word spliced together from both scripts is still a finding", () => {
   const f = auditSense({ word_form: "diaphragm", explanation: "барierний шар між порожнинами" })
   assert.deepEqual(f.map((x) => x.code), ["mixed-script-word"])
   assert.equal(f[0].excerpt, "барierний")
+})
+
+// ── Russian words, spelled in letters Ukrainian also has ────────────────────
+// The russian-letter rule only catches ы ъ э ё. Most of the Russian in these
+// notes is spelled in letters both languages share, so it walks straight past:
+// "мідного или золотого", "тщательно шукати", "это настоящее чистилище".
+// Only words with no Ukrainian reading at all belong on the list — a word that
+// is Russian in one sense and Ukrainian in another (души) must stay off it.
+
+test("a Russian conjunction inside a Ukrainian note is a finding", () => {
+  const f = auditSense({ word_form: "brazen", grammar_note: "описує предмети з мідного или золотого блиску" })
+  assert.deepEqual(f.map((x) => x.code), ["russian-word"])
+  assert.equal(f[0].excerpt, "или")
+})
+
+test("a Russian adverb is a finding", () => {
+  const f = auditSense({ word_form: "comb", explanation: "тщательно шукати щось у якомусь місці" })
+  assert.deepEqual(f.map((x) => x.code), ["russian-word"])
+  assert.equal(f[0].excerpt, "тщательно")
+})
+
+test("a Russian phrase reports each word it is sure of", () => {
+  const f = auditSense({ word_form: "purgatory", usage_note: "метафорично: 'это настоящее чистилище'" })
+  assert.deepEqual(f.filter((x) => x.code === "russian-word").map((x) => x.excerpt),
+                   ["это", "настоящее"])
+})
+
+test("the list ignores case and punctuation around a word", () => {
+  const f = auditSense({ word_form: "x", explanation: "Или так, или інакше." })
+  assert.equal(f[0].excerpt, "Или")
+})
+
+test("a word that has a Ukrainian reading too is left alone", () => {
+  // "души" is Russian for souls AND the Ukrainian genitive of душа.
+  assert.deepEqual(codes({ word_form: "purgatory", explanation: "немає души без тіла" }), [])
+})
+
+test("a Ukrainian word is never mistaken for its Russian counterpart", () => {
+  assert.deepEqual(codes({ word_form: "x", explanation: "або ретельно шукати, бо це справжнє випробування" }), [])
+})
+
+test("a Russian word is not found inside a longer Ukrainian word", () => {
+  // "что" must not match inside "нечто-подібний"; "и" boundaries matter.
+  assert.deepEqual(codes({ word_form: "x", explanation: "мачто, лишень частина слова" }), [])
+})
+
+// ── the gender check knows more of the vocabulary ───────────────────────────
+// Grammar notes call a noun лічильний / обчислюваний / неформальний as readily
+// as they call a verb правильний, and the check only knew nineteen stems.
+
+test("a feminine adjective on a masculine grammar noun is a finding", () => {
+  const f = auditSense({ word_form: "strop", grammar_note: "Лічильна іменник; широке значення" })
+  assert.deepEqual(f.map((x) => x.code), ["gender-agreement"])
+  assert.equal(f[0].excerpt, "Лічильна іменник")
+})
+
+test("неформальна прикметник is a finding", () => {
+  const f = auditSense({ word_form: "crack", grammar_note: "Неформальна прикметник; використовується перед іменником" })
+  assert.deepEqual(f.map((x) => x.code), ["gender-agreement"])
+})
+
+test("технічний термін agrees and is left alone", () => {
+  assert.deepEqual(codes({ word_form: "backlash", grammar_note: "Технічний термін; вживається як countable noun" }), [])
+})
+
+test("обчислюваний іменник agrees and is left alone", () => {
+  assert.deepEqual(codes({ word_form: "mint", grammar_note: "Обчислюваний іменник; з артиклем для конкретного виду." }), [])
 })
