@@ -1503,9 +1503,10 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
               />
             </div>
 
-            {/* Grammar note */}
+            {/* Grammar note. Labelled as the CARD labels it: a form that renames
+                the field you were just reading is a form you have to decode. */}
             <div>
-              <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.grammarNote')}</label>
+              <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.grammar')}</label>
               <input
                 value={noteValue('grammarNote')}
                 onChange={(e) => setNote('grammarNote', e.target.value)}
@@ -1525,9 +1526,9 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
               />
             </div>
 
-            {/* Explanation */}
+            {/* Explanation — "Значення" on the card, and now here too. */}
             <div>
-              <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.explanation')}</label>
+              <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.meaning')}</label>
               <textarea
                 value={noteValue('explanation')}
                 onChange={(e) => setNote('explanation', e.target.value)}
