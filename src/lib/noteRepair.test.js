@@ -136,3 +136,36 @@ test("a non-standard term is reported once, not twice", () => {
   const findings = auditSense({ word_form: "strop", grammar_note: "Лічильна іменник" })
   assert.deepEqual(findings.map((f) => f.code), ["nonstandard-term"])
 })
+
+// ── a whole sense, field by field ───────────────────────────────────────────
+import { repairSense } from "./noteRepair.js"
+
+test("repairSense returns one row per field, not one per finding", () => {
+  // Two Russian words in one note is one edit to review, not two.
+  const rows = repairSense({
+    word_form: "purgatory", id: "s1",
+    usage_note: "метафорично: 'это настоящее чистилище' означає жах",
+  })
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].field, "usage_note")
+  assert.equal(rows[0].after, "метафорично: 'це справжнє чистилище' означає жах")
+  assert.deepEqual(rows[0].codes, ["russian-letter", "russian-word", "russian-word"])
+})
+
+test("a field with nothing derivable comes back with after = null", () => {
+  const rows = repairSense({ word_form: "backlash", id: "s2", explanation: "реакція на événement" })
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].after, null)
+})
+
+test("an approved one-off wins over the derived repair", () => {
+  const rows = repairSense({
+    word_form: "brazen", id: "s3", translation: "дерзкий, нахабный, безстидний",
+  })
+  assert.equal(rows[0].after, "зухвалий, нахабний, безсоромний")
+  assert.equal(rows[0].oneOff, true)
+})
+
+test("a clean sense produces no rows at all", () => {
+  assert.deepEqual(repairSense({ word_form: "x", id: "s4", explanation: "уважно дослідити щось" }), [])
+})

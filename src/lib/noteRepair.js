@@ -13,6 +13,8 @@
 
 import { NOUN_GENDER, ADJ_STEMS, ADJ_ENDINGS, adjectiveGender } from './noteAudit.js'
 import { canonicalStem } from './grammarTerms.js'
+import { auditSense } from './noteAudit.js'
+import { oneOffRepair } from './oneOffRepairs.js'
 
 const ENDING_FOR = { m: 'ий', f: 'а', n: 'е' }
 
@@ -109,4 +111,44 @@ export function proposeRepair(finding, text) {
   const at = text.indexOf(finding.excerpt)
   if (at < 0) return null
   return text.slice(0, at) + fixed + text.slice(at + finding.excerpt.length)
+}
+
+
+// Every field of a sense that the audit has something to say about, as ONE row
+// each: a note with two defects is one edit for a person to read, not two.
+// `after` is null where nothing could be derived — the row is still returned,
+// so the pass shows what it is leaving behind rather than quietly omitting it.
+export function repairSense(sense) {
+  const findings = auditSense(sense)
+  const byField = new Map()
+  for (const f of findings) {
+    if (!byField.has(f.field)) byField.set(f.field, [])
+    byField.get(f.field).push(f)
+  }
+
+  return [...byField].map(([field, fieldFindings]) => {
+    const before = sense[field] ?? sense[field.replace(/_(.)/g, (_, c) => c.toUpperCase())]
+    const approved = oneOffRepair(sense, field)
+
+    // Derived repairs chain: each one rewrites the text the next one reads.
+    let after = approved
+    if (!after) {
+      let text = before
+      for (const finding of fieldFindings) {
+        const next = proposeRepair(finding, text)
+        if (next) text = next
+      }
+      after = text === before ? null : text
+    }
+
+    return {
+      senseId: sense.id,
+      word: sense.word_form ?? sense.wordForm,
+      field,
+      before,
+      after,
+      oneOff: Boolean(approved),
+      codes: fieldFindings.map((f) => f.code),
+    }
+  })
 }

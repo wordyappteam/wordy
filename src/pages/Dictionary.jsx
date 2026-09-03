@@ -15,6 +15,7 @@ import {
 } from '../lib/collections'
 import { candidateToRows } from '../lib/identifyCandidates'
 import { planSenseWrites } from '../lib/senseWrites'
+import { repairSense } from '../lib/noteRepair'
 import { uploadSenseImage, deleteSenseImageByUrl, setSenseImageUrl } from '../lib/senseImages'
 import NavBar from '../components/NavBar'
 
@@ -2176,6 +2177,140 @@ function CollectionsModal({ collections, words, membershipByWord, countByCollect
 // UPDATEs rows in a dictionary someone has been studying from for a month. Sense
 // ids are untouched, so interval_step / next_review_date / lapses all survive —
 // the reason this is a re-gloss and not a re-identify.
+// Repairing the written notes.
+//
+// The audit finds defects a learner cannot catch — a Latin B inside Берегти, a
+// Russian "или", fourteen spellings of "countable noun". This shows every one
+// with its correction, and writes only what is ticked.
+//
+// It writes ONE text column per row, by sense id. It never touches SRS state,
+// never re-inserts a row, and never changes an id — the tool that did that cost
+// a word its whole study history, and was fixed this morning. Undo is the
+// export taken beforehand, which is why this refuses to run without one.
+function RepairNotesModal({ onClose, userId, targetLang, lang, onApplied }) {
+  const [phase, setPhase] = useState('idle')   // idle | scanning | review | applying | done | error
+  const [rows, setRows] = useState([])
+  const [chosen, setChosen] = useState({})
+  const [error, setError] = useState(null)
+  const [applied, setApplied] = useState(0)
+  const uk = lang === 'uk'
+
+  async function scan() {
+    setPhase('scanning'); setError(null)
+    try {
+      const { data, error: err } = await supabase
+        .from('word_senses')
+        .select('id, word_form, translation, explanation, grammar_note, usage_note')
+        .eq('user_id', userId).eq('target_language', targetLang)
+      if (err) throw err
+      const found = (data ?? []).flatMap(repairSense).filter((r) => r.after)
+      setRows(found)
+      setChosen(Object.fromEntries(found.map((r, i) => [i, true])))
+      setPhase('review')
+    } catch (e) { setError(e?.message ?? String(e)); setPhase('error') }
+  }
+
+  async function apply() {
+    setPhase('applying'); setError(null)
+    try {
+      let n = 0
+      for (const [i, row] of rows.entries()) {
+        if (!chosen[i]) continue
+        // One column, keyed by the sense's own id. Nothing else can be reached
+        // from here, which is the point.
+        const { error: err } = await supabase.from('word_senses')
+          .update({ [row.field]: row.after })
+          .eq('id', row.senseId).eq('user_id', userId)
+        if (err) throw err
+        n++
+      }
+      setApplied(n); setPhase('done'); onApplied?.()
+    } catch (e) { setError(e?.message ?? String(e)); setPhase('error') }
+  }
+
+  const count = Object.values(chosen).filter(Boolean).length
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={phase === 'applying' ? undefined : onClose} />
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">{uk ? 'Виправити нотатки' : 'Repair notes'}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {uk ? 'Змінюється лише текст. Історія вивчення не торкається.'
+                  : 'Text only. Study history is never touched.'}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {phase === 'idle' && (
+            <div className="text-sm text-gray-600 flex flex-col gap-3">
+              <p>{uk
+                ? 'Спершу зробіть експорт — це єдиний спосіб повернути текст назад.'
+                : 'Export first — that is the only way to put the old text back.'}</p>
+              <button onClick={scan} className="self-start bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
+                {uk ? 'Знайти помилки' : 'Find the defects'}
+              </button>
+            </div>
+          )}
+
+          {phase === 'scanning' && <p className="text-sm text-gray-500">{uk ? 'Перевіряю…' : 'Checking…'}</p>}
+
+          {phase === 'review' && rows.length === 0 && (
+            <p className="text-sm text-gray-600">{uk ? 'Нічого не знайдено.' : 'Nothing found.'}</p>
+          )}
+
+          {phase === 'review' && rows.map((row, i) => (
+            <label key={i} className="flex gap-3 py-3 border-b border-gray-50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(chosen[i])}
+                onChange={(e) => setChosen((c) => ({ ...c, [i]: e.target.checked }))}
+                className="mt-1 shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-gray-400 mb-1">
+                  <span className="font-semibold text-gray-600">{row.word}</span>
+                  {' · '}{row.field.replace('_', ' ')}
+                  {row.oneOff && <span className="ml-2 text-indigo-400">{uk ? 'вручну' : 'written by hand'}</span>}
+                </p>
+                <p className="text-sm text-rose-700 line-through decoration-rose-200 break-words">{row.before}</p>
+                <p className="text-sm text-green-700 break-words">{row.after}</p>
+              </div>
+            </label>
+          ))}
+
+          {phase === 'applying' && <p className="text-sm text-gray-500">{uk ? 'Записую…' : 'Writing…'}</p>}
+          {phase === 'done' && (
+            <p className="text-sm text-green-700 font-medium">
+              {uk ? `Виправлено: ${applied}.` : `${applied} notes repaired.`}
+            </p>
+          )}
+          {phase === 'error' && <p className="text-sm text-rose-600">{error}</p>}
+        </div>
+
+        {phase === 'review' && rows.length > 0 && (
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+            <p className="text-xs text-gray-400">
+              {uk ? `Вибрано ${count} із ${rows.length}` : `${count} of ${rows.length} selected`}
+            </p>
+            <button
+              onClick={apply}
+              disabled={!count}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+            >
+              {uk ? `Застосувати (${count})` : `Apply ${count}`}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ReglossModal({ onClose, userId, targetLang, targetLanguageName, lang, onApplied }) {
   const [phase, setPhase] = useState("idle") // idle | scanning | review | applying | done | error
   const [progress, setProgress] = useState({ done: 0, total: 0 })
@@ -2761,6 +2896,7 @@ export default function Dictionary() {
   // see it except one word at a time in the UI. Also a plain backup.
   const [exporting, setExporting] = useState(false)
   const [showRegloss, setShowRegloss] = useState(false)
+  const [showRepair, setShowRepair] = useState(false)
   async function handleExport() {
     if (exporting) return
     setExporting(true)
@@ -2828,6 +2964,12 @@ export default function Dictionary() {
               className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
             >
               {t('dict.importList')}
+            </button>
+            <button
+              onClick={() => setShowRepair(true)}
+              className="border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-600 hover:text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+            >
+              {lang === 'uk' ? 'Виправити нотатки' : 'Repair notes'}
             </button>
             <button
               onClick={() => setShowRegloss(true)}
@@ -3120,6 +3262,15 @@ export default function Dictionary() {
       )}
       {showAddModal && <AddWordModal onAdd={handleAdd} onClose={() => setShowAddModal(false)} interfaceLanguage={interfaceLanguage} targetLanguageName={targetLanguageName} topics={topics} />}
       {showBulkModal && <BulkImportModal onClose={() => setShowBulkModal(false)} onImport={handleBulkImport} />}
+      {showRepair && (
+        <RepairNotesModal
+          onClose={() => setShowRepair(false)}
+          userId={user.id}
+          targetLang={targetLang}
+          lang={lang}
+          onApplied={fetchWords}
+        />
+      )}
       {showRegloss && (
         <ReglossModal
           onClose={() => setShowRegloss(false)}
