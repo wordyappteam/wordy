@@ -82,14 +82,19 @@ test("a sense written entirely in Ukrainian is not a finding", () => {
 // Grammar notes draw on a tiny closed vocabulary, which is what makes checking
 // their agreement possible at all. Outside that vocabulary the audit says nothing.
 test("a masculine adjective on a neuter grammar noun is a finding", () => {
-  const f = auditSense(sense({ grammar_note: "регулярний дієслово" }))
+  const f = auditSense(sense({ grammar_note: "перехідний дієслово" }))
   assert.deepEqual(f.map((x) => x.code), ["gender-agreement"])
-  assert.equal(f[0].excerpt, "регулярний дієслово")
+  assert.equal(f[0].excerpt, "перехідний дієслово")
   assert.match(f[0].detail, /дієслово/)
 })
 
 test("the same note in the right gender is not a finding", () => {
-  assert.deepEqual(codes(sense({ grammar_note: "регулярне дієслово" })), [])
+  assert.deepEqual(codes(sense({ grammar_note: "перехідне дієслово" })), [])
+})
+
+test("регулярне дієслово is right about gender and wrong about vocabulary", () => {
+  // It agrees perfectly. It is still a calque for правильне дієслово.
+  assert.deepEqual(codes(sense({ grammar_note: "регулярне дієслово" })), ["nonstandard-term"])
 })
 
 test("a feminine adjective on a feminine grammar noun is not a finding", () => {
@@ -103,7 +108,7 @@ test("an adjective outside the grammar vocabulary is left alone", () => {
 // ── the whole dictionary ────────────────────────────────────────────────────
 test("auditDictionary tags each finding with the word it came from", () => {
   const found = auditDictionary([
-    sense({ word_form: "überprüfen", grammar_note: "регулярний дієслово" }),
+    sense({ word_form: "überprüfen", grammar_note: "перехідний дієслово" }),
     sense({ word_form: "prüfen" }),
   ])
   assert.equal(found.length, 1)
@@ -112,7 +117,7 @@ test("auditDictionary tags each finding with the word it came from", () => {
 })
 
 test("camelCase senses from the app are read the same as snake_case ones from an export", () => {
-  assert.deepEqual(codes({ word_form: "x", grammarNote: "регулярний дієслово" }), ["gender-agreement"])
+  assert.deepEqual(codes({ word_form: "x", grammarNote: "перехідний дієслово" }), ["gender-agreement"])
 })
 
 // ── what a second dictionary taught the audit ───────────────────────────────
@@ -213,9 +218,9 @@ test("a Russian word is not found inside a longer Ukrainian word", () => {
 // as they call a verb правильний, and the check only knew nineteen stems.
 
 test("a feminine adjective on a masculine grammar noun is a finding", () => {
-  const f = auditSense({ word_form: "strop", grammar_note: "Лічильна іменник; широке значення" })
+  const f = auditSense({ word_form: "crack", grammar_note: "Предикативна прикметник; перед іменником" })
   assert.deepEqual(f.map((x) => x.code), ["gender-agreement"])
-  assert.equal(f[0].excerpt, "Лічильна іменник")
+  assert.equal(f[0].excerpt, "Предикативна прикметник")
 })
 
 test("неформальна прикметник is a finding", () => {
@@ -227,8 +232,8 @@ test("технічний термін agrees and is left alone", () => {
   assert.deepEqual(codes({ word_form: "backlash", grammar_note: "Технічний термін; вживається як countable noun" }), [])
 })
 
-test("обчислюваний іменник agrees and is left alone", () => {
-  assert.deepEqual(codes({ word_form: "mint", grammar_note: "Обчислюваний іменник; з артиклем для конкретного виду." }), [])
+test("обчислюваний іменник agrees but is not the term the app settled on", () => {
+  assert.deepEqual(codes({ word_form: "mint", grammar_note: "Обчислюваний іменник; з артиклем." }), ["nonstandard-term"])
 })
 
 test("сила is Ukrainian and must never be called Russian", () => {

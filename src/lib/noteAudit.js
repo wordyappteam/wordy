@@ -13,6 +13,8 @@
 // simply wrong ("hingegen is a Сполучник" — it is an adverb). Those need a
 // reviewer, not a regex, and pretending otherwise would hide them.
 
+import { canonicalStem } from './grammarTerms.js'
+
 const TEXT_FIELDS = [
   ['explanation', 'explanation'],
   ['grammar_note', 'grammarNote'],
@@ -137,12 +139,23 @@ export function auditSense(sense) {
       if (foreign) add('foreign-diacritic', field, foreign, 'a diacritic German does not use, so the word is not German either')
     }
 
-    // Agreement, inside the closed grammar vocabulary only.
+    // The grammar vocabulary: first whether the TERM is the one the app has
+    // settled on, then whether it agrees. A non-standard term subsumes the
+    // agreement question — the repair rewrites the word anyway, and reporting
+    // both would make one defect look like two.
     const ws = tokens(text)
     for (let i = 1; i < ws.length; i++) {
       const noun = NOUN_GENDER[ws[i].toLowerCase()]
+      if (!noun) continue
+
+      if (canonicalStem(ws[i - 1])) {
+        add('nonstandard-term', field, ws[i - 1] + ' ' + ws[i],
+          'a term outside the vocabulary the app has settled on')
+        continue
+      }
+
       const adj = adjectiveGender(ws[i - 1])
-      if (noun && adj && noun !== adj) {
+      if (adj && noun !== adj) {
         add('gender-agreement', field, ws[i - 1] + ' ' + ws[i],
           '"' + ws[i] + '" is ' + GENDER_NAME[noun] + ' роду, the adjective is ' + GENDER_NAME[adj])
       }

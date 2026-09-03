@@ -12,6 +12,7 @@
 // every guess ships.
 
 import { NOUN_GENDER, ADJ_STEMS, ADJ_ENDINGS, adjectiveGender } from './noteAudit.js'
+import { canonicalStem } from './grammarTerms.js'
 
 const ENDING_FOR = { m: 'ий', f: 'а', n: 'е' }
 
@@ -78,6 +79,13 @@ export function proposeRepair(finding, text) {
   if (typeof text !== 'string' || !finding?.excerpt) return null
 
   let fixed = null
+
+  if (finding.code === 'nonstandard-term') {
+    const [term, noun] = finding.excerpt.split(/\s+/)
+    const stem = canonicalStem(term)
+    const gender = NOUN_GENDER[noun?.toLowerCase()]
+    if (stem && gender) fixed = `${matchCase(term, stem + ENDING_FOR[gender])} ${noun}`
+  }
 
   if (finding.code === 'gender-agreement') {
     const [adjective, noun] = finding.excerpt.split(/\s+/)

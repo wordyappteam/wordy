@@ -18,8 +18,8 @@ const only = (sense) => {
 // ── agreement: the noun fixes the adjective ─────────────────────────────────
 test("a feminine adjective on a masculine noun is corrected to masculine", () => {
   assert.equal(
-    only({ word_form: "strop", grammar_note: "Лічильна іменник; широке значення" }),
-    "Лічильний іменник; широке значення",
+    only({ word_form: "crack", grammar_note: "Предикативна прикметник; перед іменником" }),
+    "Предикативний прикметник; перед іменником",
   )
 })
 
@@ -98,4 +98,41 @@ test("a note in the wrong language has no derivable correction", () => {
     grammar_note: "Attributive: allgemeiner Wunsch",
   })
   assert.equal(proposeRepair(f[0], "Attributive: allgemeiner Wunsch"), null)
+})
+
+// ── non-standard terms are rewritten, not merely made to agree ──────────────
+import { CANONICAL_TERMS } from "./grammarTerms.js"
+
+test("a non-standard countable term becomes the canonical one, agreeing", () => {
+  assert.equal(
+    only({ word_form: "strop", grammar_note: "Лічильна іменник; широке значення" }),
+    "Злічуваний іменник; широке значення",
+  )
+})
+
+test("every spelling of countable lands on the same term", () => {
+  for (const variant of ["Лічуваний", "Рахункова", "Зліченна", "Обчислюваний", "Лічивна"]) {
+    assert.equal(
+      only({ word_form: "x", grammar_note: `${variant} іменник` }),
+      "Злічуваний іменник",
+      variant,
+    )
+  }
+})
+
+test("the negative term keeps its negation", () => {
+  assert.equal(only({ word_form: "x", grammar_note: "Незлічувана іменник" }), "Незлічуваний іменник")
+})
+
+test("регулярний дієслово becomes правильне дієслово", () => {
+  assert.equal(only({ word_form: "überprüfen", grammar_note: "регулярний дієслово" }), "правильне дієслово")
+})
+
+test("a canonical term with the wrong ending is still just an agreement fix", () => {
+  assert.equal(only({ word_form: "comb", grammar_note: "Правильний дієслово" }), "Правильне дієслово")
+})
+
+test("a non-standard term is reported once, not twice", () => {
+  const findings = auditSense({ word_form: "strop", grammar_note: "Лічильна іменник" })
+  assert.deepEqual(findings.map((f) => f.code), ["nonstandard-term"])
 })
