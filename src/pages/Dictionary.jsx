@@ -2130,7 +2130,12 @@ function RepairNotesModal({ onClose, userId, targetLang, lang, onApplied }) {
     try {
       const { data, error: err } = await supabase
         .from('word_senses')
-        .select('id, word_form, translation, explanation, grammar_note, usage_note')
+        // `pos` is here because a hand-written repair can correct it — hingegen
+        // was labelled a conjunction in both its note and its data. A column the
+        // scan does not fetch is a repair that can never appear, and no test of
+        // repairSense can see that: it is the gap between the query and the
+        // function, not inside either.
+        .select('id, word_form, pos, translation, explanation, grammar_note, usage_note')
         .eq('user_id', userId).eq('target_language', targetLang)
       if (err) throw err
       const found = (data ?? []).flatMap(repairSense).filter((r) => r.after)
