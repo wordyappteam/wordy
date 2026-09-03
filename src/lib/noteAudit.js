@@ -36,7 +36,9 @@ const RUSSIAN_ONLY = /[ыъэёЫЪЭЁ]/
 const FOREIGN_DIACRITIC = /[À-ɏ]/
 const GERMAN_LETTERS = /[äöüÄÖÜß]/
 
-const tokens = (s) => s.split(/[\s·;,()«»"'—–]+/).filter(Boolean)
+// Hyphens split too: a Latin acronym hyphenated onto a Ukrainian word
+// ("GPS-маяки") is ordinary writing, not a word spliced out of two scripts.
+const tokens = (s) => s.split(/[\s·;,()«»"'—–-]+/).filter(Boolean)
 
 // The closed vocabulary of a grammar note. Agreement inside it is checkable
 // precisely because the vocabulary is small; outside it the audit says nothing.
@@ -70,6 +72,9 @@ function fieldsOf(sense) {
     .filter(([, v]) => typeof v === 'string' && v.trim())
 }
 
+// Any Cyrillic at all makes a note Cyrillic. That is deliberate: a single
+// Ukrainian phrase spliced into an English note ("Uncountable як колективне")
+// is exactly the defect this is looking for.
 function scriptOf(text) {
   if (CYRILLIC.test(text)) return 'cyrillic'
   return LATIN.test(text) ? 'latin' : null
@@ -110,15 +115,26 @@ export function auditSense(sense) {
     }
   }
 
-  // One sense, one language. English and Ukrainian entries live side by side by
-  // design, so an English note is wrong only against its own sense's majority.
-  const scripts = fields.map(([field, text]) => [field, scriptOf(text)]).filter(([, s]) => s)
-  const cyr = scripts.filter(([, s]) => s === 'cyrillic').length
-  const lat = scripts.filter(([, s]) => s === 'latin').length
-  if (cyr && lat) {
-    const odd = cyr >= lat ? 'latin' : 'cyrillic'
-    for (const [field, s] of scripts) {
-      if (s === odd) add('mixed-language', field, null, 'the rest of this sense is written in ' + (odd === 'latin' ? 'Ukrainian' : 'English'))
+  // The notes of one sense should agree with each other, and the EXPLANATION is
+  // the anchor: it is the meaning, the primary note, so a grammar or usage note
+  // that disagrees with it is the one out of place. Majority voting cannot
+  // settle a two-note sense, and guessing there put the finding on the wrong
+  // field. `translation` takes no part: it is the gloss — an identifier in the
+  // language the learner already has — and treating a Ukrainian gloss on an
+  // English entry as a defect flagged 40 sound entries on the first run.
+  const NOTE_FIELDS = ['explanation', 'grammar_note', 'usage_note']
+  const notes = fields
+    .filter(([field]) => NOTE_FIELDS.includes(field))
+    .map(([field, text]) => [field, scriptOf(text)])
+    .filter(([, script]) => script)
+
+  const anchor = notes.find(([field]) => field === 'explanation') ?? notes[0]
+  if (anchor) {
+    const spoken = anchor[1] === 'cyrillic' ? 'Ukrainian' : 'English'
+    for (const [field, script] of notes) {
+      if (script !== anchor[1]) {
+        add('mixed-language', field, null, `the meaning of this sense is written in ${spoken}`)
+      }
     }
   }
 

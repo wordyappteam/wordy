@@ -111,3 +111,52 @@ test("auditDictionary tags each finding with the word it came from", () => {
 test("camelCase senses from the app are read the same as snake_case ones from an export", () => {
   assert.deepEqual(codes({ word_form: "x", grammarNote: "регулярний дієслово" }), ["gender-agreement"])
 })
+
+// ── what a second dictionary taught the audit ───────────────────────────────
+// Run against Nika's ENGLISH dictionary, the first two rules here fired 41
+// times and almost all of it was noise. Both times the audit was wrong.
+
+// The gloss is an identifier and belongs in the language the learner already
+// has; the explanation is the meaning and belongs in the one being learned.
+// "One sense, one language" mistook that design for a defect 40 times over.
+test("a Ukrainian gloss on an English entry is the design, not a defect", () => {
+  assert.deepEqual(codes({
+    word_form: "sorrow",
+    translation: "глибокий смуток, горе",
+    explanation: "Deep sadness or grief, typically caused by loss.",
+    grammar_note: "Uncountable or countable; often used with 'deep'.",
+  }), [])
+})
+
+test("the notes still have to agree with each other", () => {
+  const f = auditSense({
+    word_form: "allgemein",
+    translation: "загальний",
+    explanation: "справедливий для всіх або більшості",
+    grammar_note: "Attributive: allgemeiner Wunsch; predicative: Das ist allgemein bekannt.",
+  })
+  assert.deepEqual(f.map((x) => x.code), ["mixed-language"])
+  assert.equal(f[0].field, "grammar_note")
+})
+
+test("Ukrainian spliced into an English note is still a finding", () => {
+  const f = auditSense({
+    word_form: "champagne",
+    translation: "шампанське",
+    explanation: "Sparkling wine produced in the Champagne region of France.",
+    grammar_note: "Uncountable як колективне: 'champagne is expensive'.",
+  })
+  assert.deepEqual(f.map((x) => x.code), ["mixed-language"])
+  assert.equal(f[0].field, "grammar_note")
+})
+
+// A Latin acronym hyphenated onto a Ukrainian word is ordinary writing.
+test("a hyphenated Latin acronym is not a mixed-script word", () => {
+  assert.deepEqual(codes({ word_form: "beacon", explanation: "Сучасні GPS-маяки допомагають навігації" }), [])
+})
+
+test("a word spliced together from both scripts is still a finding", () => {
+  const f = auditSense({ word_form: "diaphragm", explanation: "барierний шар між порожнинами" })
+  assert.deepEqual(f.map((x) => x.code), ["mixed-script-word"])
+  assert.equal(f[0].excerpt, "барierний")
+})
