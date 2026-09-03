@@ -14,7 +14,7 @@
 import { NOUN_GENDER, ADJ_STEMS, ADJ_ENDINGS, adjectiveGender } from './noteAudit.js'
 import { canonicalStem } from './grammarTerms.js'
 import { auditSense } from './noteAudit.js'
-import { oneOffRepair } from './oneOffRepairs.js'
+import { oneOffRepair, ONE_OFF_REPAIRS } from './oneOffRepairs.js'
 
 const ENDING_FOR = { m: 'ий', f: 'а', n: 'е' }
 
@@ -124,6 +124,18 @@ export function repairSense(sense) {
   for (const f of findings) {
     if (!byField.has(f.field)) byField.set(f.field, [])
     byField.get(f.field).push(f)
+  }
+
+  // A hand-written repair stands on its own. The ones that matter most are for
+  // defects no rule can see — a fluent sentence that says the wrong thing, or a
+  // `pos` that is simply incorrect — so they cannot wait for a finding to point
+  // at their field, and `pos` is not a note at all.
+  const word = sense.word_form ?? sense.wordForm
+  for (const entry of ONE_OFF_REPAIRS) {
+    if (entry.word !== word || byField.has(entry.field)) continue
+    // Only if its text still matches: an entry whose note has moved on since it
+    // was written must not surface as a row with nothing to propose.
+    if (oneOffRepair(sense, entry.field)) byField.set(entry.field, [])
   }
 
   return [...byField].map(([field, fieldFindings]) => {

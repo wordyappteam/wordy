@@ -169,3 +169,36 @@ test("an approved one-off wins over the derived repair", () => {
 test("a clean sense produces no rows at all", () => {
   assert.deepEqual(repairSense({ word_form: "x", id: "s4", explanation: "уважно дослідити щось" }), [])
 })
+
+// ── hand-written repairs the audit cannot find at all ───────────────────────
+// "лепеста" is not a Ukrainian word; "направлення" is a real word in the wrong
+// place; hingegen is called a Сполучник when it is an adverb. Every one is
+// fluent Cyrillic, so no rule reaches them — but a person reading the dictionary
+// does, and what they decide has to be applicable.
+
+test("a one-off applies even when the audit finds nothing wrong", () => {
+  const rows = repairSense({
+    id: "s9", word_form: "hingegen", pos: "conjunction",
+    explanation: "Сполучник, який показує контраст або протилежність між двома висловленнями.",
+  })
+  const byField = Object.fromEntries(rows.map((r) => [r.field, r]))
+  assert.equal(byField.explanation.after,
+    "Прислівник (Konjunktionaladverb), який показує контраст або протилежність між двома висловленнями.")
+  assert.equal(byField.explanation.codes.length, 0)
+  assert.equal(byField.explanation.oneOff, true)
+})
+
+test("a one-off can correct a field that is not a note at all", () => {
+  const rows = repairSense({
+    id: "s9", word_form: "hingegen", pos: "conjunction",
+    explanation: "Сполучник, який показує контраст або протилежність між двома висловленнями.",
+  })
+  const pos = rows.find((r) => r.field === "pos")
+  assert.equal(pos.before, "conjunction")
+  assert.equal(pos.after, "adverb")
+})
+
+test("a one-off whose text has since changed does not apply", () => {
+  const rows = repairSense({ id: "s9", word_form: "hingegen", pos: "adverb", explanation: "Прислівник." })
+  assert.deepEqual(rows, [])
+})

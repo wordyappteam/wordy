@@ -71,6 +71,39 @@ export const ONE_OFF_REPAIRS = [
     after:  "Uncountable as a collective: 'champagne is expensive'. Countable: 'two champagnes please'.",
     why: 'Ukrainian spliced into a note whose sense is explained in English',
   },
+  // ── Found by reading the repaired dictionary, 2026-09-03. None of these is
+  // reachable by any rule: each is fluent Cyrillic that simply says the wrong
+  // thing, which is the class the audit says out loud it cannot see.
+  {
+    word: 'diaphragm', field: 'explanation',
+    before: "У фотографії та мікроскопії — це лепеста або отвір, що регулює кількість світла, яке проходить через об'єктив. Впливає на глибину різкості та експозицію.",
+    after:  "У фотографії та мікроскопії — це заслінка або отвір, що регулює кількість світла, яке проходить через об'єктив. Впливає на глибину різкості та експозицію.",
+    why: 'лепеста is not a Ukrainian word; the part is a заслінка',
+  },
+  {
+    word: 'diaphragm', field: 'explanation',
+    before: "Це основна дихальна м'яз під грудною клітиною, яка скорочується і розслаблюється для вдиху та видиху. Критично важлива для дихання в більшості ссавців.",
+    after:  "Це основний дихальний м'яз під грудною кліткою, який скорочується і розслаблюється для вдиху та видиху. Критично важливий для дихання в більшості ссавців.",
+    why: "м'яз is masculine, and a ribcage is грудна КЛІТКА — клітина is a cell",
+  },
+  {
+    word: 'backlash', field: 'explanation',
+    before: 'У механіці — зазор між деталями механізму. Призводить до люфту при розвороті направлення.',
+    after:  'У механіці — зазор між деталями механізму. Призводить до люфту при зміні напрямку.',
+    why: 'направлення is a real word in the wrong place; the phrase is зміна напрямку',
+  },
+  {
+    word: 'hingegen', field: 'explanation',
+    before: 'Сполучник, який показує контраст або протилежність між двома висловленнями.',
+    after:  'Прислівник (Konjunktionaladverb), який показує контраст або протилежність між двома висловленнями.',
+    why: 'hingegen is an adverb, not a conjunction — it does not send the verb to the end',
+  },
+  {
+    word: 'hingegen', field: 'pos',
+    before: 'conjunction',
+    after:  'adverb',
+    why: 'the note and the data agreed with each other and were both wrong',
+  },
 ]
 
 // The one-off written for this sense and field, if its text still matches.
