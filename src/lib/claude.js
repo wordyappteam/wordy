@@ -1,6 +1,10 @@
 import { parseSentenceSet } from './sentenceSet'
 import { cleanGrammarNote, cleanUsageNote } from './senseNotes'
 import { splitCandidates } from './identifyCandidates.js'
+import { CANONICAL_TERMS } from './grammarTerms.js'
+
+// Spelled into the prompt so new notes arrive in the vocabulary the app has settled on.
+const UK_GRAMMAR_TERMS = Object.values(CANONICAL_TERMS).join(' · ')
 
 // Transient statuses worth an automatic retry: rate-limit, overload, gateway blips.
 const RETRYABLE = [429, 500, 502, 503, 504, 529]
@@ -50,6 +54,12 @@ async function callClaude({ system, messages, model = 'claude-haiku-4-5', maxTok
 // ── Word identification ────────────────────────────────────────────────────
 // Returns { candidates: [ { word, entryType, senses: [...] }, ... ] }
 // Each sense: { pos, wordForm, translation, form, grammarNote, explanation, isException, examples, conjugation, register, cefr }
+//
+// The Ukrainian grammatical vocabulary is fixed and shared with the note audit
+// (src/lib/grammarTerms.js), because a term the prompt does not name comes back
+// in as many spellings as the model feels like: one concept arrived here in
+// FOURTEEN forms — лічильна, лічуваний, рахункова, зліченна, обчислюваний,
+// лічивна — several of them not Ukrainian words at all.
 // When context (sentence) is provided, returns only the matching sense.
 // Adds script hint so Haiku doesn't confuse e.g. Ukrainian (Cyrillic) with Polish
 function langWithScript(lang) {
@@ -192,7 +202,7 @@ Otherwise return ONLY this JSON:
       "wordForm": "${wordFormNote}",
       "translation": "THIS sense's meaning in ${ifaceLang}, as ONE primary gloss — the single best word or short phrase, under 4 words. This is the sense's identity: it is what the sense picker shows, what a multiple-choice option offers and what a typed answer is graded against, so it must be short enough to read at a glance and specific enough to name THIS sense and no other. A second gloss may follow after a comma ONLY if it is a true synonym that adds clarity; never a third. Never a pile of near-synonyms (WRONG: 'панувати, правити; бути правителем' — that names no single thing). Never a definition; the definition is "explanation". If two senses of this word would get the same primary gloss, you have split them wrongly — see the SEPARATION TEST.",
       "form": "${formNote}",
-      "grammarNote": "how to BUILD with THIS word — or null. Telegraphic: under 12 words, no sentences, parts separated by ' · '. The test is whether the fact is specific to this word. NULL if it is true of the whole word class (every masculine noun takes den in the accusative; most verbs take haben) or already visible on the card (the article is in the headword, the plural is in \\"form\\", irregularity is in the conjugation table). WORTH SAYING, and belongs HERE rather than in usageNote: a governed preposition and its case — ALWAYS include this when the verb has one, it is the single most useful thing you can say (bestehen aus + Dativ · sich freuen auf + Akk · warten auf + Akk); an object case that is not the default; a separable prefix; auxiliary sein; an obligatory reflexive; uncountable or plural-only. NEVER write the word haben: haben is the default auxiliary and saying so is noise — mention an auxiliary ONLY when it is sein. Write it in ${ifaceLang}${isUkrainianIface ? ' — Ukrainian, NEVER Russian' : ''}, but keep German grammatical terms and forms in German (Akkusativ, Dativ, auf + Dat.)",
+      "grammarNote": "how to BUILD with THIS word — or null. Telegraphic: under 12 words, no sentences, parts separated by ' · '. The test is whether the fact is specific to this word. NULL if it is true of the whole word class (every masculine noun takes den in the accusative; most verbs take haben) or already visible on the card (the article is in the headword, the plural is in \\"form\\", irregularity is in the conjugation table). WORTH SAYING, and belongs HERE rather than in usageNote: a governed preposition and its case — ALWAYS include this when the verb has one, it is the single most useful thing you can say (bestehen aus + Dativ · sich freuen auf + Akk · warten auf + Akk); an object case that is not the default; a separable prefix; auxiliary sein; an obligatory reflexive; uncountable or plural-only. NEVER write the word haben: haben is the default auxiliary and saying so is noise — mention an auxiliary ONLY when it is sein. Write it in ${ifaceLang}${isUkrainianIface ? ' — Ukrainian, NEVER Russian. Use EXACTLY these terms and no synonyms for them: ' + UK_GRAMMAR_TERMS : ''}, but keep German grammatical terms and forms in German (Akkusativ, Dativ, auf + Dat.)",
       "explanation": "WRITTEN IN ${ifaceLang.toUpperCase()} — every word of it. Not in ${targetLanguage}, not in English${isUkrainianIface ? ', and never in Russian' : ''}. A definition, and nothing else: say what the word MEANS, precisely, for an A2-B1 learner. No usage advice here (that is usageNote). Define it with words SIMPLER than the headword — never explain a word using harder words. Under 40 words.",
       "usageNote": "the ONE thing that trips a learner up on this word — or null. Null is the normal answer: most words have no trap, and inventing one is worse than leaving it out. A real trap is: a false friend, a fixed collocation, a register restriction, or a confusion with a near-synonym (bekommen vs erhalten). NOT grammar — a governed preposition, a case, a prefix or an auxiliary belongs in grammarNote, never here. It must not restate anything already in grammarNote: if the only thing you could say is already there, return null. Under 25 words, ${ifaceLang}${isUkrainianIface ? ', Ukrainian NEVER Russian' : ''}",
       "isException": true or false,

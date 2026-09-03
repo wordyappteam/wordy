@@ -13,6 +13,8 @@
 // simply wrong ("hingegen is a Сполучник" — it is an adverb). Those need a
 // reviewer, not a regex, and pretending otherwise would hide them.
 
+import { canonicalStem } from './grammarTerms.js'
+
 const TEXT_FIELDS = [
   ['explanation', 'explanation'],
   ['grammar_note', 'grammarNote'],
@@ -31,6 +33,24 @@ const OTHER_SCRIPT = /[^ -ɏ̀-ͯЀ-ԯ -⁯\s]/
 const STRESS = /[́´]/
 // Letters Russian has and Ukrainian does not.
 const RUSSIAN_ONLY = /[ыъэёЫЪЭЁ]/
+
+// Russian words spelled entirely in letters Ukrainian also has, so the letter
+// rule walks straight past them: "мідного или золотого", "тщательно шукати",
+// "это настоящее чистилище". Membership is strict — a word earns a place here
+// only if it has NO Ukrainian reading at all. That is why "души" (Russian for
+// souls, but also the Ukrainian genitive of душа), "все", "так" and "через"
+// are deliberately absent: each is ordinary Ukrainian in some sentence, and a
+// checker that flags correct writing is a checker that gets switched off.
+const RUSSIAN_WORDS = new Set([
+  'или', 'это', 'этот', 'эта', 'эти', 'что', 'чтобы', 'если', 'как',
+  'тоже', 'также', 'очень', 'сейчас', 'всегда', 'здесь', 'тщательно',
+  'настоящий', 'настоящая', 'настоящее', 'нужно', 'может', 'можно',
+  'используется', 'используются', 'значит', 'только', 'когда', 'где',
+  'почему', 'потому', 'вместо', 'между', 'после', 'более', 'нет',
+  'который', 'которая', 'которые', 'другой', 'каждый', 'самый',
+  'его', 'ее', 'их', 'она', 'они', 'был', 'была', 'было', 'были', 'есть',
+  'время', 'лицо', 'дело', 'вещь',
+])
 // Latin letters carrying a diacritic that German never uses. German's own
 // (ä ö ü Ä Ö Ü ß) are excluded, so a German word in a Ukrainian note is fine.
 const FOREIGN_DIACRITIC = /[À-ɏ]/
@@ -42,21 +62,31 @@ const tokens = (s) => s.split(/[\s·;,()«»"'—–-]+/).filter(Boolean)
 
 // The closed vocabulary of a grammar note. Agreement inside it is checkable
 // precisely because the vocabulary is small; outside it the audit says nothing.
-const NOUN_GENDER = {
+export const NOUN_GENDER = {
   'дієслово': 'n', 'слово': 'n', 'закінчення': 'n', 'значення': 'n',
+  'доповнення': 'n', 'вживання': 'n', 'число': 'n', 'речення': 'n',
+  'питання': 'n', 'правило': 'n', 'відмінювання': 'n',
   'іменник': 'm', 'прикметник': 'm', 'займенник': 'm', 'прийменник': 'm',
   'відмінок': 'm', 'артикль': 'm', 'рід': 'm', 'наголос': 'm', 'префікс': 'm',
-  'форма': 'f', 'конструкція': 'f', 'відміна': 'f', 'частка': 'f', 'основа': 'f',
+  'термін': 'm', 'стан': 'm', 'додаток': 'm', 'прислівник': 'm',
+  'сполучник': 'm', 'дієприкметник': 'm',
+  'форма': 'f', 'конструкція': 'f', 'відміна': 'f', 'частка': 'f',
+  'основа': 'f', 'позиція': 'f', 'група': 'f', 'множина': 'f', 'однина': 'f',
 }
-const ADJ_STEMS = [
+export const ADJ_STEMS = [
   'регулярн', 'нерегулярн', 'правильн', 'неправильн', 'перехідн', 'неперехідн',
   'зворотн', 'сильн', 'слабк', 'модальн', 'допоміжн', 'означен', 'неозначен',
   'відокремлюван', 'невідокремлюван', 'множинн', 'однинн', 'безособов', 'особов',
+  // Countability and register, which these notes reach for as readily as they
+  // reach for "правильний" — and which the check was blind to.
+  'лічильн', 'лічуван', 'обчислюван', 'незлічуван', 'незчисленн',
+  'формальн', 'неформальн', 'технічн', 'спеціалізован', 'числов',
+  'атрибутивн', 'предикативн', 'переносн', 'буквальн', 'розмовн', 'метафоричн',
 ]
-const ADJ_ENDINGS = { 'ий': 'm', 'ій': 'm', 'а': 'f', 'я': 'f', 'е': 'n', 'є': 'n' }
+export const ADJ_ENDINGS = { 'ий': 'm', 'ій': 'm', 'а': 'f', 'я': 'f', 'е': 'n', 'є': 'n' }
 const GENDER_NAME = { m: 'чоловічого', f: 'жіночого', n: 'середнього' }
 
-function adjectiveGender(word) {
+export function adjectiveGender(word) {
   const w = word.toLowerCase()
   for (const stem of ADJ_STEMS) {
     if (!w.startsWith(stem)) continue
@@ -95,6 +125,12 @@ export function auditSense(sense) {
     const ru = text.match(RUSSIAN_ONLY)
     if (ru) add('russian-letter', field, ru[0], 'a letter Russian has and Ukrainian does not')
 
+    for (const word of tokens(text)) {
+      if (RUSSIAN_WORDS.has(word.toLowerCase().replace(/[.:!?]+$/, ''))) {
+        add('russian-word', field, word, 'a Russian word with no Ukrainian reading')
+      }
+    }
+
     if (CYRILLIC.test(text)) {
       const mixedWord = tokens(text).find((w) => CYRILLIC.test(w) && LATIN.test(w))
       if (mixedWord) add('mixed-script-word', field, mixedWord, 'one word written half in Latin, half in Cyrillic')
@@ -103,12 +139,23 @@ export function auditSense(sense) {
       if (foreign) add('foreign-diacritic', field, foreign, 'a diacritic German does not use, so the word is not German either')
     }
 
-    // Agreement, inside the closed grammar vocabulary only.
+    // The grammar vocabulary: first whether the TERM is the one the app has
+    // settled on, then whether it agrees. A non-standard term subsumes the
+    // agreement question — the repair rewrites the word anyway, and reporting
+    // both would make one defect look like two.
     const ws = tokens(text)
     for (let i = 1; i < ws.length; i++) {
       const noun = NOUN_GENDER[ws[i].toLowerCase()]
+      if (!noun) continue
+
+      if (canonicalStem(ws[i - 1])) {
+        add('nonstandard-term', field, ws[i - 1] + ' ' + ws[i],
+          'a term outside the vocabulary the app has settled on')
+        continue
+      }
+
       const adj = adjectiveGender(ws[i - 1])
-      if (noun && adj && noun !== adj) {
+      if (adj && noun !== adj) {
         add('gender-agreement', field, ws[i - 1] + ' ' + ws[i],
           '"' + ws[i] + '" is ' + GENDER_NAME[noun] + ' роду, the adjective is ' + GENDER_NAME[adj])
       }
