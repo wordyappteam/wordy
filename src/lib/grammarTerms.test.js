@@ -15,14 +15,22 @@ test("every variant of countable maps to the one canonical stem", () => {
 })
 
 test("the negative variants map to the negative canonical stem", () => {
-  for (const variant of ["Незліченна", "невраховний", "неполічуване", "необчислюваний", "Незлічувана"]) {
+  // "Незлічувана" is NOT here: it is already the right word, merely mis-inflected,
+  // which is the agreement check's business.
+  for (const variant of ["Незліченна", "невраховний", "неполічуване", "необчислюваний"]) {
     assert.equal(canonicalStem(variant), "незлічуван", `${variant} should map to незлічуван`)
   }
 })
 
-test("a term already canonical maps to itself", () => {
-  assert.equal(canonicalStem("Злічуваний"), "злічуван")
-  assert.equal(canonicalStem("незлічуваний"), "незлічуван")
+test("a term already canonical needs no renaming", () => {
+  // It was returning the stem it already had, so the audit flagged "Злічуваний
+  // іменник" — correct in every respect — and had no repair to offer for it.
+  assert.equal(canonicalStem("Злічуваний"), null)
+  assert.equal(canonicalStem("незлічуваний"), null)
+})
+
+test("a canonical term with the wrong ending is left to the agreement check", () => {
+  assert.equal(canonicalStem("Злічуване"), null)
 })
 
 test("регулярний is a calque for правильне дієслово", () => {

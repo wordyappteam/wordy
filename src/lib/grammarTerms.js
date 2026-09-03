@@ -66,7 +66,9 @@ export function canonicalStem(word) {
   const bare = negated ? stem.slice(2) : stem
   if (COUNTABLE_STEMS.includes(bare)) {
     const canonical = negated ? 'незлічуван' : 'злічуван'
-    return canonical === stem ? canonical : canonical
+    // Already the right word: nothing to rename. Its ENDING may still be wrong,
+    // and that is the agreement check's business, not this one's.
+    return canonical === stem ? null : canonical
   }
   return null
 }
