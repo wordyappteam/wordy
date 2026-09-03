@@ -14,6 +14,7 @@ import {
   COLLECTION_COLOR_KEYS,
 } from '../lib/collections'
 import { candidateToRows } from '../lib/identifyCandidates'
+import { planSenseWrites } from '../lib/senseWrites'
 import { uploadSenseImage, deleteSenseImageByUrl, setSenseImageUrl } from '../lib/senseImages'
 import NavBar from '../components/NavBar'
 
@@ -935,6 +936,21 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
     }
   }
 
+  // The form edits the sense you are LOOKING AT. It used to edit word-level
+  // fields that nothing read back for a word with senses, so pressing Save
+  // changed no text at all — while the save path rewrote every sense row and
+  // lost its study history. Editing the visible sense is what a person means
+  // when they open a card on sense 2 and press the pencil.
+  const editedSense = draft.senses?.[activeSenseIdx] ?? null
+
+  const noteValue = (field) => (editedSense ? editedSense[field] : draft[field]) || ''
+
+  const setNote = (field, value) => setDraft((d) => (
+    editedSense
+      ? { ...d, senses: d.senses.map((s, i) => (i === activeSenseIdx ? { ...s, [field]: value } : s)) }
+      : { ...d, [field]: value }
+  ))
+
   function startEdit() {
     setDraft(word)   // reset draft to latest saved state
     setEditing(true)
@@ -1481,8 +1497,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
             <div>
               <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.translation')}</label>
               <input
-                value={draft.translation}
-                onChange={(e) => setDraft({ ...draft, translation: e.target.value })}
+                value={noteValue('translation')}
+                onChange={(e) => setNote('translation', e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-indigo-400 transition-colors"
               />
             </div>
@@ -1491,8 +1507,20 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
             <div>
               <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.grammarNote')}</label>
               <input
-                value={draft.grammarNote || ''}
-                onChange={(e) => setDraft({ ...draft, grammarNote: e.target.value })}
+                value={noteValue('grammarNote')}
+                onChange={(e) => setNote('grammarNote', e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-indigo-400 transition-colors"
+              />
+            </div>
+
+            {/* Usage note — the trap. Absent from this form until now, which is
+                why two of the six defects the note audit found could not be
+                fixed by hand at all. */}
+            <div>
+              <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.goodToKnow')}</label>
+              <input
+                value={noteValue('usageNote')}
+                onChange={(e) => setNote('usageNote', e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-indigo-400 transition-colors"
               />
             </div>
@@ -1501,8 +1529,8 @@ function WordPanel({ word, onClose, onUpdate, onDelete, onDeleteSense, interface
             <div>
               <label className="text-xs text-gray-400 uppercase tracking-wide mb-1.5 block">{t('dict.explanation')}</label>
               <textarea
-                value={draft.explanation || ''}
-                onChange={(e) => setDraft({ ...draft, explanation: e.target.value })}
+                value={noteValue('explanation')}
+                onChange={(e) => setNote('explanation', e.target.value)}
                 rows={4}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-indigo-400 transition-colors resize-none leading-relaxed"
               />
@@ -2593,33 +2621,53 @@ export default function Dictionary() {
       .eq('id', updated.id)
       .eq('user_id', user.id)
 
-    // If senses provided, replace all sense rows for this word
+    // Edit the sense rows in place. This used to delete every row for the word
+    // and re-insert it, which minted new sense ids and dropped interval_step,
+    // lapses, is_leech, slipped, last_reviewed and image_url — so editing a
+    // note cost the learner that word's entire study history. An edit is now an
+    // UPDATE keyed by the sense's own id, touching only editable columns.
     if (updated.senses?.length) {
-      await supabase.from('word_senses').delete().eq('word_id', updated.id)
-      await supabase.from('word_senses').insert(
-        updated.senses.map(s => ({
-          word_id: updated.id,
-          user_id: user.id,
-          target_language: targetLang,
-          pos: s.pos,
-          word_form: s.wordForm || updated.word,
-          aspect: s.aspect ?? null,
-          gender: s.gender ?? null,
-          translation: s.translation,
-          form: s.form || null,
-          grammar_note: s.grammarNote || null,
-          usage_note: s.usageNote || null,
-          explanation: s.explanation || null,
-          is_exception: s.isException || false,
-          register: s.register || 'neutral',
-          cefr: s.cefr || null,
-          conjugation: s.conjugation || null,
-          examples: s.examples || [],
-          learning_stage: s.learningStage || 'new',
-          correct_recall_count: s.correctRecallCount || 0,
-          next_review_date: s.nextReviewDate || null,
-        }))
-      )
+      const previous = words.find((w) => w.id === updated.id)?.senses ?? []
+      const { updates, inserts, deletes } = planSenseWrites(previous, updated.senses)
+
+      for (const { id, patch } of updates) {
+        const { error } = await supabase.from('word_senses')
+          .update(patch).eq('id', id).eq('user_id', user.id)
+        if (error) { alert(`Save failed: ${error.message}`); return }
+      }
+
+      if (inserts.length) {
+        const { error } = await supabase.from('word_senses').insert(
+          inserts.map(s => ({
+            word_id: updated.id,
+            user_id: user.id,
+            target_language: targetLang,
+            pos: s.pos,
+            word_form: s.wordForm || updated.word,
+            aspect: s.aspect ?? null,
+            gender: s.gender ?? null,
+            translation: s.translation,
+            form: s.form || null,
+            grammar_note: s.grammarNote || null,
+            usage_note: s.usageNote || null,
+            explanation: s.explanation || null,
+            is_exception: s.isException || false,
+            register: s.register || 'neutral',
+            cefr: s.cefr || null,
+            conjugation: s.conjugation || null,
+            examples: s.examples || [],
+            learning_stage: s.learningStage || 'new',
+            correct_recall_count: s.correctRecallCount || 0,
+            next_review_date: s.nextReviewDate || null,
+          }))
+        )
+        if (error) { alert(`Save failed: ${error.message}`); return }
+      }
+
+      // Only senses the learner actually removed, by their own ids.
+      for (const id of deletes) {
+        await supabase.from('word_senses').delete().eq('id', id).eq('user_id', user.id)
+      }
     } else if (updated.examples?.length) {
       await supabase.from('examples').delete().eq('word_id', updated.id)
       await supabase.from('examples').insert(
