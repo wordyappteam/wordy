@@ -47,7 +47,7 @@ const RUSSIAN_WORDS = new Set([
   'почему', 'потому', 'вместо', 'между', 'после', 'более', 'нет',
   'который', 'которая', 'которые', 'другой', 'каждый', 'самый',
   'его', 'ее', 'их', 'она', 'они', 'был', 'была', 'было', 'были', 'есть',
-  'время', 'лицо', 'дело', 'вещь', 'сила',
+  'время', 'лицо', 'дело', 'вещь',
 ])
 // Latin letters carrying a diacritic that German never uses. German's own
 // (ä ö ü Ä Ö Ü ß) are excluded, so a German word in a Ukrainian note is fine.
@@ -60,7 +60,7 @@ const tokens = (s) => s.split(/[\s·;,()«»"'—–-]+/).filter(Boolean)
 
 // The closed vocabulary of a grammar note. Agreement inside it is checkable
 // precisely because the vocabulary is small; outside it the audit says nothing.
-const NOUN_GENDER = {
+export const NOUN_GENDER = {
   'дієслово': 'n', 'слово': 'n', 'закінчення': 'n', 'значення': 'n',
   'доповнення': 'n', 'вживання': 'n', 'число': 'n', 'речення': 'n',
   'питання': 'n', 'правило': 'n', 'відмінювання': 'n',
@@ -71,7 +71,7 @@ const NOUN_GENDER = {
   'форма': 'f', 'конструкція': 'f', 'відміна': 'f', 'частка': 'f',
   'основа': 'f', 'позиція': 'f', 'група': 'f', 'множина': 'f', 'однина': 'f',
 }
-const ADJ_STEMS = [
+export const ADJ_STEMS = [
   'регулярн', 'нерегулярн', 'правильн', 'неправильн', 'перехідн', 'неперехідн',
   'зворотн', 'сильн', 'слабк', 'модальн', 'допоміжн', 'означен', 'неозначен',
   'відокремлюван', 'невідокремлюван', 'множинн', 'однинн', 'безособов', 'особов',
@@ -81,10 +81,10 @@ const ADJ_STEMS = [
   'формальн', 'неформальн', 'технічн', 'спеціалізован', 'числов',
   'атрибутивн', 'предикативн', 'переносн', 'буквальн', 'розмовн', 'метафоричн',
 ]
-const ADJ_ENDINGS = { 'ий': 'm', 'ій': 'm', 'а': 'f', 'я': 'f', 'е': 'n', 'є': 'n' }
+export const ADJ_ENDINGS = { 'ий': 'm', 'ій': 'm', 'а': 'f', 'я': 'f', 'е': 'n', 'є': 'n' }
 const GENDER_NAME = { m: 'чоловічого', f: 'жіночого', n: 'середнього' }
 
-function adjectiveGender(word) {
+export function adjectiveGender(word) {
   const w = word.toLowerCase()
   for (const stem of ADJ_STEMS) {
     if (!w.startsWith(stem)) continue

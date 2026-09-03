@@ -230,3 +230,9 @@ test("технічний термін agrees and is left alone", () => {
 test("обчислюваний іменник agrees and is left alone", () => {
   assert.deepEqual(codes({ word_form: "mint", grammar_note: "Обчислюваний іменник; з артиклем для конкретного виду." }), [])
 })
+
+test("сила is Ukrainian and must never be called Russian", () => {
+  // It was on the list, and it fired on "неприборкана сила" — correct writing,
+  // flagged. Exactly the failure the strictness rule exists to prevent.
+  assert.deepEqual(codes({ word_form: "ferocity", translation: "дика агресивність, неприборкана сила" }), [])
+})
