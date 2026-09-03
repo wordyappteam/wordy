@@ -196,7 +196,7 @@ Otherwise return ONLY this JSON:
   "entryType": "word|phrase|idiom|phrasal-verb",
   "senses": [
     {
-      "pos": "verb|noun|adjective|adverb|conjunction|preposition",${isUkrainian ? `
+      "pos": "verb|noun|adjective|adverb|adjective-adverb|conjunction|preposition". Use adjective-adverb when the SAME form does both jobs with no change — German does this constantly (schnell = fast AND quickly; gut, laut, deutlich). Prefer it over plain adjective whenever the word can modify a verb unchanged; use plain adverb only for a word that cannot describe a noun (immer, gestern, sehr),${isUkrainian ? `
       "aspect": "imperfective or perfective for verbs, otherwise null",
       "gender": "m, f or n for nouns, otherwise null",` : ''}
       "wordForm": "${wordFormNote}",

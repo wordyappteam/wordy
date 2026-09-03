@@ -16,6 +16,7 @@ import {
 import { candidateToRows } from '../lib/identifyCandidates'
 import { planSenseWrites } from '../lib/senseWrites'
 import { repairSense } from '../lib/noteRepair'
+import { parseBulkLine } from '../lib/bulkImportParse'
 import { uploadSenseImage, deleteSenseImageByUrl, setSenseImageUrl } from '../lib/senseImages'
 import NavBar from '../components/NavBar'
 
@@ -418,6 +419,10 @@ const POS_STYLES = {
   verb:        { label: 'verb',  className: 'bg-violet-50 text-violet-700 border border-violet-200' },
   noun:        { label: 'noun',  className: 'bg-blue-50 text-blue-700 border border-blue-200' },
   adjective:   { label: 'adj.', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  // A word that is both, which German does constantly — schnell is "fast" and
+  // "quickly" with no change of form. It reads as an adjective first, so it
+  // keeps the adjective's colour and carries the difference in its label.
+  'adjective-adverb': { label: 'adj./adv.', className: 'bg-amber-50 text-amber-800 border border-amber-300' },
   adverb:      { label: 'adv.', className: 'bg-teal-50 text-teal-700 border border-teal-200' },
   conjunction: { label: 'conj.',className: 'bg-rose-50 text-rose-700 border border-rose-200' },
   preposition: { label: 'prep.',className: 'bg-gray-100 text-gray-600 border border-gray-200' },
@@ -428,6 +433,7 @@ const POS_STYLES = {
 // twice, in two languages.
 const POS_LABELS_UK = {
   verb: 'дієсл.', noun: 'ім.', adjective: 'прикм.',
+  'adjective-adverb': 'прикм./присл.',
   adverb: 'присл.', conjunction: 'спол.', preposition: 'прийм.',
 }
 const STAGE_LABELS_UK = {
@@ -1800,82 +1806,6 @@ function BulkIdentifyModal({ words, onClose, onWordIdentified, interfaceLanguage
 }
 
 // ── Bulk import parser ────────────────────────────────────────────────────
-const PREPOSITIONS = ['auf','an','für','über','um','von','mit','nach','zu','bei','in','gegen','durch','aus','als']
-
-function parseBulkLine(line) {
-  line = line.trim()
-  if (!line) return null
-
-  // Skip section headers like "Dativ", "Akkusativ"
-  if (/^(Dativ|Akkusativ|Genitiv)$/i.test(line)) return null
-
-  // Verb + preposition formats:
-  // "achten (auf)" → "achten auf"
-  // "anmelden (sich) für" → "sich anmelden für"
-  // "abhängen von" (no parens)
-  const prepInParen = line.match(/^(\S+)\s+\((sich)\)\s+(\S+)$/)   // verb (sich) prep
-  const prepInParen2 = line.match(/^(\S+)\s+\((\S+)\)$/)            // verb (prep)
-  const verbPrepPlain = line.match(/^(\S+)\s+(auf|an|für|über|um|von|mit|nach|zu|bei|in|gegen|durch|aus|als)\s*$/)
-
-  if (prepInParen) {
-    const [, verb, , prep] = prepInParen
-    return { word: `sich ${verb} ${prep}`, form: null, pos: 'verb', entry_type: 'phrasal-verb', translation: '', status: 'new' }
-  }
-  if (prepInParen2 && PREPOSITIONS.includes(prepInParen2[2])) {
-    const [, verb, prep] = prepInParen2
-    return { word: `${verb} ${prep}`, form: null, pos: 'verb', entry_type: 'phrasal-verb', translation: '', status: 'new' }
-  }
-  if (verbPrepPlain) {
-    const [, verb, prep] = verbPrepPlain
-    return { word: `${verb} ${prep}`, form: null, pos: 'verb', entry_type: 'phrasal-verb', translation: '', status: 'new' }
-  }
-  // Multi-word verb + preposition: "einverstanden sein mit", "fertig sein mit", "beteiligt sein an"
-  const multiWordPrep = line.match(new RegExp(`^(.+?)\\s+(${PREPOSITIONS.join('|')})$`))
-  if (multiWordPrep && !line.includes('(')) {
-    const [, verb, prep] = multiWordPrep
-    return { word: `${verb} ${prep}`, form: null, pos: 'verb', entry_type: 'phrasal-verb', translation: '', status: 'new' }
-  }
-
-  // Noun: starts with der/die/das
-  if (/^(der|die|das)\s/i.test(line)) {
-    const commaIdx = line.indexOf(',')
-    const word = commaIdx > -1 ? line.slice(0, commaIdx).trim() : line.trim()
-    const noun = word.replace(/^(der|die|das)\s+/i, '')
-    const ending = commaIdx > -1 ? line.slice(commaIdx + 1).trim() : null
-    let form = null
-    if (ending) {
-      if (ending === '-') form = noun // no change plural
-      else if (ending.startsWith('-¨')) form = ending // umlaut — store as-is
-      else if (ending.startsWith('-')) form = noun + ending.slice(1)
-      else form = ending
-    }
-    return { word, form, pos: 'noun', entry_type: 'word', translation: '', status: 'new' }
-  }
-
-  // Verb / phrasal verb: has conjugation in parens
-  if (line.includes('(') && !line.startsWith('-')) {
-    const parenIdx = line.indexOf('(')
-    const wordRaw = line.slice(0, parenIdx).trim()
-    const conj = line.match(/\(([^)]+)\)/)?.[1] || ''
-    const parts = conj.split(',').map(s => s.trim()).filter(Boolean)
-    // form: "reißt ab / riss ab / hat abgerissen"
-    const form = parts.slice(0, 3).join(' / ')
-    const isPhrasal = wordRaw.includes(' ')
-    return {
-      word: wordRaw,
-      form,
-      pos: 'verb',
-      entry_type: isPhrasal ? 'phrasal-verb' : 'word',
-      translation: '',
-      status: 'new',
-    }
-  }
-
-  // Adjective / adverb / other
-  const word = line.replace(/,.*/, '').replace(/\(.*\)/, '').trim()
-  if (!word) return null
-  return { word, form: null, pos: 'adjective', entry_type: 'word', translation: '', status: 'new' }
-}
 
 // ── Bulk import modal ─────────────────────────────────────────────────────
 function BulkImportModal({ onClose, onImport }) {
