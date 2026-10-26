@@ -17,6 +17,7 @@ import { candidateToRows } from '../lib/identifyCandidates'
 import { planSenseWrites } from '../lib/senseWrites'
 import { repairSense } from '../lib/noteRepair'
 import { parseBulkLine } from '../lib/bulkImportParse'
+import { selectAll, hiddenSelected, wordCount } from '../lib/bulkSelect'
 import { uploadSenseImage, deleteSenseImageByUrl, setSenseImageUrl } from '../lib/senseImages'
 import NavBar from '../components/NavBar'
 
@@ -2499,6 +2500,7 @@ export default function Dictionary() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds]     = useState(() => new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const dragCol = useRef(null)
 
   // Keep column labels in sync when language changes, but preserve current order
@@ -2802,6 +2804,7 @@ export default function Dictionary() {
   }
 
   const allFilteredSelected = filtered.length > 0 && filtered.every(w => selectedIds.has(w.id))
+  const hiddenCount = hiddenSelected(selectedIds, filtered)
 
   function toggleSelectAll() {
     setSelectedIds(prev => {
@@ -2814,11 +2817,22 @@ export default function Dictionary() {
 
   async function handleBulkDelete() {
     const ids = [...selectedIds]
-    if (!ids.length) return
+    if (!ids.length || bulkDeleting) return
     const idStr = new Set(ids.map(String))
-    words.forEach(w => idStr.has(String(w.id)) && (w.senses || []).forEach(s => s.imageUrl && deleteSenseImageByUrl(s.imageUrl)))
+    setBulkDeleting(true)
     await supabase.from('examples').delete().in('word_id', ids)
-    await supabase.from('words').delete().in('id', ids).eq('user_id', user.id)
+    // The word delete is the one that matters. If it fails, keep the words on
+    // screen — removing them anyway made a failed delete look like a success
+    // until the next reload brought them back.
+    const { error } = await supabase.from('words').delete().in('id', ids).eq('user_id', user.id)
+    setBulkDeleting(false)
+    if (error) {
+      setConfirmBulkDelete(false)
+      alert(`${lang === 'uk' ? 'Не вдалося видалити' : 'Delete failed'}: ${error.message}`)
+      return
+    }
+    // Images only after the rows are gone, so a failed delete leaves no word without its picture.
+    words.forEach(w => idStr.has(String(w.id)) && (w.senses || []).forEach(s => s.imageUrl && deleteSenseImageByUrl(s.imageUrl)))
     setWords(prev => prev.filter(w => !idStr.has(String(w.id))))
     setMemberships(prev => prev.filter(r => !idStr.has(String(r.word_id))))
     if (selectedWord && idStr.has(String(selectedWord.id))) setSelectedId(null)
@@ -3040,11 +3054,27 @@ export default function Dictionary() {
         {/* Bulk selection bar */}
         {selectionMode && (
           <div className="flex items-center justify-between gap-3 mb-3 px-4 py-2.5 bg-indigo-50 border border-indigo-100 rounded-2xl">
-            <div className="flex items-center gap-3">
-              <button onClick={toggleSelectAll} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
-                {allFilteredSelected ? 'Clear all' : 'Select all'}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <button
+                onClick={() => setSelectedIds(prev => selectAll(prev, filtered))}
+                disabled={allFilteredSelected}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:text-indigo-300 disabled:cursor-default"
+              >
+                {lang === 'uk' ? `Обрати всі (${filtered.length})` : `Select all (${filtered.length})`}
               </button>
-              <span className="text-sm text-indigo-700 font-medium">{selectedIds.size} selected</span>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                disabled={selectedIds.size === 0}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:text-indigo-300 disabled:cursor-default"
+              >
+                {lang === 'uk' ? 'Зняти виділення' : 'Deselect all'}
+              </button>
+              <span className="text-sm text-indigo-700 font-medium">
+                {lang === 'uk' ? `Обрано: ${selectedIds.size}` : `${selectedIds.size} selected`}
+                {hiddenCount > 0 && (
+                  <span className="text-amber-600"> · {lang === 'uk' ? `${hiddenCount} поза фільтром` : `${hiddenCount} hidden by filter`}</span>
+                )}
+              </span>
             </div>
             <button
               onClick={() => setConfirmBulkDelete(true)}
@@ -3173,11 +3203,22 @@ export default function Dictionary() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={() => setConfirmBulkDelete(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
             <div className="mb-2 flex justify-center text-red-400"><TrashIcon size={28} /></div>
-            <p className="font-semibold text-gray-900 mb-1">Delete {selectedIds.size} word{selectedIds.size !== 1 ? 's' : ''}?</p>
-            <p className="text-sm text-gray-400 mb-6">This permanently removes them and all their senses, examples, and collection memberships. This can't be undone.</p>
+            <p className="font-semibold text-gray-900 mb-1">{lang === 'uk' ? `Видалити ${wordCount(selectedIds.size, 'uk')}?` : `Delete ${wordCount(selectedIds.size, 'en')}?`}</p>
+            {hiddenCount > 0 && (
+              <p className="text-sm text-amber-600 font-medium mb-1">
+                {lang === 'uk' ? `З них ${hiddenCount} зараз поза фільтром і не видно у списку.` : `${hiddenCount} of them are hidden by the current filter.`}
+              </p>
+            )}
+            <p className="text-sm text-gray-400 mb-6">
+              {lang === 'uk'
+                ? 'Слова буде видалено назавжди разом з усіма значеннями, прикладами та колекціями. Скасувати це не можна.'
+                : "This permanently removes them and all their senses, examples, and collection memberships. This can't be undone."}
+            </p>
             <div className="flex gap-3">
-              <button onClick={() => setConfirmBulkDelete(false)} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">{t('dict.cancel')}</button>
-              <button onClick={handleBulkDelete} className="flex-1 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold">{t('dict.deleteBtn')}</button>
+              <button onClick={() => setConfirmBulkDelete(false)} disabled={bulkDeleting} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">{t('dict.cancel')}</button>
+              <button onClick={handleBulkDelete} disabled={bulkDeleting} className="flex-1 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white text-sm font-semibold">
+                {bulkDeleting ? (lang === 'uk' ? 'Видаляю…' : 'Deleting…') : t('dict.deleteBtn')}
+              </button>
             </div>
           </div>
         </div>
