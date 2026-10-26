@@ -10,13 +10,15 @@ import { useLanguage } from '../lib/i18n'
 import { useTargetLang } from '../lib/TargetLangContext'
 import {
   collectionColor, nextColor, fetchCollectionsData, createCollection,
-  renameCollection, deleteCollection, addWordToCollection, removeWordFromCollection,
+  renameCollection, deleteCollection, addWordToCollection, addWordsToCollection, removeWordFromCollection,
   COLLECTION_COLOR_KEYS,
 } from '../lib/collections'
 import { candidateToRows } from '../lib/identifyCandidates'
 import { planSenseWrites } from '../lib/senseWrites'
 import { repairSense } from '../lib/noteRepair'
 import { parseBulkLine } from '../lib/bulkImportParse'
+import { selectAll, hiddenSelected, wordCount } from '../lib/bulkSelect'
+import { wordHasPos, posOptions, notYetMembers } from '../lib/dictFilter'
 import { uploadSenseImage, deleteSenseImageByUrl, setSenseImageUrl } from '../lib/senseImages'
 import NavBar from '../components/NavBar'
 
@@ -435,6 +437,11 @@ const POS_LABELS_UK = {
   verb: 'дієсл.', noun: 'ім.', adjective: 'прикм.',
   'adjective-adverb': 'прикм./присл.',
   adverb: 'присл.', conjunction: 'спол.', preposition: 'прийм.',
+}
+// Filter options name the class in full — "Дієслова", not the badge's "дієсл.".
+const POS_FILTER_LABELS = {
+  en: { verb: 'Verbs', noun: 'Nouns', adjective: 'Adjectives', 'adjective-adverb': 'Adjectives/adverbs', adverb: 'Adverbs', conjunction: 'Conjunctions', preposition: 'Prepositions' },
+  uk: { verb: 'Дієслова', noun: 'Іменники', adjective: 'Прикметники', 'adjective-adverb': 'Прикметники/прислівники', adverb: 'Прислівники', conjunction: 'Сполучники', preposition: 'Прийменники' },
 }
 const STAGE_LABELS_UK = {
   new: 'нове', early: 'початок', mid: 'вивчаю', learning: 'вивчаю',
@@ -2499,6 +2506,11 @@ export default function Dictionary() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds]     = useState(() => new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  // '' = closed · '__new' = naming a new collection · otherwise unused
+  const [bulkCollection, setBulkCollection] = useState('')
+  const [bulkCollectionName, setBulkCollectionName] = useState('')
+  const [bulkCollectionBusy, setBulkCollectionBusy] = useState(false)
   const dragCol = useRef(null)
 
   // Keep column labels in sync when language changes, but preserve current order
@@ -2609,7 +2621,9 @@ export default function Dictionary() {
       const matchSearch  = w.word.toLowerCase().includes(search.toLowerCase()) ||
                            (w.translation || '').toLowerCase().includes(search.toLowerCase())
       const matchStatus  = filterStatus === 'all' || w.status === filterStatus
-      const matchType    = filterType   === 'all' || w.entryType === filterType
+      // One dropdown holds both entry types and parts of speech; pos values carry a 'pos:' prefix.
+      const matchType    = filterType   === 'all' ||
+                           (filterType.startsWith('pos:') ? wordHasPos(w, filterType.slice(4)) : w.entryType === filterType)
       const matchCollection = filterCollection === 'all' || membershipByWord[w.id]?.has(filterCollection)
       return matchSearch && matchStatus && matchType && matchCollection
     })
@@ -2791,6 +2805,8 @@ export default function Dictionary() {
     setSelectionMode(false)
     setSelectedIds(new Set())
     setConfirmBulkDelete(false)
+    setBulkCollection('')
+    setBulkCollectionName('')
   }
 
   function toggleSelect(id) {
@@ -2802,6 +2818,30 @@ export default function Dictionary() {
   }
 
   const allFilteredSelected = filtered.length > 0 && filtered.every(w => selectedIds.has(w.id))
+  const hiddenCount = hiddenSelected(selectedIds, filtered)
+  const posInDictionary = useMemo(() => posOptions(words), [words])
+
+  // Put the selection into a collection — an existing one, or a new one named here.
+  async function handleBulkToCollection(collectionId, newName) {
+    const ids = [...selectedIds]
+    if (!ids.length || bulkCollectionBusy) return
+    setBulkCollectionBusy(true)
+    let error
+    try {
+      const id = collectionId ?? await createCollection(user.id, targetLang, newName, nextColor(collections), [])
+      error = await addWordsToCollection(user.id, id, notYetMembers(ids, id, membershipByWord))
+    } catch (e) {
+      error = e
+    }
+    setBulkCollectionBusy(false)
+    await loadCollections()
+    if (error) {
+      alert(`${lang === 'uk' ? 'Не вдалося додати до колекції' : 'Could not add to collection'}: ${error.message ?? error}`)
+      return
+    }
+    setBulkCollection('')
+    setBulkCollectionName('')
+  }
 
   function toggleSelectAll() {
     setSelectedIds(prev => {
@@ -2814,11 +2854,22 @@ export default function Dictionary() {
 
   async function handleBulkDelete() {
     const ids = [...selectedIds]
-    if (!ids.length) return
+    if (!ids.length || bulkDeleting) return
     const idStr = new Set(ids.map(String))
-    words.forEach(w => idStr.has(String(w.id)) && (w.senses || []).forEach(s => s.imageUrl && deleteSenseImageByUrl(s.imageUrl)))
+    setBulkDeleting(true)
     await supabase.from('examples').delete().in('word_id', ids)
-    await supabase.from('words').delete().in('id', ids).eq('user_id', user.id)
+    // The word delete is the one that matters. If it fails, keep the words on
+    // screen — removing them anyway made a failed delete look like a success
+    // until the next reload brought them back.
+    const { error } = await supabase.from('words').delete().in('id', ids).eq('user_id', user.id)
+    setBulkDeleting(false)
+    if (error) {
+      setConfirmBulkDelete(false)
+      alert(`${lang === 'uk' ? 'Не вдалося видалити' : 'Delete failed'}: ${error.message}`)
+      return
+    }
+    // Images only after the rows are gone, so a failed delete leaves no word without its picture.
+    words.forEach(w => idStr.has(String(w.id)) && (w.senses || []).forEach(s => s.imageUrl && deleteSenseImageByUrl(s.imageUrl)))
     setWords(prev => prev.filter(w => !idStr.has(String(w.id))))
     setMemberships(prev => prev.filter(r => !idStr.has(String(r.word_id))))
     if (selectedWord && idStr.has(String(selectedWord.id))) setSelectedId(null)
@@ -2965,6 +3016,13 @@ export default function Dictionary() {
             <option value="phrase">{t('dict.phrases')}</option>
             <option value="idiom">{t('dict.idioms')}</option>
             <option value="phrasal-verb">{t('dict.phrasalVerbs')}</option>
+            {posInDictionary.length > 0 && (
+              <optgroup label={lang === 'uk' ? 'Частина мови' : 'Part of speech'}>
+                {posInDictionary.map((p) => (
+                  <option key={p} value={`pos:${p}`}>{POS_FILTER_LABELS[lang === 'uk' ? 'uk' : 'en'][p] || p}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
             className="border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-600 focus:outline-none focus:border-indigo-400 bg-white">
@@ -3039,13 +3097,67 @@ export default function Dictionary() {
 
         {/* Bulk selection bar */}
         {selectionMode && (
-          <div className="flex items-center justify-between gap-3 mb-3 px-4 py-2.5 bg-indigo-50 border border-indigo-100 rounded-2xl">
-            <div className="flex items-center gap-3">
-              <button onClick={toggleSelectAll} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
-                {allFilteredSelected ? 'Clear all' : 'Select all'}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3 px-4 py-2.5 bg-indigo-50 border border-indigo-100 rounded-2xl">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <button
+                onClick={() => setSelectedIds(prev => selectAll(prev, filtered))}
+                disabled={allFilteredSelected}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:text-indigo-300 disabled:cursor-default"
+              >
+                {lang === 'uk' ? `Обрати всі (${filtered.length})` : `Select all (${filtered.length})`}
               </button>
-              <span className="text-sm text-indigo-700 font-medium">{selectedIds.size} selected</span>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                disabled={selectedIds.size === 0}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:text-indigo-300 disabled:cursor-default"
+              >
+                {lang === 'uk' ? 'Зняти виділення' : 'Deselect all'}
+              </button>
+              <span className="text-sm text-indigo-700 font-medium">
+                {lang === 'uk' ? `Обрано: ${selectedIds.size}` : `${selectedIds.size} selected`}
+                {hiddenCount > 0 && (
+                  <span className="text-amber-600"> · {lang === 'uk' ? `${hiddenCount} поза фільтром` : `${hiddenCount} hidden by filter`}</span>
+                )}
+              </span>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+            {bulkCollection === '__new' ? (
+              <form
+                onSubmit={(e) => { e.preventDefault(); bulkCollectionName.trim() && handleBulkToCollection(null, bulkCollectionName) }}
+                className="flex items-center gap-1.5"
+              >
+                <input
+                  autoFocus
+                  value={bulkCollectionName}
+                  onChange={(e) => setBulkCollectionName(e.target.value)}
+                  placeholder={lang === 'uk' ? 'Назва колекції' : 'Collection name'}
+                  className="w-40 border border-indigo-200 rounded-xl px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-400"
+                />
+                <button type="submit" disabled={!bulkCollectionName.trim() || bulkCollectionBusy}
+                  className="px-3 py-1.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white">
+                  {bulkCollectionBusy ? '…' : (lang === 'uk' ? 'Створити' : 'Create')}
+                </button>
+                <button type="button" onClick={() => { setBulkCollection(''); setBulkCollectionName('') }}
+                  className="px-2 py-1.5 text-sm text-gray-400 hover:text-gray-600">✕</button>
+              </form>
+            ) : (
+              <select
+                value=""
+                disabled={selectedIds.size === 0 || bulkCollectionBusy}
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (v === '__new') setBulkCollection('__new')
+                  else if (v) handleBulkToCollection(v)
+                }}
+                className="border border-indigo-200 rounded-xl px-3 py-1.5 text-sm text-indigo-700 font-semibold bg-white focus:outline-none focus:border-indigo-400 disabled:opacity-50"
+              >
+                <option value="">{bulkCollectionBusy ? '…' : (lang === 'uk' ? 'До колекції…' : 'Add to collection…')}</option>
+                <option value="__new">{lang === 'uk' ? '+ Нова колекція' : '+ New collection'}</option>
+                {collections.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            )}
             <button
               onClick={() => setConfirmBulkDelete(true)}
               disabled={selectedIds.size === 0}
@@ -3053,6 +3165,7 @@ export default function Dictionary() {
             >
               <TrashIcon size={14} /> {t('dict.deleteBtn')} {selectedIds.size > 0 ? selectedIds.size : ''}
             </button>
+            </div>
           </div>
         )}
 
@@ -3173,11 +3286,22 @@ export default function Dictionary() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={() => setConfirmBulkDelete(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
             <div className="mb-2 flex justify-center text-red-400"><TrashIcon size={28} /></div>
-            <p className="font-semibold text-gray-900 mb-1">Delete {selectedIds.size} word{selectedIds.size !== 1 ? 's' : ''}?</p>
-            <p className="text-sm text-gray-400 mb-6">This permanently removes them and all their senses, examples, and collection memberships. This can't be undone.</p>
+            <p className="font-semibold text-gray-900 mb-1">{lang === 'uk' ? `Видалити ${wordCount(selectedIds.size, 'uk')}?` : `Delete ${wordCount(selectedIds.size, 'en')}?`}</p>
+            {hiddenCount > 0 && (
+              <p className="text-sm text-amber-600 font-medium mb-1">
+                {lang === 'uk' ? `З них ${hiddenCount} зараз поза фільтром і не видно у списку.` : `${hiddenCount} of them are hidden by the current filter.`}
+              </p>
+            )}
+            <p className="text-sm text-gray-400 mb-6">
+              {lang === 'uk'
+                ? 'Слова буде видалено назавжди разом з усіма значеннями, прикладами та колекціями. Скасувати це не можна.'
+                : "This permanently removes them and all their senses, examples, and collection memberships. This can't be undone."}
+            </p>
             <div className="flex gap-3">
-              <button onClick={() => setConfirmBulkDelete(false)} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">{t('dict.cancel')}</button>
-              <button onClick={handleBulkDelete} className="flex-1 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold">{t('dict.deleteBtn')}</button>
+              <button onClick={() => setConfirmBulkDelete(false)} disabled={bulkDeleting} className="flex-1 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">{t('dict.cancel')}</button>
+              <button onClick={handleBulkDelete} disabled={bulkDeleting} className="flex-1 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white text-sm font-semibold">
+                {bulkDeleting ? (lang === 'uk' ? 'Видаляю…' : 'Deleting…') : t('dict.deleteBtn')}
+              </button>
             </div>
           </div>
         </div>

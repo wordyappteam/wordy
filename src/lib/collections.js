@@ -68,6 +68,16 @@ export async function addWordToCollection(userId, collectionId, wordId) {
   await supabase.from('word_collections').insert({ user_id: userId, collection_id: collectionId, word_id: wordId })
 }
 
+// Several words at once. Returns the error, so the caller can tell a failed
+// insert from a successful one — the single-word helper above cannot.
+export async function addWordsToCollection(userId, collectionId, wordIds) {
+  if (!wordIds.length) return null
+  const { error } = await supabase.from('word_collections').insert(
+    wordIds.map(word_id => ({ user_id: userId, collection_id: collectionId, word_id }))
+  )
+  return error
+}
+
 export async function removeWordFromCollection(collectionId, wordId) {
   await supabase.from('word_collections').delete().eq('collection_id', collectionId).eq('word_id', wordId)
 }
